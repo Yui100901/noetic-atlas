@@ -43,13 +43,15 @@ Windows 也可双击 `启动学习站.cmd`。默认地址：
 | PowerShell | `.\release.ps1` | `.\release.ps1 all` |
 | Linux / Bash | `sh ./release.sh` | `sh ./release.sh web` |
 
-也可运行 `npm run release -- all`，目标支持 `all`、`windows`、`web`、`android`、`docker`、`source`；`--dry-run` 查看计划，`--docker-command-only` 仅输出 Docker 命令。`all` 构建当前系统支持的版本，Linux/macOS 不构建 Windows 桌面包。输出位于 `artifacts/releases/`，附清单与 SHA256。
+也可运行 `npm run release -- all`，目标支持 `all`、`windows`、`web`、`android`、`docker`、`source`、`clean`；`--dry-run` 查看计划，`--docker-command-only` 仅输出 Docker 命令。`all` 构建当前系统支持的版本，Linux/macOS 不构建 Windows 桌面包。`android` 和 `all` 在构建前检查正式签名、JDK 21 与 Android SDK，缺失时停止。构建输出位于 `artifacts/releases/`，包含版本化签名 APK、签名验证报告、清单与 SHA256。
 
 新版发布需同步版本号、完成检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
 
 Android 首次正式发布运行 `npm run android:signing:init` 创建本地签名，之后正式打包自动使用；请独立备份私钥和密码，详见[Android 构建与签名](./docs/发布与部署.md#android-构建与签名)。
 
-`data/`整个目录忽略，不提交Git。配置在“系统配置 → 数据与备份”单独导出、预览导入，AI密钥不会进入配置文件。打包完成后运行`npm run release:prepare`生成干净的软件待上传目录及发布说明，再按需附上领域题库ZIP；首次推送、打标签和创建Release的步骤见[发布流程](./docs/发布与部署.md#首次发布到github)。
+检查与打包成功后，脚本自动生成新的 `artifacts/github/v版本-UTC运行时间-pid/` 待上传目录和发布说明，具体路径见 `artifacts/releases/release-report.json` 的 `uploadDirectory`。通常无需再运行 `release:prepare`；题库 ZIP 作为独立附件另行选择。首次推送、打标签和创建 Release 的步骤见[发布流程](./docs/发布与部署.md#首次发布到github)。
+
+`data/` 整个目录忽略，不提交 Git。配置在“系统配置 → 数据与备份”单独导出、预览导入，AI 密钥不会进入配置文件。发布完成后可先运行 `npm run release -- clean --dry-run` 查看实际清理计划，再运行 `npm run release -- clean`：将领域题库包校验归档至 `data/release-archives/domain-packs/`，删除可重建的软件发布与打包产物，保留工作数据、正式签名和工具链。三个脚本入口也支持 `clean`，无需安装构建依赖；原 `npm run release:clean` 仍可使用，详见[清理与归档](./docs/发布与部署.md#发布产物清理与题库归档)。
 
 ## 文档
 

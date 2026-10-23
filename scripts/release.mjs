@@ -1,18 +1,22 @@
 /** One release entry point. Importing this module never runs a build. */
-import { existsSync, accessSync, constants, realpathSync } from 'node:fs';
+import { accessSync, constants, existsSync } from 'node:fs';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { resolve, dirname, relative, join } from 'node:path';
+import { resolve, relative, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { packageWebRelease } from './release/release-web.mjs';
-import { resolveAndroidSigningEnvironment } from './build/android-signing.mjs';
+import { collectSignedAndroidArtifact } from './release/android-artifact.mjs';
+import { prepareGithubRelease } from './release/prepare-github.mjs';
+import { findNpmCli, formatCommand } from './build/build-command.mjs';
+import { cleanupReleaseArtifacts } from './release/cleanup.mjs';
+export { findNpmCli, formatCommand } from './build/build-command.mjs';
 
-export const RELEASE_TARGETS = ['all','windows','web','android','docker','source'];
+export const RELEASE_TARGETS = ['all','windows','web','android','docker','source','clean'];
 export const HELP = `认知星图一键发布
 
-用法：npm run release -- [all|windows|web|android|docker|source] [选项]
+用法：npm run release -- [all|windows|web|android|docker|source|clean] [选项]
       双击 release.cmd 后输入目标，也可执行 release.cmd windows
       PowerShell：.\\release.ps1 web；Linux / macOS：./release.sh web
 
@@ -22,6 +26,7 @@ export const HELP = `认知星图一键发布
   android   Android Release APK（读取本地正式签名或完整签名环境变量）
   docker    执行 docker build -t noetic-atlas:<版本> .
   source    仅源码 ZIP
+  clean     校验归档领域题库包后清理软件产物，保留工作数据、密钥和工具链
 
   --skip-checks          跳过自动化测试；仍构建并校验公开数据和文档
   --dry-run              仅显示计划，不执行命令、不生成文件
@@ -33,8 +38,21 @@ export const HELP = `认知星图一键发布
 all 在未安装 Docker 时会继续生成其他包，并明确将 Docker 标记为待构建。
 Windows 便携版必须在 Windows 构建；其他系统执行 all 时会将其标记为待构建。
 单独 docker 且未安装 Docker 时退出码为 2；--docker-command-only 退出码为 0。
-所有目标的结果写入 artifacts/releases/release-report.json。
+android / all 必须配置正式签名，缺失时在构建前停止，不生成未签名发布包。
+所有软件包（含版本化签名 APK）写入 artifacts/releases/。
+检查通过后自动生成 artifacts/github/ 下新的待上传目录及发布说明。
+clean 不构建或安装依赖；clean --dry-run 查看真实清理计划，不修改文件。
 `;
+
+function validateTargetOptions(options) {
+  if(options.target==='clean'&&(options.skipChecks||options.javaRoot||options.sdkRoot||options.dockerCommandOnly)) {
+    throw new Error('clean 仅支持 --dry-run 和 --help，不能与构建专用选项混用');
+  }
+  if(options.dockerCommandOnly&&options.target&&!['all','docker'].includes(options.target)) {
+    throw new Error('--docker-command-only 仅适用于 all 或 docker');
+  }
+  return options;
+}
 
 export function parseReleaseArgs(args) {
   const options = { target:null, skipChecks:false, dryRun:false, dockerCommandOnly:false, help:false, javaRoot:null, sdkRoot:null };
@@ -53,21 +71,17 @@ export function parseReleaseArgs(args) {
       options.target = arg.toLowerCase();
     } else throw new Error(`未知参数：${arg}。执行 npm run release -- --help 查看用法`);
   }
-  if (options.dockerCommandOnly && options.target && !['all','docker'].includes(options.target)) {
-    throw new Error('--docker-command-only 仅适用于 all 或 docker');
-  }
-  return options;
+  return validateTargetOptions(options);
 }
 
 export async function selectReleaseTarget(options,{input=process.stdin,output=process.stdout,isTTY=process.stdin.isTTY}={}) {
-  if (options.target || options.help) return options;
+  if (options.target || options.help) return validateTargetOptions(options);
   if (!isTTY) throw new Error('请指定发布目标，例如 npm run release -- web；执行 npm run release -- --help 查看用法');
   const reader = createInterface({input,output});
   try {
-    const answer = (await reader.question('发布目标 [all / windows / web / android / docker / source]：')).trim().toLowerCase();
+    const answer = (await reader.question(`发布目标 [${RELEASE_TARGETS.join(' / ')}]：`)).trim().toLowerCase();
     if (!RELEASE_TARGETS.includes(answer)) throw new Error(`无效目标：${answer || '空输入'}。请重新运行并选择上述目标`);
-    if (options.dockerCommandOnly && !['all','docker'].includes(answer)) throw new Error('--docker-command-only 仅适用于 all 或 docker');
-    return {...options,target:answer};
+    return validateTargetOptions({...options,target:answer});
   } finally { reader.close(); }
 }
 
@@ -76,6 +90,8 @@ export function selectedTargets(target) {
 }
 
 export function createReleasePlan(options,{version='1.0.0',node=process.execPath,platform=process.platform}={}) {
+  validateTargetOptions(options);
+  if(options.target==='clean') return [{target:'clean',command:node,args:['scripts/release/cleanup.mjs',...(options.dryRun?['--dry-run']:[])]}];
   const targets = selectedTargets(options.target);
   const buildTargets = targets.some(target => target !== 'docker' && (target !== 'windows' || platform === 'win32'));
   const steps = [];
@@ -92,19 +108,6 @@ export function createReleasePlan(options,{version='1.0.0',node=process.execPath
     if (target === 'docker') steps.push({target,command:'docker',args:['build','-t',`noetic-atlas:${version}`,'.']});
   }
   return steps;
-}
-
-export function formatCommand(command,args) {
-  const quote = value => /[\s"']/.test(value) ? `"${value.replaceAll('"','\\"')}"` : value;
-  return [command,...args].map(quote).join(' ');
-}
-
-export function findNpmCli({env=process.env,node=process.execPath,platform=process.platform}={}) {
-  const pathCandidates = (env.PATH || '').split(platform === 'win32'?';':':').filter(Boolean).map(directory=>resolve(directory,platform === 'win32'?'npm.cmd':'npm'));
-  const resolvedNpm = pathCandidates.flatMap(path=>{try{return [realpathSync(path)];}catch{return [];}});
-  const candidate = [env.npm_execpath,resolve(dirname(node),'node_modules/npm/bin/npm-cli.js'),resolve(dirname(node),'../lib/node_modules/npm/bin/npm-cli.js'),...resolvedNpm.filter(path=>path.endsWith('npm-cli.js'))].find(path=>path&&existsSync(path));
-  if (!candidate) throw new Error('无法定位 npm；请通过 npm run release -- <目标> 执行');
-  return candidate;
 }
 
 export function commandAvailable(command,{path=process.env.PATH || '',platform=process.platform,pathExt=process.env.PATHEXT || '.EXE;.CMD;.BAT'}={}) {
@@ -127,7 +130,13 @@ async function artifactInfo(path,output) {
   return {file:relative(output,path).replaceAll('\\','/'),bytes:data.length,sha256:createHash('sha256').update(data).digest('hex')};
 }
 
-export async function executeRelease(options,{root=resolve(import.meta.dirname,'..'),platform=process.platform}={}) {
+export async function executeRelease(options,{root=resolve(import.meta.dirname,'..'),platform=process.platform,env=process.env}={}) {
+  validateTargetOptions(options);
+  if(options.target==='clean') {
+    const cleanup=await cleanupReleaseArtifacts({root,dryRun:options.dryRun});
+    console.log(JSON.stringify(cleanup,null,2));
+    return {target:'clean',...cleanup,exitCode:0};
+  }
   const {version,name} = JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
   if (name !== 'noetic-atlas' || !/^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(version)) throw new Error('项目名或版本无效');
   const plan = createReleasePlan(options,{version,platform});
@@ -140,6 +149,17 @@ export async function executeRelease(options,{root=resolve(import.meta.dirname,'
     }
     return {version,dryRun:true,steps:plan};
   }
+  // Fail before tests or any packages are created when the requested APK cannot
+  // be a signed release. Never manufacture or replace a publisher's key.
+  let buildEnv={...env,NOETIC_RELEASE_BUILT:'1'};
+  if(selectedTargets(options.target).includes('android')) {
+    const {preflightAndroidRelease}=await import('./build/android-build.mjs');
+    const preflight=await preflightAndroidRelease(options,{root,platform,env:buildEnv});
+    buildEnv=preflight.env;
+    options={...options,javaRoot:preflight.javaRoot,sdkRoot:preflight.sdkRoot};
+    const android=plan.find(item=>item.target==='android');
+    android.args=createReleasePlan(options,{version,platform}).find(item=>item.target==='android').args;
+  }
   const output = resolve(root,'artifacts/releases');
   await mkdir(output,{recursive:true});
   const report = {product:'认知星图',project:name,version,generatedAt:new Date().toISOString(),requested:options.target,checksSkipped:options.skipChecks,targets:[],artifacts:[]};
@@ -150,14 +170,13 @@ export async function executeRelease(options,{root=resolve(import.meta.dirname,'
   };
   try {
     for (const step of plan.filter(item=>item.target==='checks')) {
-      runCommand(process.execPath,[findNpmCli(),...step.args],root);
+      runCommand(process.execPath,[findNpmCli({env:buildEnv}),...step.args],root,buildEnv);
     }
   } catch (error) {
     report.targets.push({target:'checks',status:'failed',message:error.message});
     await writeReport();
     throw error;
   }
-  const env = {...process.env,NOETIC_RELEASE_BUILT:'1'};
   for (const target of selectedTargets(options.target)) {
     const step = plan.find(item=>item.target===target);
     try {
@@ -176,24 +195,23 @@ export async function executeRelease(options,{root=resolve(import.meta.dirname,'
           if (!options.dockerCommandOnly && options.target==='docker') exitCode=2;
           continue;
         }
-        runCommand(step.command,step.args,root,env);
+        runCommand(step.command,step.args,root,buildEnv);
         report.targets.push({target,status:'built',image:`noetic-atlas:${version}`,command});
         continue;
       }
       let artifacts;
-      if (target === 'android') Object.assign(env, await resolveAndroidSigningEnvironment({root,env}));
       if (target === 'web' || target === 'source') {
         const packaged = await packageWebRelease({root,onlySource:target==='source'});
         artifacts=packaged.artifacts;
       } else {
-        runCommand(step.command,step.args,root,env);
-        const path = target==='windows'
-          ? join(output,`noetic-atlas-${version}-windows-x64.zip`)
-          : resolve(root,'artifacts',env.ANDROID_KEYSTORE?'noetic-atlas-release.apk':'noetic-atlas-release-unsigned.apk');
-        artifacts=[await artifactInfo(path,output)];
+        runCommand(step.command,step.args,root,buildEnv);
+        if(target==='android') {
+          const signed=await collectSignedAndroidArtifact({root,output,version});
+          artifacts=[signed.artifact];report.androidSigning=signed.signature;
+        } else artifacts=[await artifactInfo(join(output,`noetic-atlas-${version}-windows-x64.zip`),output)];
       }
       report.artifacts.push(...artifacts);
-      report.targets.push({target,status:'built',...(target==='android'?{signed:Boolean(env.ANDROID_KEYSTORE),installable:Boolean(env.ANDROID_KEYSTORE)}:{}),artifacts:artifacts.map(item=>item.file)});
+      report.targets.push({target,status:'built',...(target==='android'?{signed:true,installable:true}:{}),artifacts:artifacts.map(item=>item.file)});
     } catch (error) {
       exitCode=1;
       report.targets.push({target,status:'failed',message:error.message});
@@ -202,6 +220,18 @@ export async function executeRelease(options,{root=resolve(import.meta.dirname,'
     await writeReport();
   }
   await writeReport();
+  if(exitCode===0&&report.artifacts.length&&!report.checksSkipped) {
+    try {
+      const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z$/,'Z');
+      const uploaded=await prepareGithubRelease({root,output:join(root,'artifacts/github',`v${version}-${stamp}-${process.pid}`)});
+      report.uploadDirectory=relative(root,uploaded.output).replaceAll('\\','/');
+      await writeReport();
+      console.log(`可直接上传的附件与发布说明：${report.uploadDirectory}`);
+    } catch(error) {
+      exitCode=1;report.targets.push({target:'prepare',status:'failed',message:error.message});await writeReport();
+      console.error(`发布附件整理失败：${error.message}`);
+    }
+  }
   console.log(`\n发布结果：${report.targets.map(item=>`${item.target}=${item.status}`).join('，')}`);
   console.log(`产物与 SHA256：${relative(root,output).replaceAll('\\','/')}\n报告：artifacts/releases/release-report.json`);
   return {...report,exitCode};
@@ -211,6 +241,15 @@ export async function main(args=process.argv.slice(2)) {
   const options = parseReleaseArgs(args);
   if (options.help) { console.log(HELP); return 0; }
   const selected = await selectReleaseTarget(options);
+  // Select first: interactive clean/help/plans must also work without a build
+  // dependency installation. All three shell wrappers use this single decision.
+  if(!selected.dryRun&&createReleasePlan(selected).some(step=>step.target==='checks')) {
+    const root=resolve(import.meta.dirname,'..');
+    const dependencies=['@electron/packager','tsx','typescript'];
+    if(dependencies.some(name=>!existsSync(join(root,'node_modules',name,'package.json')))) {
+      runCommand(process.execPath,[findNpmCli(),'ci','--include=dev'],root,{...process.env,ELECTRON_SKIP_BINARY_DOWNLOAD:'1'});
+    }
+  }
   const report = await executeRelease(selected);
   return report.exitCode || 0;
 }

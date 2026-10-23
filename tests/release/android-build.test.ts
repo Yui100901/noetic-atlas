@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolve, join } from 'node:path';
+import { resolve, join, relative, isAbsolute } from 'node:path';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 // @ts-expect-error Build scripts intentionally have no declaration files.
-import { parseAndroidArgs, createAndroidBuildPlan, androidArtifactNames, escapeJavaProperty, buildAndroid } from '../../scripts/build/android-build.mjs';
+import { parseAndroidArgs, createAndroidBuildPlan, androidArtifactNames, escapeJavaProperty, buildAndroid, preflightAndroidRelease } from '../../scripts/build/android-build.mjs';
 
 test('Android Node entry validates modes and preserves paths containing spaces',()=>{
   assert.deepEqual(parseAndroidArgs(['--mode','release','--java-root','/opt/JDK 21','--sdk-root','/opt/Android SDK']),{mode:'Release',javaRoot:'/opt/JDK 21',sdkRoot:'/opt/Android SDK',help:false});
@@ -49,4 +51,17 @@ test('Java properties escape SDK whitespace, separators and Unicode for portable
 test('Linux Android fails early with a clear JDK requirement before build commands',async()=>{
   await assert.rejects(buildAndroid(parseAndroidArgs([]),{platform:'linux',env:{}}),/需要 Java 21/);
   await assert.rejects(buildAndroid(parseAndroidArgs(['--java-root','/missing/noetic-jdk-21']),{platform:'linux',env:{}}),/需要 Java 21/);
+});
+
+test('unified Android release requires an existing identity before examining the toolchain',async t=>{
+  const temporaryRoot=resolve(tmpdir());
+  const root=await mkdtemp(join(temporaryRoot,'atlas-android-preflight-'));
+  t.after(async()=>{
+    const insideTemporaryRoot=relative(temporaryRoot,resolve(root));
+    assert.ok(insideTemporaryRoot.startsWith('atlas-android-preflight-')&&!insideTemporaryRoot.startsWith('..')&&!isAbsolute(insideTemporaryRoot));
+    await rm(root,{recursive:true,force:true});
+  });
+  await assert.rejects(preflightAndroidRelease({javaRoot:'/never-run-java'},{root,env:{}}),/正式 Android 发布必须配置签名/);
+  assert.deepEqual(await readdir(root),[],'preflight must not initialize a replacement key or create build output');
+  await assert.rejects(preflightAndroidRelease({},{root,env:{ANDROID_KEY_ALIAS:'partial-existing-key'}}),/完整设置四项/);
 });

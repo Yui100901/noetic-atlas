@@ -31,6 +31,7 @@
     "content:review": "tsx scripts/content/review.ts",
     "release": "node scripts/release.mjs",
     "release:prepare": "node scripts/release/prepare-github.mjs",
+    "release:clean": "node scripts/release/cleanup.mjs",
     "android:release": "node scripts/build/android-build.mjs --mode Release",
     "android:signing:init": "node scripts/build/android-signing.mjs init",
     "android:signing:verify": "node scripts/build/android-signing.mjs verify",

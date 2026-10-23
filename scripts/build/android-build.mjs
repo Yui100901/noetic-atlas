@@ -1,13 +1,13 @@
 /** Cross-platform Android entry point; importing this module never starts a build. */
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile, copyFile } from 'node:fs/promises';
-import { resolve, join, delimiter } from 'node:path';
-import { homedir } from 'node:os';
+import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { findNpmCli, formatCommand } from '../release.mjs';
+import { findNpmCli, formatCommand } from './build-command.mjs';
 import { resolveAndroidSigningEnvironment, readSigningCertificate, verifySignedApk } from './android-signing.mjs';
+import { resolveAndroidToolchain } from './android-toolchain.mjs';
 
 export function parseAndroidArgs(args) {
   const options={mode:'Debug',javaRoot:null,sdkRoot:null,help:false};
@@ -61,32 +61,30 @@ function run(step,env) {
   if(result.status!==0) throw new Error(`Android 构建步骤退出码 ${result.status??'unknown'}：${step.command}`);
 }
 
+/** Fail before expensive release work; never initialize or replace a signing identity. */
+export async function preflightAndroidRelease(options={}, {root=resolve(import.meta.dirname,'../..'),platform=process.platform,env=process.env}={}) {
+  const signingEnv=await resolveAndroidSigningEnvironment({root,env});
+  if(!signingEnv.ANDROID_KEYSTORE) throw new Error('正式 Android 发布必须配置签名：请恢复原有 .localtools/signing/release，或完整设置四项 ANDROID 签名环境变量；首次发布才运行 npm run android:signing:init');
+  const toolchain=resolveAndroidToolchain(options,{root,env:signingEnv,platform});
+  const certificate=readSigningCertificate({env:toolchain.env,javaRoot:toolchain.javaRoot});
+  return {...toolchain,certificate};
+}
+
 export async function buildAndroid(options,{root=resolve(import.meta.dirname,'../..'),platform=process.platform,env=process.env}={}) {
-  options={...options,...(options.javaRoot?{javaRoot:resolve(root,options.javaRoot)}:{}),...(options.sdkRoot?{sdkRoot:resolve(root,options.sdkRoot)}:{})};
   if(options.mode==='Release') {
     env=await resolveAndroidSigningEnvironment({root,env});
-    if(env.ANDROID_KEYSTORE) readSigningCertificate({env,javaRoot:options.javaRoot});
   }
+  const toolchain=resolveAndroidToolchain(options,{root,env,platform});
+  const {javaRoot,sdkRoot}=toolchain;
+  env=toolchain.env;
+  options={...options,javaRoot,sdkRoot};
+  if(options.mode==='Release'&&env.ANDROID_KEYSTORE) readSigningCertificate({env,javaRoot});
   if(platform==='win32') {
     for(const step of createAndroidBuildPlan(options,{root,platform,env})) run(step,env);
     if(options.mode==='Release'&&env.ANDROID_KEYSTORE) console.log(JSON.stringify(await verifySignedApk({root,env,javaRoot:options.javaRoot,sdkRoot:options.sdkRoot}),null,2));
     return;
   }
-  const javaRoot=options.javaRoot||env.JAVA_HOME;
-  if(!javaRoot||!existsSync(join(javaRoot,'bin/java'))) throw new Error('需要 Java 21，请设置 JAVA_HOME 或通过 --java-root 指定 JDK 路径');
-  const javaVersion=spawnSync(join(javaRoot,'bin/java'),['--version'],{encoding:'utf8',env,shell:false});
-  const versionText=`${javaVersion.stdout||''}\n${javaVersion.stderr||''}`;
-  if(javaVersion.error||javaVersion.status!==0||!/(?:openjdk|java)\s+(?:version\s+\")?21(?:[.\s\"]|$)/i.test(versionText)) throw new Error('Android 构建需要可运行的 JDK 21；请检查 --java-root / JAVA_HOME');
-  const sdkCandidates=[options.sdkRoot,env.ANDROID_HOME,env.ANDROID_SDK_ROOT,join(root,'.localtools/android-sdk'),join(homedir(),'Android/Sdk'),join(homedir(),'Library/Android/sdk')].filter(Boolean);
-  // An explicit SDK path must not silently fall back to a different installation.
-  const sdkRoot=options.sdkRoot?sdkCandidates[0]:sdkCandidates.find(path=>existsSync(join(path,'platforms/android-36/android.jar')));
-  if(!sdkRoot||!existsSync(join(sdkRoot,'platforms/android-36/android.jar'))||!existsSync(join(sdkRoot,'build-tools/36.0.0/aapt2'))) throw new Error('需要 Android SDK API 36 和 build-tools 36.0.0，请通过 --sdk-root 或 ANDROID_HOME 指定');
-  const buildEnv={...env,JAVA_HOME:resolve(javaRoot),ANDROID_HOME:resolve(sdkRoot),ANDROID_SDK_ROOT:resolve(sdkRoot),GRADLE_USER_HOME:join(root,'.localtools/gradle-home'),PATH:`${join(resolve(javaRoot),'bin')}${delimiter}${env.PATH||''}`};
-  if(options.mode==='Release'&&env.ANDROID_KEYSTORE) {
-    for(const name of ['ANDROID_STORE_PASSWORD','ANDROID_KEY_ALIAS','ANDROID_KEY_PASSWORD']) if(!env[name]) throw new Error(`正式签名配置不完整：${name}`);
-    if(!existsSync(resolve(root,env.ANDROID_KEYSTORE))) throw new Error('ANDROID_KEYSTORE 指向的签名文件不存在');
-    buildEnv.ANDROID_KEYSTORE=resolve(root,env.ANDROID_KEYSTORE);
-  }
+  const buildEnv=env;
   await mkdir(join(root,'.localtools/signing'),{recursive:true});
   await writeFile(join(root,'android/local.properties'),`sdk.dir=${escapeJavaProperty(resolve(sdkRoot))}\n`);
   const steps=createAndroidBuildPlan({...options,javaRoot:resolve(javaRoot),sdkRoot:resolve(sdkRoot)},{root,platform,env:buildEnv,npmCli:findNpmCli({env}),hasDebugKey:existsSync(join(root,'.localtools/signing/debug.keystore')),hasLocalGradle:existsSync(join(root,'.localtools/gradle-8.14.3/bin/gradle'))});

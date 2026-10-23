@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
 import { validateEmptyInstall, validateBaseConfiguration } from './validate-public-data.mjs';
+import { validateAndroidSignatureProof } from './android-artifact.mjs';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 function verifyEmptySoftwareZip(bytes) {
@@ -59,6 +60,7 @@ export async function prepareGithubRelease({ root = resolve(import.meta.dirname,
   const accepted = new Map([
     ...['source', 'runtime', 'windows-x64'].map(kind => [`noetic-atlas-${version}-${kind}.zip`, `noetic-atlas-${version}-${kind}.zip`]),
     ['noetic-atlas-release.apk', `noetic-atlas-${version}-android.apk`],
+    [`noetic-atlas-${version}-android.apk`, `noetic-atlas-${version}-android.apk`],
   ]);
   const files = [], excluded = [], names = new Set();
   let androidSigning;
@@ -74,15 +76,14 @@ export async function prepareGithubRelease({ root = resolve(import.meta.dirname,
     if (!report.targets.some(target => target.status === 'built' && target.artifacts?.includes(artifact.file))) throw new Error('交付物没有本次成功构建记录：' + name);
     const bytes = await readFile(path);
     if (bytes.length !== artifact.bytes || sha256(bytes) !== artifact.sha256) throw new Error('交付物摘要不匹配，请重新打包：' + name);
-    if (name === 'noetic-atlas-release.apk') {
+    if (name.endsWith('.apk')) {
       let proof;
-      try { proof = JSON.parse(await readFile(join(artifactsRoot, 'android-signing-report.json'), 'utf8')); }
+      if(artifact.signingReport!==undefined&&artifact.signingReport!=='android-signing-report.json') throw new Error('正式 APK 的签名报告路径无效');
+      try { proof = JSON.parse(await readFile(join(artifact.signingReport?releaseRoot:artifactsRoot, 'android-signing-report.json'), 'utf8')); }
       catch { throw new Error('正式 APK 缺少签名验证报告，请先执行 npm run android:signing:verify'); }
-      if (!report.targets.some(target => target.target === 'android' && target.signed === true && target.installable === true && target.artifacts?.includes(artifact.file))
-        || !proof || proof.signed !== true || proof.signatureVerified !== true || proof.alignmentVerified !== true || proof.schemes?.v2 !== true
-        || proof.apk !== name || proof.sha256 !== artifact.sha256 || proof.bytes !== bytes.length
-        || !/^[a-f0-9]{64}$/.test(proof.certificateSha256 || '') || proof.certificate?.sha256 !== proof.certificateSha256) throw new Error('正式 APK 的签名验证记录不匹配，请重新构建并验证');
-      androidSigning = { file: targetName, sha256: artifact.sha256, certificateSha256: proof.certificateSha256, schemes: Object.fromEntries(['v1', 'v2', 'v3', 'v31', 'v4'].map(key => [key, proof.schemes[key] === true])) };
+      if (!report.targets.some(target => target.target === 'android' && target.signed === true && target.installable === true && target.artifacts?.includes(artifact.file))) throw new Error('正式 APK 的签名验证记录不匹配，请重新构建并验证');
+      const signature=validateAndroidSignatureProof(proof,artifact,name);
+      androidSigning = { file: targetName, sha256: artifact.sha256, ...signature };
     }
     if (name.endsWith('.zip')) verifyEmptySoftwareZip(bytes);
     names.add(targetName); files.push({ path, file: targetName, bytes: bytes.length, sha256: artifact.sha256 });

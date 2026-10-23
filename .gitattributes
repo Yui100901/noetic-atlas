@@ -1,0 +1,16 @@
+* text=auto
+*.sh text eol=lf
+android/gradlew text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.jar binary
+*.png binary
+*.ttf binary
+*.wasm binary

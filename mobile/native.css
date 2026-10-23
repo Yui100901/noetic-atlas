@@ -1,0 +1,18 @@
+html.native-app {
+  overscroll-behavior: none;
+  --native-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --native-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --native-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --native-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+.native-app body { padding: var(--native-safe-top) var(--native-safe-right) var(--native-safe-bottom) var(--native-safe-left); -webkit-tap-highlight-color: transparent; }
+.native-app input, .native-app textarea, .native-app select { font-size: max(16px, 1em); }
+.native-app .sidebar { padding-top: calc(31px + var(--native-safe-top)); padding-bottom: calc(17px + var(--native-safe-bottom)); }
+.native-app .toast { bottom: calc(27px + var(--native-safe-bottom)); }
+.native-app .modal-backdrop { padding-top: max(25px, var(--native-safe-top)); padding-bottom: max(25px, var(--native-safe-bottom)); }
+@media (max-width: 700px) {
+  .native-app button, .native-app .button, .native-app .check-pill { min-height: 44px; }
+  .native-app .check-pill { padding: 8px; font-size: 12px; }
+  .native-app .check-pill input { width: 18px; height: 18px; }
+  .native-app input:not([type=checkbox]):not([type=radio]), .native-app select { min-height: 44px; }
+}

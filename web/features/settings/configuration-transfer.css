@@ -1,0 +1,6 @@
+.configuration-transfer { margin-bottom: 1.25rem; }
+.configuration-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+.configuration-heading h2 { margin-top: 0; }
+.configuration-values { width: 100%; }
+.configuration-values td { max-width: 22rem; overflow-wrap: anywhere; white-space: normal; vertical-align: top; }
+.configuration-preview > h3 { overflow-wrap: anywhere; }

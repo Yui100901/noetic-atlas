@@ -1,0 +1,77 @@
+# Installed dependencies and generated application assets
+node_modules/
+/dist/
+/mobile/assets/
+/public/pdfjs/
+# Content and private state are released separately; never track local data.
+/data/
+/config/*
+!/config/defaults.json
+
+# Local databases, backups and private application configuration
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
+!.env.*.example
+.npmrc
+
+# Signing material and machine-specific Android configuration
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.key
+*.pem
+android/local.properties
+android/key.properties
+google-services.json
+
+# Build outputs, toolchains, reports and caches
+/artifacts/
+/.localtools/
+/.sites-runtime/
+/test-results/
+/coverage/
+/output/
+.cache/
+.vite/
+*.tsbuildinfo
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Android generated artifacts (native sources and Gradle wrapper stay tracked)
+android/.gradle/
+android/**/build/
+android/.kotlin/
+android/.cxx/
+android/.externalNativeBuild/
+*.apk
+*.aab
+*.aar
+*.ap_
+*.dex
+*.class
+
+# Editor and operating system temporary files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

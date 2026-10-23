@@ -1,0 +1,10 @@
+services:
+  noetic-atlas:
+    build: .
+    ports:
+      - "127.0.0.1:4317:4317"
+    volumes:
+      - noetic-atlas-data:/app/storage
+    restart: unless-stopped
+volumes:
+  noetic-atlas-data:

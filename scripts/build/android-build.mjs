@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { findNpmCli, formatCommand } from '../release.mjs';
+import { resolveAndroidSigningEnvironment, readSigningCertificate, verifySignedApk } from './android-signing.mjs';
 
 export function parseAndroidArgs(args) {
   const options={mode:'Debug',javaRoot:null,sdkRoot:null,help:false};
@@ -61,8 +62,14 @@ function run(step,env) {
 }
 
 export async function buildAndroid(options,{root=resolve(import.meta.dirname,'../..'),platform=process.platform,env=process.env}={}) {
+  options={...options,...(options.javaRoot?{javaRoot:resolve(root,options.javaRoot)}:{}),...(options.sdkRoot?{sdkRoot:resolve(root,options.sdkRoot)}:{})};
+  if(options.mode==='Release') {
+    env=await resolveAndroidSigningEnvironment({root,env});
+    if(env.ANDROID_KEYSTORE) readSigningCertificate({env,javaRoot:options.javaRoot});
+  }
   if(platform==='win32') {
     for(const step of createAndroidBuildPlan(options,{root,platform,env})) run(step,env);
+    if(options.mode==='Release'&&env.ANDROID_KEYSTORE) console.log(JSON.stringify(await verifySignedApk({root,env,javaRoot:options.javaRoot,sdkRoot:options.sdkRoot}),null,2));
     return;
   }
   const javaRoot=options.javaRoot||env.JAVA_HOME;
@@ -92,6 +99,7 @@ export async function buildAndroid(options,{root=resolve(import.meta.dirname,'..
   }
   const artifact=join(root,'artifacts',names.artifact);
   console.log(JSON.stringify({path:artifact,sha256:createHash('sha256').update(await readFile(artifact)).digest('hex')},null,2));
+  if(options.mode==='Release'&&env.ANDROID_KEYSTORE) console.log(JSON.stringify(await verifySignedApk({root,env,javaRoot:options.javaRoot,sdkRoot:options.sdkRoot}),null,2));
 }
 
 export async function main(args=process.argv.slice(2)) {

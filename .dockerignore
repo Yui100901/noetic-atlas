@@ -26,6 +26,7 @@ artifacts
 **/*.pem
 **/local.properties
 **/key.properties
+**/signing.json
 **/google-services.json
 .git
 .github

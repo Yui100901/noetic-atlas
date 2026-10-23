@@ -21,6 +21,7 @@ function verifyEmptySoftwareZip(bytes) {
     const relative = name.split('/').slice(1).join('/');
     if (!relative || relative.startsWith('/') || relative.includes('\\') || relative.split('/').includes('..') || entries.has(relative)) throw new Error('软件ZIP路径无效');
     if (/^(?:data|resources\/server\/data)\//.test(relative) || /(?:^|\/)native-seed\.json$|\.(?:sqlite(?:-[\w]+)?|sqlite3(?:-[\w]+)?|db)$/i.test(relative)) throw new Error('软件ZIP含题库或工作数据：' + relative);
+    if (/(?:^|\/)(?:\.localtools|signing\.json|key\.properties)(?:\/|$)|\.(?:keystore|jks|p12|pfx)$/i.test(relative)) throw new Error('软件ZIP含私有签名文件：' + relative);
     entries.add(relative);
     const start = offset + 30 + nameSize + extraSize;
     if (relative === 'release-manifest.json' || relative === 'config/defaults.json') {
@@ -60,6 +61,7 @@ export async function prepareGithubRelease({ root = resolve(import.meta.dirname,
     ['noetic-atlas-release.apk', `noetic-atlas-${version}-android.apk`],
   ]);
   const files = [], excluded = [], names = new Set();
+  let androidSigning;
   for (const artifact of report.artifacts || []) {
     const name = basename(artifact.file), targetName = accepted.get(name);
     if (!targetName) {
@@ -72,6 +74,16 @@ export async function prepareGithubRelease({ root = resolve(import.meta.dirname,
     if (!report.targets.some(target => target.status === 'built' && target.artifacts?.includes(artifact.file))) throw new Error('交付物没有本次成功构建记录：' + name);
     const bytes = await readFile(path);
     if (bytes.length !== artifact.bytes || sha256(bytes) !== artifact.sha256) throw new Error('交付物摘要不匹配，请重新打包：' + name);
+    if (name === 'noetic-atlas-release.apk') {
+      let proof;
+      try { proof = JSON.parse(await readFile(join(artifactsRoot, 'android-signing-report.json'), 'utf8')); }
+      catch { throw new Error('正式 APK 缺少签名验证报告，请先执行 npm run android:signing:verify'); }
+      if (!report.targets.some(target => target.target === 'android' && target.signed === true && target.installable === true && target.artifacts?.includes(artifact.file))
+        || !proof || proof.signed !== true || proof.signatureVerified !== true || proof.alignmentVerified !== true || proof.schemes?.v2 !== true
+        || proof.apk !== name || proof.sha256 !== artifact.sha256 || proof.bytes !== bytes.length
+        || !/^[a-f0-9]{64}$/.test(proof.certificateSha256 || '') || proof.certificate?.sha256 !== proof.certificateSha256) throw new Error('正式 APK 的签名验证记录不匹配，请重新构建并验证');
+      androidSigning = { file: targetName, sha256: artifact.sha256, certificateSha256: proof.certificateSha256, schemes: Object.fromEntries(['v1', 'v2', 'v3', 'v31', 'v4'].map(key => [key, proof.schemes[key] === true])) };
+    }
     if (name.endsWith('.zip')) verifyEmptySoftwareZip(bytes);
     names.add(targetName); files.push({ path, file: targetName, bytes: bytes.length, sha256: artifact.sha256 });
   }
@@ -87,6 +99,7 @@ export async function prepareGithubRelease({ root = resolve(import.meta.dirname,
     baseConfiguration: 'config/defaults.json',
     expandedContentIncluded: false, userConfigurationIncluded: false, initialData,
     files: files.map(({ path: _path, ...entry }) => entry), excluded,
+    ...(androidSigning ? { androidSigning } : {}),
   };
   const notes = `# 认知星图 ${version}\n\n本地优先的通用学习平台，支持知识题库、组卷练习、考试、学习记录和 AI 辅助。\n\n## 下载\n\n${files.map(file => `- \`${file.file}\``).join('\n')}\n\n软件首次启动为空题库，不内置领域、分类、标签或任何题目。包内仅附干净基础配置 config/defaults.json；AI 默认关闭，没有预设端点或凭据。题库按领域作为独立附件选择下载，解压后从“分享与导入”导入 part-*.json，再确认审核。软件附件不含工作数据库、学习记录或个人配置。\n\n## 配置与升级\n\n系统配置 → 数据与备份 → 配置迁移，可单独导出/导入常规配置及 AI 非敏感参数；密钥不会进入配置 JSON，换设备后重新填写。完整学习数据使用 JSON/SQLite 备份迁移。升级前备份，Windows 保留原 data/，Web 保留数据库，Android 使用相同签名覆盖安装。\n\n${excluded.length ? `本次未附 Android 调试包或未签名包：${excluded.map(name => `\`${name}\``).join('、')}。Android 正式安装包需完成签名。\n\n` : ''}使用和部署见仓库 README 与 docs/发布与部署.md；各附件 SHA256 见 SHA256SUMS.txt。\n`;
   await writeFile(join(destination, 'release-files.json'), JSON.stringify(release, null, 2) + '\n');

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { packageWebRelease } from './release/release-web.mjs';
+import { resolveAndroidSigningEnvironment } from './build/android-signing.mjs';
 
 export const RELEASE_TARGETS = ['all','windows','web','android','docker','source'];
 export const HELP = `认知星图一键发布
@@ -18,7 +19,7 @@ export const HELP = `认知星图一键发布
   all       Web 源码/运行包 + Windows 便携版 + Android 正式构建 + Docker 镜像
   windows   Windows x64 便携版 ZIP，解压后双击启动
   web       Web 源码和运行包 ZIP
-  android   Android Release APK（配置签名环境变量后生成签名 APK）
+  android   Android Release APK（读取本地正式签名或完整签名环境变量）
   docker    执行 docker build -t noetic-atlas:<版本> .
   source    仅源码 ZIP
 
@@ -180,6 +181,7 @@ export async function executeRelease(options,{root=resolve(import.meta.dirname,'
         continue;
       }
       let artifacts;
+      if (target === 'android') Object.assign(env, await resolveAndroidSigningEnvironment({root,env}));
       if (target === 'web' || target === 'source') {
         const packaged = await packageWebRelease({root,onlySource:target==='source'});
         artifacts=packaged.artifacts;
@@ -187,11 +189,11 @@ export async function executeRelease(options,{root=resolve(import.meta.dirname,'
         runCommand(step.command,step.args,root,env);
         const path = target==='windows'
           ? join(output,`noetic-atlas-${version}-windows-x64.zip`)
-          : resolve(root,'artifacts',process.env.ANDROID_KEYSTORE?'noetic-atlas-release.apk':'noetic-atlas-release-unsigned.apk');
+          : resolve(root,'artifacts',env.ANDROID_KEYSTORE?'noetic-atlas-release.apk':'noetic-atlas-release-unsigned.apk');
         artifacts=[await artifactInfo(path,output)];
       }
       report.artifacts.push(...artifacts);
-      report.targets.push({target,status:'built',artifacts:artifacts.map(item=>item.file)});
+      report.targets.push({target,status:'built',...(target==='android'?{signed:Boolean(env.ANDROID_KEYSTORE),installable:Boolean(env.ANDROID_KEYSTORE)}:{}),artifacts:artifacts.map(item=>item.file)});
     } catch (error) {
       exitCode=1;
       report.targets.push({target,status:'failed',message:error.message});

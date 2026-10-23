@@ -30,6 +30,7 @@ node_modules/
 *.pem
 android/local.properties
 android/key.properties
+signing.json
 google-services.json
 
 # Build outputs, toolchains, reports and caches

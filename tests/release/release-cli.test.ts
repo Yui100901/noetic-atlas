@@ -135,6 +135,7 @@ test('source allowlist collector excludes generated release staging, DBs and loc
     await writeFile(join(directory,'desktop','release-staging','private.txt'),'ignored');
     await writeFile(join(directory,'desktop','local.properties'),'ignored');
     await writeFile(join(directory,'desktop','private.sqlite'),'ignored');
+    await writeFile(join(directory,'desktop','signing.json'),'{"storePassword":"synthetic-private-password"}');
     assert.deepEqual((await collectReleaseFiles(directory,['desktop'])).map((f:any)=>f.name),['desktop/main.mjs']);
   } finally {await rm(directory,{recursive:true,force:true});}
 });

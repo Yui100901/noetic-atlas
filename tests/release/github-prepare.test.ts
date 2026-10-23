@@ -72,3 +72,41 @@ test('staging rejects a validly hashed legacy software ZIP that still embeds que
   report.artifacts[0].bytes=bytes.length;report.artifacts[0].sha256=createHash('sha256').update(bytes).digest('hex');await save();
   await assert.rejects(()=>prepareGithubRelease({root}),/题库或工作数据/);
 });
+
+test('staging requires a signature verification bound to the exact release APK and publishes only public certificate metadata',async t=>{
+  const {root,report,save}=await fixture(t);
+  const bytes=Buffer.from('isolated APK fixture; signature tools are exercised by the real Android build');
+  const artifact={file:'../noetic-atlas-release.apk',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+  await writeFile(join(root,'artifacts/noetic-atlas-release.apk'),bytes);
+  report.artifacts.push(artifact);
+  report.targets.push({target:'android',status:'built',artifacts:[artifact.file],signed:true,installable:true} as typeof report.targets[number]);
+  await save();
+  await assert.rejects(()=>prepareGithubRelease({root}),/缺少签名验证报告/);
+  const proof={apk:'noetic-atlas-release.apk',...artifact,signed:true,signatureVerified:true,alignmentVerified:true,schemes:{v2:true,v3:true},certificateSha256:'a'.repeat(64),certificate:{sha256:'a'.repeat(64)},privateField:'never copy this'};
+  const saveProof=()=>writeFile(join(root,'artifacts/android-signing-report.json'),JSON.stringify(proof));
+  proof.sha256='b'.repeat(64);await saveProof();
+  await assert.rejects(()=>prepareGithubRelease({root}),/签名验证记录不匹配/);
+  proof.sha256=artifact.sha256;proof.schemes.v2=false;await saveProof();
+  await assert.rejects(()=>prepareGithubRelease({root}),/签名验证记录不匹配/);
+  proof.schemes.v2=true;await saveProof();
+  const result=await prepareGithubRelease({root});
+  assert.equal(result.androidSigning.certificateSha256,'a'.repeat(64));
+  assert.equal(result.androidSigning.file,'noetic-atlas-1.0.0-android.apk');
+  const output=await readFile(join(result.output,'release-files.json'),'utf8');
+  assert.doesNotMatch(output,/privateField|never copy this/);
+  assert.ok((await readdir(result.output)).includes('noetic-atlas-1.0.0-android.apk'));
+});
+
+test('staging rejects relocated signing credentials even in a validly hashed empty-install ZIP',async t=>{
+  const {root,report,save}=await fixture(t);
+  for(const name of ['android/signing.json','android/release.p12','.localtools/signing/release/BACKUP.txt']) {
+    const bytes=createZip([
+      {name:'config/defaults.json',data:await readFile('config/defaults.json')},
+      {name:'release-manifest.json',data:Buffer.from(JSON.stringify({counts:{questions:0,domains:0,categories:0,tags:0},dataBoundary:SOFTWARE_DATA_BOUNDARY}))},
+      {name,data:Buffer.from('synthetic credential fixture')},
+    ],'noetic-atlas-1.0.0');
+    await writeFile(join(root,'artifacts/releases',report.artifacts[0].file),bytes);
+    report.artifacts[0].bytes=bytes.length;report.artifacts[0].sha256=createHash('sha256').update(bytes).digest('hex');await save();
+    await assert.rejects(()=>prepareGithubRelease({root}),/私有签名文件/);
+  }
+});

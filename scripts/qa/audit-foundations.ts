@@ -47,7 +47,8 @@ export async function auditFoundations(names:readonly string[]=FOUNDATION_PACK_N
       if(seenIds.has(id))errors.push({pack:name,id,check:'duplicateId',detail:`与${seenIds.get(id)}使用同一题号`});
       seenIds.set(id,name);
       const stem=question.stemMarkdown.trim(),uses=newStems.get(stem)||[];uses.push({pack:name,id});newStems.set(stem,uses);
-      if(question.status!=='pending'||question.collection!=='general'||question.frequency!==0)errors.push({pack:name,id,check:'genericPending',detail:'新增题须通用、待审核，并且不宣称未经统计的出题频率'});
+      if(question.status!=='pending'||question.collection!=='general')errors.push({pack:name,id,check:'genericPending',detail:'新增题须通用、待审核'});
+      if(question.frequency>0&&(!question.frequencyScope?.trim()||!question.frequencyBasis?.trim()))errors.push({pack:name,id,check:'frequencyBasis',detail:'常见度分级须注明适用范围与编辑依据，不可冒充统计考试概率'});
       if(!question.sourceRefs.length||!question.answerMarkdown.trim()||!question.explanationMarkdown.trim())errors.push({pack:name,id,check:'requiredContent',detail:'缺少答案、解释或来源'});
       if(question.type==='single_choice'||question.type==='multiple_choice'){
         for(const key of question.correctAnswers)if(!question.options.some(option=>option.key===key))errors.push({pack:name,id,check:'answerReference',detail:`答案${key}无对应选项`});
@@ -65,7 +66,7 @@ export async function auditFoundations(names:readonly string[]=FOUNDATION_PACK_N
       }
       if(/(?:忽略|无视).{0,8}(?:系统|之前).{0,8}(?:要求|指令)/.test(question.stemMarkdown))hazardHints.push({pack:name,id,check:'embeddedInstruction',detail:/不可信|权限|隔离|校验/.test(question.explanationMarkdown)?'已人工复核为提示注入的反例教学题；解析要求将资料视为不可信数据。':'题干含指令形文本，需人工区分教学例子与真实控制指令。'});
     }
-    summaries.push({pack:name,questions:pack.questions.length,typeCounts:tally(pack.questions.map(q=>q.type)),difficulty:tally(pack.questions.map(q=>String(q.difficulty))),depth:tally(pack.questions.map(q=>String(q.depth))),singleChoiceCorrectPositions:distribution,sha256:sha(text),schema:'passed',sourceManifest:'checked'});
+    summaries.push({pack:name,questions:pack.questions.length,typeCounts:tally(pack.questions.map(q=>q.type)),difficulty:tally(pack.questions.map(q=>String(q.difficulty))),depth:tally(pack.questions.map(q=>String(q.depth))),frequency:tally(pack.questions.map(q=>String(q.frequency))),singleChoiceCorrectPositions:distribution,sha256:sha(text),schema:'passed',sourceManifest:'checked'});
   }
   try{validatePackSet(packs);}catch(error){errors.push({check:'packSetTaxonomy',detail:String(error)});}
   const internalDuplicateStems=[...newStems].filter(([,uses])=>uses.length>1).map(([stem,uses])=>({stem,uses}));

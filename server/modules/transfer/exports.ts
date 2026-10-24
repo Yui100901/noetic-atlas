@@ -9,6 +9,7 @@ import { normalizeScoring } from '../practice/scoring.js';
 import { Store, now } from '../../core/store.js';
 import { fail, id, parse } from '../../core/validation.js';
 import { extractContentNotices } from '../../../shared/questions/content-notices.js';
+import { vocabularyPronunciationMarkdown } from '../../../shared/questions/vocabulary.js';
 
 const labelValue = (value: string) => value === 'true' ? '正确' : value === 'false' ? '错误' : value;
 const answerText = (value: string | string[] | undefined, type: Question['type']) => {
@@ -24,7 +25,7 @@ function questionDocument(question: StoredLeafQuestion, number: number, document
   Object.assign(q, { sourceQuestionId: question.sourceQuestionId || question.id, groupId: question.groupId, groupTitle: question.groupTitle, groupStemMarkdown: question.groupStemMarkdown, partId: question.partId, partIndex: question.partIndex, blanks: question.blanks?.map(({ answers: _answers, ...blank }) => blank) });
   if (document.mode === 'blank') return q;
   q.blanks = question.blanks;
-  Object.assign(q, { answerMarkdown: question.answerMarkdown, explanationMarkdown: question.explanationMarkdown, correctAnswers: question.correctAnswers, sourceRefs: question.sourceRefs });
+  Object.assign(q, { answerMarkdown: [vocabularyPronunciationMarkdown(question.vocabulary), question.answerMarkdown].filter(Boolean).join('\n\n'), explanationMarkdown: question.explanationMarkdown, correctAnswers: question.correctAnswers, sourceRefs: question.sourceRefs });
   if (document.mode === 'completed' && attempt) {
     const answer = attempt.answers[question.id]; q.userAnswer = answer?.value ?? '';
     q.correct = isSubjectiveType(question.type) ? null : isCorrect(question, answer);
@@ -45,7 +46,7 @@ export function paperExportDocument(paper: StoredPaper, mode: 'blank' | 'answers
 export function attemptExportDocument(attempt: StoredAttempt, mode: ExportMode = 'completed'): ExportDocument {
   if (attempt.status !== 'submitted') fail(409, 'NOT_SUBMITTED', '请先交卷，再导出完成卷或本次练习的答案');
   const view = attemptView(attempt);
-  const document: ExportDocument = { version: 1, mode, title: attempt.paperTitle, description: '基于本次练习的历史题目、分值和作答快照导出。', filename: exportFilename(attempt.paperTitle, mode), paperId: attempt.paperId, paperVersion: attempt.paperVersion, attemptId: attempt.id, generatedAt: now(), snapshotCreatedAt: attempt.startedAt, submittedAt: attempt.submittedAt, scoring: view.scoring!, questions: [], markdown: '' };
+  const document: ExportDocument = { version: 1, mode, title: attempt.paperTitle, description: [attempt.vocabularyDirection === 'meaning_to_word' ? '词汇逆向练习：看释义想单词。' : attempt.vocabularyDirection === 'word_to_meaning' ? '词汇顺向练习：看单词想释义。' : '', '基于本次练习的历史题目、分值和作答快照导出。'].filter(Boolean).join(' '), filename: exportFilename(attempt.paperTitle, mode), paperId: attempt.paperId, paperVersion: attempt.paperVersion, attemptId: attempt.id, generatedAt: now(), snapshotCreatedAt: attempt.startedAt, submittedAt: attempt.submittedAt, scoring: view.scoring!, questions: [], markdown: '' };
   if (mode === 'completed') document.summary = { objectiveScore: view.objectiveScore, objectiveMax: view.objectiveMax, subjectiveScore: view.subjectiveScore, subjectiveMax: view.subjectiveMax, pendingSubjectiveCount: view.pendingSubjectiveCount ?? 0, totalScore: view.totalScore ?? null, correctObjectiveCount: attempt.questions.filter(q => !isSubjectiveType(q.type) && isCorrect(q, attempt.answers[q.id])).length, objectiveCount: attempt.questions.filter(q => !isSubjectiveType(q.type)).length };
   document.questions = attempt.questions.map((q, index) => questionDocument(q, index + 1, document, attempt));
   document.markdown = exportMarkdown(document); return document;

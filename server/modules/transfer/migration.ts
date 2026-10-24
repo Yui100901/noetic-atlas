@@ -15,18 +15,20 @@ import { cleanLearningEnvelope } from '../../../shared/questions/learning-record
 import { cleanLegacyBankFilters, legacyBankPaper, legacyBankPaperId, migrateLegacyBanks } from '../banks/legacy-banks.js';
 import { studyPartKey } from '../../../shared/questions/study-state.js';
 import { learningResultSchema, validateLearningResult, migrateLearningResults } from '../practice/learning-results.js';
+import { validateVocabularyPaperSnapshot } from '../practice/vocabulary-practice.js';
 import { questionHistorySchema,validateQuestionHistory,migrateQuestionHistory } from '../questions/history-store.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
 const paperSchema = z.object({
-  id, title: z.string().min(1).max(300), description: z.string().max(500000).default(''), mode: z.enum(['manual', 'random']), legacyBankId: id.optional(), questionIds: z.array(id).max(50000).refine(a => new Set(a).size === a.length, '题集题号不能重复'), filters: filtersSchema.nullable().default(null),
+  id, title: z.string().min(1).max(300), description: z.string().max(500000).default(''), mode: z.enum(['manual', 'random']), practiceKind: z.enum(['standard','vocabulary']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000).refine(a => new Set(a).size === a.length, '题集题号不能重复'), filters: filtersSchema.nullable().default(null),
   archived: z.boolean().default(false), version: z.number().int().min(1).default(1), createdAt: datetime.optional(), updatedAt: datetime.optional(), snapshot: z.array(snapshotQuestion).max(50000).optional(), scoring: storedScoringSchema.optional(),
   organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null),
 });
 const attemptSchema = z.object({
   id, paperId: id, paperTitle: z.string().max(300), paperVersion: z.number().int().min(1), source: z.enum(['paper','quick']).default('paper'), updatedAt: datetime.optional(), referenceViewedAt: datetime.nullable().optional(), status: z.enum(['in_progress', 'submitted']), questions: z.array(snapshotQuestion).min(1).max(500), answers: answersSchema,
   objectiveScore: moneySchema, objectiveMax: moneySchema, subjectiveScore: moneySchema, subjectiveMax: moneySchema, startedAt: datetime, submittedAt: datetime.nullable(), scoring: storedScoringSchema.optional(),
+  vocabularyDirection: z.enum(['word_to_meaning','meaning_to_word']).optional(),
   practiceMode: z.enum(['practice','exam']).optional(), durationMinutes: z.number().int().min(1).max(1440).nullable().optional(), deadlineAt: datetime.nullable().optional(), elapsedSeconds: z.number().int().nonnegative().optional(), autoSubmitted: z.boolean().optional(),
 });
 const studySchema = z.object({ questionId: id, favorite: z.boolean(), mastery: z.number().int().min(0).max(3).nullable(), notes: z.string().max(500000), nextReviewAt: datetime.nullable(), lastReviewedAt: datetime.nullable(), wrongCount: z.number().int().nonnegative() });
@@ -104,6 +106,7 @@ export function importData(store: Store, raw: unknown) {
       const snapshot = p.snapshot || p.questionIds.map(qid => store.require<Question>('questions', qid));
       if (snapshot.length !== p.questionIds.length || snapshot.some((q, i) => q.id !== p.questionIds[i])) fail(400, 'INVALID_SNAPSHOT', '题集快照必须与题号及顺序一致');
       validatePaperAnswers(snapshot as Question[], 1_500_000);
+      if (p.practiceKind === 'vocabulary') validateVocabularyPaperSnapshot(snapshot as Question[], true);
       for (const qid of p.questionIds) store.require('questions', qid);
       const scoring = normalizeScoring(snapshot as Question[], p.scoring as any);
       papers.push({ ...p, snapshot: snapshot as Question[], scoring, questionCount: snapshot.length, createdAt: p.createdAt || now(), updatedAt: p.updatedAt || now() });

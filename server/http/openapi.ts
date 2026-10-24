@@ -64,9 +64,10 @@ const pathBodies: Record<string,z.ZodType> = {
 };
 const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料',papers:'题集',learning:'题集学习记录',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
+  if(url==='/api/quick-practice')return toJson(z.object({questionId:id.optional(),excludeQuestionId:id.optional(),filters:validation.filtersSchema.optional()}).strict());
   if (!['POST','PUT','PATCH'].includes(method)) return undefined;
   if (/^\/api\/(?:exams\/sync|attempts\/:id\/(?:sync|reveal))$/.test(url)) return undefined;
-  if (url==='/api/papers/:id/attempts')return toJson(z.object({mode:z.enum(['practice','exam']).optional(),durationMinutes:z.number().int().min(1).max(1440).optional(),count:z.number().int().min(1).max(500).optional(),selection:z.enum(['ordered','random']).optional()}).strict());
+  if (url==='/api/papers/:id/attempts')return toJson(z.object({mode:z.enum(['practice','exam']).optional(),durationMinutes:z.number().int().min(1).max(1440).optional(),count:z.number().int().min(1).max(500).optional(),selection:z.enum(['ordered','random']).optional(),vocabularyDirection:z.enum(['word_to_meaning','meaning_to_word']).optional()}).strict());
   if (url==='/api/papers/:id/restore')return toJson(z.object({confirmed:z.literal(true)}).strict());
   if (url==='/api/paper-drafts'&&method==='POST')return toJson(z.object({context:z.string().min(1).max(160),state:paperDraftStateSchema}).strict());
   if (url==='/api/paper-drafts/:id'&&method==='PUT')return toJson(z.object({expectedUpdatedAt:z.string().datetime({offset:true}),state:paperDraftStateSchema}).strict());

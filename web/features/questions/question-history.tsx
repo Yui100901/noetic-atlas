@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, History, RefreshCw } from 'lucide-react';
-import type { AttemptAnswer } from '../../../shared/models/types';
+import type { AttemptAnswer, VocabularyDirection } from '../../../shared/models/types';
 import { typeLabels } from '../../../shared/models/types';
 import type { LearningQuestionSnapshot } from '../../../shared/practice/context-learning';
 import { href, idPath, localDate, qs, useResource } from '../../shared/lib/api';
@@ -8,10 +8,12 @@ import { pointText } from '../../shared/lib/scoring';
 import { ErrorNotice, Loading, Pagination } from '../../shared/ui/components';
 import { QuestionContent, SourceNoticeScope, questionNoticeContents } from '../../shared/ui/content-notices';
 import { BlankAnswerSummary } from './question-structure';
+import { vocabularyDirectionLabel } from '../papers/vocabulary-practice';
 import './question-history.css';
 
 type Verdict = 'correct' | 'partial' | 'incorrect' | 'ungraded';
 interface QuestionHistoryItem {
+  vocabularyDirection?: VocabularyDirection;
   id: string; attemptId: string; source: 'paper' | 'quick';
   paperId: string; paperTitle: string; paperVersion: number; submittedAt: string;
   historyAvailable: boolean; beforeReset?: boolean;
@@ -80,7 +82,7 @@ function QuestionHistoryContent({ questionId, partId, aggregate = false, beforeO
 function QuestionHistoryRecord({ item, beforeOpenReview }: { item: QuestionHistoryItem; beforeOpenReview?: () => boolean }) {
   const [open, setOpen] = useState(false);
   const question = item.question;
-  const source = item.source === 'quick' ? '随机 / 单题自测' : `${item.paperTitle} · v${item.paperVersion}`;
+  const source = (item.source === 'quick' ? '随机 / 单题自测' : `${item.paperTitle} · v${item.paperVersion}`) + (item.vocabularyDirection ? ` · ${vocabularyDirectionLabel(item.vocabularyDirection)}` : '');
   const score = item.points == null ? '无分练习' : item.score == null ? `待判分 / ${pointText(item.points)} 分` : `${pointText(item.score)} / ${pointText(item.points)} 分`;
   const values = Array.isArray(item.answer.value) ? item.answer.value : [item.answer.value];
   return <details className="question-history-record" onToggle={event => setOpen(event.currentTarget.open)}>

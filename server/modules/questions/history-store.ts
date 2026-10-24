@@ -14,6 +14,7 @@ const stamp = z.string().datetime({ offset: true });
 export const questionHistorySchema = z.object({
   id: z.string().min(1).max(1000), questionId: id, partId: id.optional(), leafId, attemptId: id,
   source: z.enum(['paper','quick']), paperId: id, paperTitle: z.string().max(300), paperVersion: z.number().int().positive(),
+  vocabularyDirection: z.enum(['word_to_meaning','meaning_to_word']).optional(),
   submittedAt: stamp, verdict: z.enum(['correct','partial','incorrect','ungraded']), score: moneySchema.nullable(), points: moneySchema.nullable(),
   beforeReset:z.boolean().optional(),
   detail: z.object({ question: snapshotQuestionSchema.safeExtend({ id: leafId }), answer: answerSchema }).strict().optional(),
@@ -25,6 +26,7 @@ export const questionHistorySchema = z.object({
     const q = record.detail.question;
     if (!isAnswerPresent(record.detail.answer) || q.type === 'group' || q.id !== record.leafId || (q.sourceQuestionId || q.id) !== record.questionId || q.partId !== record.partId) context.addIssue({code:'custom',message:'单题历史必须包含对应的实际作答与小题快照'});
     if (q.partId && (q.groupId !== record.questionId || q.groupTitle === undefined || q.groupStemMarkdown === undefined || q.partIndex === undefined)) context.addIssue({code:'custom',message:'单题历史缺少公共材料'});
+    if (record.vocabularyDirection && (!q.vocabulary || q.partId || q.type !== (record.vocabularyDirection === 'meaning_to_word' ? 'fill_blank' : 'short_answer'))) context.addIssue({code:'custom',message:'单题历史词汇方向与实际题目类型不一致'});
     const state=answerState(q,record.detail.answer,true,record.points??undefined);
     const score=record.points==null?null:q.type==='short_answer'||q.type==='essay'?record.detail.answer.selfScore??null:state==='correct'?record.points:0;
     if (state !== record.verdict || score !== record.score) context.addIssue({code:'custom',message:'单题历史判定与答案不一致'});
@@ -53,7 +55,7 @@ function fromAnswer(attempt: StoredAttempt, question: StoredLeafQuestion,scoring
   const answer=attempt.answers[question.id]!;
   const verdict=answerState(question,answer,true,scoring.enabled?scoring.questionPoints[question.id]:undefined) as QuestionHistoryRecord['verdict'];
   const score=scoring.enabled?(question.type==='short_answer'||question.type==='essay'?answer.selfScore??null:verdict==='correct'?scoring.questionPoints[question.id]!:0):null;
-  return {id:historyRecordId(attempt.id,question.sourceQuestionId||question.id,question.id),questionId:question.sourceQuestionId||question.id,...(question.partId?{partId:question.partId}:{}),leafId:question.id,attemptId:attempt.id,source:attempt.source||'paper',paperId:attempt.paperId,paperTitle:attempt.paperTitle,paperVersion:attempt.paperVersion,submittedAt:attempt.submittedAt!,verdict,score,points:scoring.enabled?scoring.questionPoints[question.id]!:null};
+  return {id:historyRecordId(attempt.id,question.sourceQuestionId||question.id,question.id),questionId:question.sourceQuestionId||question.id,...(question.partId?{partId:question.partId}:{}),leafId:question.id,attemptId:attempt.id,source:attempt.source||'paper',paperId:attempt.paperId,paperTitle:attempt.paperTitle,paperVersion:attempt.paperVersion,...(attempt.vocabularyDirection?{vocabularyDirection:attempt.vocabularyDirection}:{}),submittedAt:attempt.submittedAt!,verdict,score,points:scoring.enabled?scoring.questionPoints[question.id]!:null};
 }
 
 /** A live whole attempt owns its answers once. The per-question view stores only
@@ -82,7 +84,7 @@ export function archiveAttemptQuestionHistory(store: Store, attempt: StoredAttem
     const record=JSON.parse(row.data) as QuestionHistoryRecord,question=byId.get(record.leafId)??fail(400,'QUESTION_HISTORY_REFERENCE_INVALID','单题历史引用的原题不存在'),answer=attempt.answers[record.leafId];
     if(!isAnswerPresent(answer))fail(400,'QUESTION_HISTORY_REFERENCE_INVALID','单题历史引用的原作答不存在');
     const {study:_study,partStudies:_parts,...snapshot}=question;
-    store.put('question_history',record.id,{...record,detail:{question:snapshot,answer}});
+    store.put('question_history',record.id,{...record,...(attempt.vocabularyDirection?{vocabularyDirection:attempt.vocabularyDirection}:{}),detail:{question:snapshot,answer}});
   }
 }
 
@@ -103,6 +105,7 @@ export function migrateQuestionHistory(store: Store, force=false,backfill=true) 
         const judgment=question&&answered&&item.judgment==='incorrect'?learningJudgment({...question,answerValue:answer?.value,selfScore:answer?.selfScore,verdict:answer?.verdict,scoringEnabled:scoring.enabled,maximumPoints:scoring.questionPoints[item.id]}):undefined;
         return {...item,answered,...(judgment?.verdict==='partial'?{judgment:'partial'}:{})};
       });saved.historyIndexed=true;
+      if(attempt.vocabularyDirection)saved.vocabularyDirection=attempt.vocabularyDirection;
       store.put('learning_results',saved.id,saved);
     }
   }
@@ -118,7 +121,8 @@ export function validateQuestionHistory(store: Store, raw: unknown): QuestionHis
     const q=attempt.questions.find(q=>q.id===record.leafId&&(q.sourceQuestionId||q.id)===record.questionId)??fail(400,'QUESTION_HISTORY_REFERENCE_INVALID','单题历史原题与作答不一致');
     if(attempt.status!=='submitted'||!isAnswerPresent(attempt.answers[record.leafId]))fail(400,'QUESTION_HISTORY_REFERENCE_INVALID','单题历史与原作答不一致');
     const expected=fromAnswer(attempt,q);
-    if(['source','paperId','paperTitle','paperVersion','submittedAt','verdict','score','points'].some(key=>(record as any)[key]!== (expected as any)[key]))fail(400,'QUESTION_HISTORY_REFERENCE_INVALID','单题历史来源、结果或分值与原作答不一致');
+    if(record.vocabularyDirection===undefined&&expected.vocabularyDirection!==undefined)record.vocabularyDirection=expected.vocabularyDirection;
+    if(['source','paperId','paperTitle','paperVersion','vocabularyDirection','submittedAt','verdict','score','points'].some(key=>(record as any)[key]!== (expected as any)[key]))fail(400,'QUESTION_HISTORY_REFERENCE_INVALID','单题历史来源、方向、结果或分值与原作答不一致');
   }else if(!record.detail)fail(400,'QUESTION_HISTORY_DETAIL_MISSING','原整卷已删除，单题历史必须携带独立完整作答');
   return record;
 }

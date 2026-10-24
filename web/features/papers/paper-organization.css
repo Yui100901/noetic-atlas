@@ -3,8 +3,21 @@
 .paper-organization-group > h2 .muted {font-size:14px;font-weight:400;margin-left:8px; }
 .paper-list-tools select {min-width:160px;max-width:220px; }
 .paper-organization-label {margin:0 0 12px; }
+.paper-detail-actions {display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:9px;max-width:100%; }
 .deleted-paper-notice {color:var(--muted);font-size:13px;margin:0; }
 @media (max-width: 700px) {
+  .paper-detail-actions {justify-content:flex-start;gap:8px; }
   .paper-list-tools {flex-wrap:wrap; }
   .paper-list-tools select {min-width:0;max-width:100%;flex:1 1 160px; }
 }
+
+.paper-organization-label {display:flex;flex-wrap:wrap;gap:8px;}
+.vocabulary-direction-fields {border:0;padding:0;margin:8px 0 22px;min-width:0;}
+.vocabulary-direction-fields legend {font-size:14px;font-weight:700;margin-bottom:10px;}
+.vocabulary-direction-fields > div {display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.vocabulary-direction-fields label {display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;min-width:0;}
+.vocabulary-direction-fields label.selected {border-color:var(--green);background:var(--green-soft);}
+.vocabulary-direction-fields input {margin-top:4px;flex-shrink:0;}
+.vocabulary-direction-fields strong {display:block;font-size:14px;}
+.vocabulary-direction-fields small {display:block;color:var(--muted);font-size:12px;line-height:1.65;margin-top:6px;}
+@media(max-width:600px){.vocabulary-direction-fields > div {grid-template-columns:1fr;}}

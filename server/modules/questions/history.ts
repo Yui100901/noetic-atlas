@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { AttemptAnswer } from '../../../shared/models/types.js';
+import type { AttemptAnswer, VocabularyDirection } from '../../../shared/models/types.js';
 import type { Store } from '../../core/store.js';
 import { id, parse } from '../../core/validation.js';
 import { paginationFields } from '../../core/pagination.js';
@@ -38,12 +38,14 @@ export function questionHistory(store:Store,questionId:string,query:{partId?:str
   const raw=attemptIds.length?db.all(db.query.selectFrom('attempts').select('id').select([
     db.expressions.selectedLearningQuestions('data',references.map(({record})=>({sourceId:record.questionId,id:record.leafId}))).as('questions'),
     db.expressions.selectedAttemptAnswers('data',references.map(({record})=>record.leafId)).as('answers'),
+    field<VocabularyDirection | null>('data','vocabularyDirection').as('vocabularyDirection'),
   ]).where(db.expressions.idInJson('id',attemptIds))):[];
-  const attempts=new Map(raw.map(row=>[row.id,{questions:new Map((JSON.parse(row.questions) as StoredLeafQuestion[]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q])),answers:JSON.parse(row.answers) as Record<string,AttemptAnswer>}]));
+  const attempts=new Map(raw.map(row=>[row.id,{vocabularyDirection:row.vocabularyDirection||undefined,questions:new Map((JSON.parse(row.questions) as StoredLeafQuestion[]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q])),answers:JSON.parse(row.answers) as Record<string,AttemptAnswer>}]));
   const items=entries.map(({record,historyAvailable,beforeReset})=>{
     const source=attempts.get(record.attemptId),question=source?.questions.get(learningQuestionKey(record.questionId,record.leafId))||record.detail?.question,answer=source?.answers[record.leafId]||record.detail?.answer;
     if(!question||!answer)throw new Error('单题历史引用不完整，请从有效备份恢复');
-    return {id:record.id,attemptId:record.attemptId,source:record.source,paperId:record.paperId,paperTitle:record.paperTitle,paperVersion:record.paperVersion,submittedAt:record.submittedAt,historyAvailable,question,answer,verdict:record.verdict,points:record.points,score:record.score,...(beforeReset?{beforeReset:true}:{})};
+    const vocabularyDirection=record.vocabularyDirection||source?.vocabularyDirection;
+    return {id:record.id,attemptId:record.attemptId,source:record.source,paperId:record.paperId,paperTitle:record.paperTitle,paperVersion:record.paperVersion,...(vocabularyDirection?{vocabularyDirection}:{}),submittedAt:record.submittedAt,historyAvailable,question,answer,verdict:record.verdict,points:record.points,score:record.score,...(beforeReset?{beforeReset:true}:{})};
   });
   return {...(query.summary==='false'?{}:{summary:questionStatistics(store,questionId,query.partId)}),retention:{limit,available:total},items,total,page:query.page,pageSize:query.pageSize};
 }

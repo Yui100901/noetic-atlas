@@ -98,7 +98,7 @@ async function collectNotices(root: string): Promise<File[]> {
       if (info.isDirectory()) {
         for (const entry of (await readdir(path)).sort()) await visit(join(path, entry));
       } else if (info.isFile()) {
-        if (!/\.(?:json|md|txt|html?)$|(?:^|[\\/])(?:LICENSE|NOTICE|COPYING)$/i.test(path)) return;
+        if (!/\.(?:jsonl?|md|txt|html?)$|(?:^|[\\/])(?:LICENSE|NOTICE|COPYING)$/i.test(path)) return;
         if (info.size > 20 * 1024 * 1024) throw new Error('来源元数据文件过大：' + basename(path));
         output.push({ name: prefix + '/' + relative(allowedRoot, path).replaceAll('\\','/'), data: await readFile(path) });
       }

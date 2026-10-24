@@ -6,6 +6,7 @@ import { ImageUploadButton } from '../../shared/media/asset-render';
 import { DEFAULT_SETTINGS } from '../../../shared/models/settings';
 import { Field, useApp } from '../../shared/ui/components';
 import './question-structure.css';
+import { VocabularyPronunciation } from './vocabulary-pronunciation';
 
 type Content = Pick<QuestionInput, 'type' | 'options' | 'correctAnswers' | 'blanks' | 'parts'>;
 type Update = (value: Partial<Content>) => void;
@@ -38,9 +39,9 @@ export function QuestionStructureEditor({ content, onChange, prefix = '' }: { co
   return content.type === 'essay' ? <p className="notice info">论述 / 写作是独立题型，可用于方案论证、长篇分析或写作。提交后人工阅卷，支持自定义满分；AI阅卷仍为预留接口。</p> : null;
 }
 
-export function QuestionStructuredBody({ question, showAnswers = false }: { question: Pick<Question, 'type' | 'parts' | 'blanks'>; showAnswers?: boolean }) {
+export function QuestionStructuredBody({ question, showAnswers = false }: { question: Pick<Question, 'type' | 'parts' | 'blanks' | 'vocabulary'>; showAnswers?: boolean }) {
   const blanks = (items?: BlankSpec[]) => !!items?.length && <div className="question-blank-hints">{items.map((blank, i) => <div key={blank.id}><strong>{i + 1}. {blank.label || `第${i + 1}空`}</strong>{showAnswers ? <><span>{blank.answers.join(' / ')}</span><small>{blank.caseSensitive ? '区分大小写' : '不区分大小写'} · {blank.trim ? '忽略首尾空白' : '保留首尾空白'}</small></> : <span>________________</span>}</div>)}</div>;
-  return <>{question.type === 'fill_blank' && blanks(question.blanks)}{question.type === 'group' && <div className="question-part-readings">{question.parts?.map((part, i) => <section className="question-part-reading" key={part.id}><h3>小题 {i + 1} · {part.title}</h3><span className="badge">{typeLabels[part.type]} · 权重 {part.weight ?? 1}</span><QuestionContent>{part.stemMarkdown}</QuestionContent>{part.options.map(option => <div className="part-reading-option" key={option.key}><strong>{option.key}.</strong><QuestionContent>{option.text}</QuestionContent></div>)}{blanks(part.blanks)}{showAnswers && <div className="answer-content"><strong>参考答案{part.correctAnswers.length ? ` · ${part.correctAnswers.map(value => part.type === 'true_false' ? value === 'true' ? '正确' : '错误' : value).join('、')}` : ''}</strong><QuestionContent>{part.answerMarkdown}</QuestionContent><QuestionContent>{part.explanationMarkdown}</QuestionContent></div>}</section>)}</div>}</>;
+  return <>{!showAnswers && <VocabularyPronunciation vocabulary={question.vocabulary} />}{question.type === 'fill_blank' && blanks(question.blanks)}{question.type === 'group' && <div className="question-part-readings">{question.parts?.map((part, i) => <section className="question-part-reading" key={part.id}><h3>小题 {i + 1} · {part.title}</h3><span className="badge">{typeLabels[part.type]} · 权重 {part.weight ?? 1}</span><QuestionContent>{part.stemMarkdown}</QuestionContent>{part.options.map(option => <div className="part-reading-option" key={option.key}><strong>{option.key}.</strong><QuestionContent>{option.text}</QuestionContent></div>)}{blanks(part.blanks)}{showAnswers && <div className="answer-content"><strong>参考答案{part.correctAnswers.length ? ` · ${part.correctAnswers.map(value => part.type === 'true_false' ? value === 'true' ? '正确' : '错误' : value).join('、')}` : ''}</strong><QuestionContent>{part.answerMarkdown}</QuestionContent><QuestionContent>{part.explanationMarkdown}</QuestionContent></div>}</section>)}</div>}</>;
 }
 
 export function BlankAnswerSummary({ blanks }: { blanks?: Array<Omit<BlankSpec, 'answers'> & { answers?: string[] }> }) {

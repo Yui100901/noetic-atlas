@@ -10,12 +10,17 @@ export type TagKind = 'topic' | 'method' | 'custom';
 export interface Tag { id: string; name: string; color: string; description: string; domainId?: string | null; kind?: TagKind }
 export type QuestionStatus = 'published' | 'pending' | 'draft' | 'archived';
 export interface SourceRef { label: string; url: string }
+export interface VocabularyPronunciation { label: string; ipa?: string; kana?: string; romaji?: string; sourceLabel: string; sourceUrl: string; license: string; method: 'source' | 'transliteration' | 'expanded' | 'manual' }
+export interface VocabularyData { language: 'en' | 'ja'; headword: string; meaningPrompt: string; acceptedAnswers: string[]; pronunciations: VocabularyPronunciation[] }
+export type VocabularyDirection = 'word_to_meaning' | 'meaning_to_word';
+export type PaperPracticeKind = 'standard' | 'vocabulary';
 export interface Option { key: string; text: string }
 export interface StudyState { questionId: string; partId?: string; favorite: boolean; mastery: number | null; notes: string; nextReviewAt: string | null; lastReviewedAt: string | null; wrongCount: number }
 export interface Question {
   id: string; title: string; type: QuestionType; stemMarkdown: string;
   answerMarkdown: string; explanationMarkdown: string; options: Option[]; correctAnswers: string[];
   blanks?: BlankSpec[]; parts?: QuestionPart[];
+  vocabulary?: VocabularyData;
   difficulty: number; depth: number; frequency: number; frequencyScope: string; frequencyBasis: string;
   collection: Collection; status: QuestionStatus;
   categoryIds: string[]; tagIds: string[]; sourceRefs: SourceRef[];
@@ -36,13 +41,13 @@ export interface PaperScoring {
   questionPoints: Record<string, number>; objectivePercent: number; actualObjectivePercent: number;
   objectivePoints: number; subjectivePoints: number; pointsByType: Record<QuestionType, number>;
 }
-export interface Paper { legacyBankId?: string; organization?: 'domain' | 'other'; domainId?: string | null; id: string; title: string; description: string; mode: 'manual' | 'random'; questionIds: string[]; questionCount: number; filters: PaperFilters | null; archived: boolean; version: number; createdAt: string; updatedAt: string; scoring?: PaperScoring }
+export interface Paper { practiceKind?: PaperPracticeKind; legacyBankId?: string; organization?: 'domain' | 'other'; domainId?: string | null; id: string; title: string; description: string; mode: 'manual' | 'random'; questionIds: string[]; questionCount: number; filters: PaperFilters | null; archived: boolean; version: number; createdAt: string; updatedAt: string; scoring?: PaperScoring }
 export interface ExamQuestion { id: string; title: string; type: QuestionType; stemMarkdown: string; options: Option[]; difficulty: number; depth: number; frequency: number; collection: Collection; sourceQuestionId: string; points?: number; blanks?: Omit<BlankSpec, 'answers'>[]; groupId?: string; groupTitle?: string; groupStemMarkdown?: string; partId?: string; partIndex?: number }
 export interface PaperDetail extends Paper { questions: ExamQuestion[]; answerCount?: number }
 export type AnswerVerdict = 'correct' | 'partial' | 'incorrect';
 export interface AttemptAnswer { value: string | string[]; selfScore?: number | null; mastery?: number | null; verdict?: AnswerVerdict | null }
-export interface AttemptQuestion extends ExamQuestion { answerMarkdown?: string; explanationMarkdown?: string; correctAnswers?: string[]; sourceRefs?: SourceRef[] }
-export interface Attempt { answerStates?: Record<string, 'unanswered' | 'answered' | 'correct' | 'partial' | 'incorrect' | 'ungraded'>; practiceMode?: 'practice' | 'exam'; durationMinutes?: number | null; deadlineAt?: string | null; elapsedSeconds?: number; autoSubmitted?: boolean; id: string; paperId: string; paperTitle: string; paperVersion: number; source?: 'paper' | 'quick'; referenceViewedAt?: string | null; status: 'in_progress' | 'submitted'; questions: AttemptQuestion[]; answers: Record<string, AttemptAnswer>; objectiveScore: number; objectiveMax: number; subjectiveScore: number; subjectiveMax: number; startedAt: string; updatedAt?: string; submittedAt: string | null; scoring?: PaperScoring; gradedSubjectiveCount?: number; pendingSubjectiveCount?: number; gradingStatus?: 'not_applicable' | 'pending' | 'partial' | 'complete'; totalScore?: number | null }
+export interface AttemptQuestion extends ExamQuestion { vocabulary?: VocabularyData; answerMarkdown?: string; explanationMarkdown?: string; correctAnswers?: string[]; sourceRefs?: SourceRef[] }
+export interface Attempt { vocabularyDirection?: VocabularyDirection; answerStates?: Record<string, 'unanswered' | 'answered' | 'correct' | 'partial' | 'incorrect' | 'ungraded'>; practiceMode?: 'practice' | 'exam'; durationMinutes?: number | null; deadlineAt?: string | null; elapsedSeconds?: number; autoSubmitted?: boolean; id: string; paperId: string; paperTitle: string; paperVersion: number; source?: 'paper' | 'quick'; referenceViewedAt?: string | null; status: 'in_progress' | 'submitted'; questions: AttemptQuestion[]; answers: Record<string, AttemptAnswer>; objectiveScore: number; objectiveMax: number; subjectiveScore: number; subjectiveMax: number; startedAt: string; updatedAt?: string; submittedAt: string | null; scoring?: PaperScoring; gradedSubjectiveCount?: number; pendingSubjectiveCount?: number; gradingStatus?: 'not_applicable' | 'pending' | 'partial' | 'complete'; totalScore?: number | null }
 export interface Bootstrap { settings?: SystemSettings; domains: Domain[]; categories: Category[]; tags: Tag[]; stats: { totalQuestions: number; generalQuestions: number; personalQuestions: number; totalPapers: number; totalDocuments: number; favoriteCount: number; dueCount: number; wrongCount: number; typeCounts: Record<string, number> }; ai: { available: boolean; message: string } }
 export interface SeedData { schemaVersion: 1; generatedAt: string; domains: Domain[]; categories: Category[]; tags: Tag[]; questions: Question[]; questionBanks?: QuestionBank[]; documents: DocumentRecord[]; papers: Array<{ id: string; title: string; description: string; questionIds: string[]; mode: 'manual'; filters: null; scoring?: PaperScoring }> }
 export const typeLabels: Record<QuestionType, string> = { short_answer: '简答 / 场景', true_false: '判断', single_choice: '单选', multiple_choice: '多选', fill_blank: '填空', essay: '论述 / 写作', group: '组合题（公共材料）' };

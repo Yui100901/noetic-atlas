@@ -9,6 +9,7 @@ import { id, parse, fail, domainSchema, categorySchema, tagSchema, questionSchem
 import { assetRecordSchema, validateAssetRecord } from '../assets/schema.js';
 import { collectAssetReferences, validateAssetReferences } from '../assets/routes.js';
 import { type StoredPaper, QUICK_PAPER_ID } from '../practice/service.js';
+import { resolveVocabularyQuestion, validateVocabularyPaperSnapshot } from '../practice/vocabulary-practice.js';
 import { normalizeScoring } from '../practice/scoring.js';
 import { validatePaperAnswers } from '../questions/structure.js';
 import { paperExportDocument } from '../transfer/exports.js';
@@ -24,7 +25,7 @@ function shareFilters(raw:Record<string,unknown>={}) {
   return parse(shareFiltersSchema,input);
 }
 const shareQuestion = questionSchema.safeExtend({ id });
-const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), mode: z.enum(['manual','random']), legacyBankId: id.optional(), questionIds: z.array(id).max(50000), questionCount: z.number().int().min(0).max(50000), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).max(50000), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
+const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), mode: z.enum(['manual','random']), practiceKind: z.enum(['standard','vocabulary']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000), questionCount: z.number().int().min(0).max(50000), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).max(50000), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
 const packageSchema = z.object({ format: z.literal('learning-share'), schemaVersion: z.literal(1), exportedAt: z.string().datetime({offset:true}), title: z.string().min(1).max(300), domains: z.array(domainSchema.extend({id})).max(10000), categories: z.array(categorySchema.extend({id})).max(50000), tags: z.array(tagSchema.extend({id})).max(50000), assets: z.array(assetRecordSchema).max(10000), questions: z.array(shareQuestion).max(50000), papers: z.array(paperSchema).max(100), questionBanks: z.array(questionBankSchema.safeExtend({id})).max(100).default([]) }).strict();
 const cleanQuestion = (question: Question): Question => { const { study: _study, ...record } = question; return { ...record, sourceDocument: null, sourceAnchor: null }; };
 function canonical(value: unknown): string { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([a],[b]) => a.localeCompare(b)).map(([key,entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(',')}}`; return JSON.stringify(value); }
@@ -33,6 +34,7 @@ function semantic(value: any, table: Table) {
   const { id: _id, createdAt: _created, updatedAt: _updated, study: _study, ...record } = value;
   if (table === 'questions') { delete record.status; record.sourceDocument = null; record.sourceAnchor = null; }
   if (table === 'papers') {
+    record.practiceKind ||= 'standard';
     // Archive/review/version transitions belong to the recipient. Reimporting
     // the same frozen paper must not undo them or create another copy.
     delete record.archived; delete record.version;
@@ -125,7 +127,8 @@ export function exportShare(store: Store, selection: ShareSelection): SharePacka
   let questions: Question[] = []; let papers: StoredPaper[] = []; let title = '分享题目';
   if (selection.kind === 'paper') {
     const paper = store.require<StoredPaper>('papers', selection.id || fail(400, 'SHARE_SELECTION_REQUIRED', '请选择题集'));
-    papers = [{ ...paper, filters: null, snapshot: paper.snapshot.map(cleanQuestion) }]; questions = paper.snapshot.map(cleanQuestion); title = paper.title;
+    const snapshot = paper.snapshot.map(question => cleanQuestion(paper.practiceKind === 'vocabulary' ? resolveVocabularyQuestion(store, question) : question));
+    papers = [{ ...paper, filters: null, snapshot }]; questions = snapshot; title = paper.title;
   } else {
     questions = selection.ids?.length ? selection.ids.map(qid => cleanQuestion(store.require<Question>('questions', qid))) : store.questions(shareFilters(selection.filters)).map(cleanQuestion);
     title = questions.length === 1 ? questions[0]!.title : `分享题目（${questions.length}道）`;
@@ -235,6 +238,7 @@ export function planShareImport(store: Store, raw: unknown) {
     }) as Question[];
     const questionPoints = paper.scoring ? Object.fromEntries(Object.entries(paper.scoring.questionPoints).map(([qid,points])=>[ref('questions',qid),points])) : undefined;
     const scoring = normalizeScoring(snapshot,paper.scoring ? {...paper.scoring,questionPoints} : undefined); validatePaperAnswers(snapshot, 1_500_000);
+    if (paper.practiceKind === 'vocabulary') validateVocabularyPaperSnapshot(snapshot);
     const pendingQuestions = snapshot.some(question => store.get<Question>('questions',question.id)?.status !== 'published');
     const domainId = paper.domainId ? ref('domains',paper.domainId) : null; if (paper.organization === 'domain' && !domainId) fail(400,'PAPER_DOMAIN_REQUIRED','领域专项题集缺少领域');if((paper.organization||'other')==='other'&&domainId)fail(400,'PAPER_DOMAIN_MISMATCH','其他题集不能指定领域');
     assign('papers',paper,{...paper, snapshot, scoring,questionIds:snapshot.map(question=>question.id), mode:'manual',filters:null,archived:paper.archived||pendingQuestions,organization:paper.organization || 'other',domainId,createdAt:now(),updatedAt:now()});

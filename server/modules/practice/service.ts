@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import type { AnswerVerdict, Attempt, AttemptAnswer, ExamQuestion, Paper, PaperFilters, Question, ScoringInput } from '../../../shared/models/types.js';
+import type { AnswerVerdict, Attempt, AttemptAnswer, ExamQuestion, Paper, PaperFilters, PaperPracticeKind, Question, ScoringInput, VocabularyDirection } from '../../../shared/models/types.js';
 import { Store, makeId, now, nextStamp } from '../../core/store.js';
 import { fail } from '../../core/validation.js';
 import { normalizeScoring, planScoredQuestions, cents, fromCents } from './scoring.js';
@@ -8,6 +8,7 @@ import { distributeGroupPoints, flattenQuestions, validatePaperAnswers, type Sto
 import { applyAttemptRetention, getSettings } from '../settings/routes.js';
 import { validateAssetReferences } from '../assets/routes.js';
 import { answerState, attemptElapsedSeconds, examExpired } from '../../../shared/practice/attempt-timing.js';
+import { isVocabularyQuestion, resolveVocabularyQuestion, reverseVocabularyQuestion, validateVocabularyPaperSnapshot } from './vocabulary-practice.js';
 import { preserveLearningResults } from './learning-results.js';
 
 export interface StoredPaper extends Paper { snapshot: Question[] }
@@ -28,9 +29,10 @@ export function paperView(p: StoredPaper, detail: boolean | 'summary' = false) {
   const { snapshot, ...paper } = p;
   const scoring = normalizeScoring(snapshot, p.scoring);
   const organization = paper.organization || 'other', domainId = organization === 'domain' ? paper.domainId || null : null;
-  if (!detail) return { ...paper, organization, domainId, scoring };
+  const practiceKind = paper.practiceKind || 'standard';
+  if (!detail) return { ...paper, practiceKind, organization, domainId, scoring };
   const expanded = expandPaper(p);
-  return { ...paper, organization, domainId, scoring, answerCount: expanded.questions.length, questions: expanded.questions.map(q => {const view=examQuestion(q, expanded.scoring.questionPoints[q.id]);return detail==='summary'?{...view,stemMarkdown:'',options:[],blanks:undefined,groupStemMarkdown:undefined}:view;}) };
+  return { ...paper, practiceKind, organization, domainId, scoring, answerCount: expanded.questions.length, questions: expanded.questions.map(q => {const view=examQuestion(q, expanded.scoring.questionPoints[q.id]);return detail==='summary'?{...view,stemMarkdown:'',options:[],blanks:undefined,groupStemMarkdown:undefined}:view;}) };
 }
 export function attemptView(a: StoredAttempt): Attempt {
   const scoring = normalizeScoring(a.questions, a.scoring);
@@ -39,14 +41,15 @@ export function attemptView(a: StoredAttempt): Attempt {
   const pendingSubjectiveCount = scoring.enabled ? subjective.length - gradedSubjectiveCount : 0;
   const gradingStatus = !scoring.enabled ? 'not_applicable' : !pendingSubjectiveCount && a.status === 'submitted' ? 'complete' : gradedSubjectiveCount ? 'partial' : 'pending';
   const totalScore = scoring.enabled && a.status === 'submitted' && !pendingSubjectiveCount ? fromCents(cents(a.objectiveScore) + cents(a.subjectiveScore)) : null;
-  return { ...a, elapsedSeconds: attemptElapsedSeconds(a), answerStates: Object.fromEntries(a.questions.map(q => [q.id, answerState(q, a.answers[q.id], a.status === 'submitted', scoring.enabled ? scoring.questionPoints[q.id] : undefined)])), source: a.source || 'paper', updatedAt: a.updatedAt || a.startedAt, scoring, gradedSubjectiveCount, pendingSubjectiveCount, gradingStatus, totalScore, questions: a.questions.map(q => a.status === 'submitted' || (a.source === 'quick' && a.referenceViewedAt) ? { ...examQuestion(q, scoring.questionPoints[q.id]), blanks: q.blanks, answerMarkdown: q.answerMarkdown, explanationMarkdown: q.explanationMarkdown, correctAnswers: q.correctAnswers, sourceRefs: q.sourceRefs } : examQuestion(q, scoring.questionPoints[q.id])) };
+  return { ...a, elapsedSeconds: attemptElapsedSeconds(a), answerStates: Object.fromEntries(a.questions.map(q => [q.id, answerState(q, a.answers[q.id], a.status === 'submitted', scoring.enabled ? scoring.questionPoints[q.id] : undefined)])), source: a.source || 'paper', updatedAt: a.updatedAt || a.startedAt, scoring, gradedSubjectiveCount, pendingSubjectiveCount, gradingStatus, totalScore, questions: a.questions.map(q => a.status === 'submitted' || (a.source === 'quick' && a.referenceViewedAt) ? { ...examQuestion(q, scoring.questionPoints[q.id]), blanks: q.blanks, answerMarkdown: q.answerMarkdown, explanationMarkdown: q.explanationMarkdown, correctAnswers: q.correctAnswers, sourceRefs: q.sourceRefs, vocabulary: q.vocabulary } : examQuestion(q, scoring.questionPoints[q.id])) };
 }
-export function buildPaper(store: Store, input: { id?: string; title: string; description: string; mode: 'manual' | 'random'; organization?: 'domain' | 'other'; domainId?: string | null; questionIds?: string[]; filters?: PaperFilters | null; count?: number; scoring?: ScoringInput }, previous?: StoredPaper): StoredPaper {
+export function buildPaper(store: Store, input: { id?: string; title: string; description: string; mode: 'manual' | 'random'; practiceKind?: PaperPracticeKind; organization?: 'domain' | 'other'; domainId?: string | null; questionIds?: string[]; filters?: PaperFilters | null; count?: number; scoring?: ScoringInput }, previous?: StoredPaper): StoredPaper {
   if (input.id === QUICK_PAPER_ID) fail(400, 'RESERVED_PAPER_ID', '随机单题标识不能用作试卷ID');
   const organization = input.organization || 'other', domainId = organization === 'domain' ? input.domainId || null : null;
   if (organization === 'domain' && !domainId) fail(400, 'PAPER_DOMAIN_REQUIRED', '领域专项题集必须选择所属领域');
   if (domainId) store.require('domains', domainId);
   const settings = getSettings(store);
+  const practiceKind = input.practiceKind || 'standard';
   // Persist resolved defaults in every newly created snapshot. Subsequent
   // configuration changes do not recalculate a saved paper or old attempt.
   const scoringInput = input.scoring ? { ...input.scoring, objectivePercent: input.scoring.objectivePercent ?? settings.objectivePercent, pointsByType: { ...settings.pointsByType, ...input.scoring.pointsByType }, ...(input.mode === 'random' && input.scoring.enabled && input.scoring.totalPoints === undefined ? { totalPoints: settings.randomTotalPoints } : {}) } : { enabled: settings.scoringEnabledByDefault, objectivePercent: settings.objectivePercent, pointsByType: settings.pointsByType, ...(input.mode === 'random' && settings.scoringEnabledByDefault ? { totalPoints: settings.randomTotalPoints } : {}) };
@@ -60,7 +63,7 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
       return q;
     });
   } else {
-    const pool = store.questions(input.filters || {});
+    const pool = store.questions(input.filters || {}).filter(question => practiceKind !== 'vocabulary' || isVocabularyQuestion(question));
     // Unbiased Fisher–Yates; each eligible question is sampled at most once.
     for (let i = pool.length - 1; i > 0; i--) { const j = randomInt(0, i + 1); [pool[i], pool[j]] = [pool[j]!, pool[i]!]; }
     if (scoringInput.enabled) {
@@ -74,12 +77,15 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
       selected = pool.slice(0, count);
     }
   }
-  const snapshot = selected.map(q => { const { study: _study, partStudies: _parts, ...clean } = q; return clean; });
+  const snapshot = selected.map(q => { const { study: _study, partStudies: _parts, ...clean } = practiceKind === 'vocabulary' ? resolveVocabularyQuestion(store, q) : q; return clean; });
+  if (practiceKind === 'vocabulary') validateVocabularyPaperSnapshot(snapshot);
   validatePaperAnswers(snapshot,input.mode==='manual'?1_500_000:500);
   const scoring = normalizeScoring(snapshot, scoringInput);
-  return { ...(previous?.legacyBankId ? {legacyBankId:previous.legacyBankId}:{}), id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, mode: input.mode, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
+  return { ...(previous?.legacyBankId ? {legacyBankId:previous.legacyBankId}:{}), id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, mode: input.mode, practiceKind, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
 }
-export function createAttempt(store: Store, paper: StoredPaper, options: { mode?: 'practice' | 'exam'; durationMinutes?: number; count?: number; selection?: 'ordered' | 'random' } = {}): StoredAttempt {
+export function createAttempt(store: Store, paper: StoredPaper, options: { mode?: 'practice' | 'exam'; durationMinutes?: number; count?: number; selection?: 'ordered' | 'random'; vocabularyDirection?: VocabularyDirection } = {}): StoredAttempt {
+  if (options.vocabularyDirection && paper.practiceKind !== 'vocabulary') fail(400, 'VOCABULARY_PAPER_REQUIRED', '请先将题集类型设置为词汇题集，再选择词汇练习方向');
+  const vocabularyDirection = paper.practiceKind === 'vocabulary' ? options.vocabularyDirection || 'word_to_meaning' : undefined;
   const practiceMode = options.mode || 'practice';
   if (practiceMode === 'exam') {
     syncExams(store);
@@ -102,8 +108,15 @@ export function createAttempt(store: Store, paper: StoredPaper, options: { mode?
     const scoring = normalizeScoring(snapshot, { enabled: original.enabled, questionPoints: Object.fromEntries(snapshot.map(q=>[q.id,original.questionPoints[q.id]!])), objectivePercent: original.objectivePercent, pointsByType: original.pointsByType });
     sessionPaper = {...paper, snapshot, questionIds:snapshot.map(q=>q.id), questionCount:snapshot.length, scoring};
   }
+  if (vocabularyDirection) {
+    const snapshot = sessionPaper.snapshot.map(question => resolveVocabularyQuestion(store, question));
+    const directed = vocabularyDirection === 'meaning_to_word' ? snapshot.map(reverseVocabularyQuestion) : snapshot;
+    const originalScoring = normalizeScoring(sessionPaper.snapshot, sessionPaper.scoring);
+    const scoring = normalizeScoring(directed, { enabled: originalScoring.enabled, totalPoints: originalScoring.enabled ? originalScoring.totalPoints : undefined, questionPoints: originalScoring.questionPoints, objectivePercent: originalScoring.objectivePercent, pointsByType: originalScoring.pointsByType });
+    sessionPaper = { ...sessionPaper, snapshot: directed, scoring };
+  }
   const { questions, scoring } = expandPaper(sessionPaper, 500), stamp = draftStamp(store, 'paper', paper.id), startedAt = now();
-  const a: StoredAttempt = { practiceMode, durationMinutes, deadlineAt: durationMinutes == null ? null : new Date(Date.parse(startedAt) + durationMinutes * 60000).toISOString(), elapsedSeconds: 0, autoSubmitted: false, id: makeId('attempt'), source: 'paper', paperId: paper.id, paperTitle: paper.title, paperVersion: paper.version, status: 'in_progress', questions: structuredClone(questions), scoring: structuredClone(scoring), answers: {}, objectiveScore: 0, objectiveMax: scoring.objectivePoints, subjectiveScore: 0, subjectiveMax: scoring.subjectivePoints, startedAt, updatedAt: stamp, submittedAt: null };
+  const a: StoredAttempt = { ...(vocabularyDirection ? { vocabularyDirection } : {}), practiceMode, durationMinutes, deadlineAt: durationMinutes == null ? null : new Date(Date.parse(startedAt) + durationMinutes * 60000).toISOString(), elapsedSeconds: 0, autoSubmitted: false, id: makeId('attempt'), source: 'paper', paperId: paper.id, paperTitle: paper.title, paperVersion: paper.version, status: 'in_progress', questions: structuredClone(questions), scoring: structuredClone(scoring), answers: {}, objectiveScore: 0, objectiveMax: scoring.objectivePoints, subjectiveScore: 0, subjectiveMax: scoring.subjectivePoints, startedAt, updatedAt: stamp, submittedAt: null };
   store.transaction(() => { store.insert('attempts', a.id, a); trimDrafts(store, a); }); return a;
 }
 /** Explicit POST synchronization is important for offline storage: successful writes
@@ -192,6 +205,15 @@ export function isCorrect(q: Question, answer?: AttemptAnswer) {
 }
 export function validateAttemptSnapshot(attempt: StoredAttempt) {
   validateAttemptTiming(attempt);
+  if (attempt.vocabularyDirection) {
+    if (attempt.source === 'quick' && (attempt.vocabularyDirection !== 'meaning_to_word' || attempt.questions.length !== 1 || attempt.paperTitle !== '看释义想单词')) fail(400, 'INVALID_VOCABULARY_ATTEMPT', '旧词汇单题历史的来源与快照不一致');
+    if (attempt.vocabularyDirection === 'word_to_meaning') validateVocabularyPaperSnapshot(attempt.questions);
+    else for (const q of attempt.questions) {
+      if (!q.vocabulary || q.type !== 'fill_blank' || q.title !== '看释义想单词' || q.groupId || q.partId) fail(400, 'INVALID_VOCABULARY_ATTEMPT', '词汇逆向练习的来源与快照不一致');
+      const expected = reverseVocabularyQuestion(q);
+      if (q.stemMarkdown !== expected.stemMarkdown || JSON.stringify(q.blanks) !== JSON.stringify(expected.blanks) || q.options.length || q.correctAnswers.length || q.parts) fail(400, 'INVALID_VOCABULARY_ATTEMPT', '词汇逆向练习的提示或可接受词形不一致');
+    }
+  }
   const groups = new Map<string, StoredLeafQuestion[]>();
   for (const q of attempt.questions) {
     if (q.type === 'group') fail(400, 'INVALID_ATTEMPT_PARTS', '作答快照必须展平组合题的每个子题');

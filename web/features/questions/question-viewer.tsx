@@ -6,7 +6,7 @@ import { ErrorNotice, Field, Loading, QuestionMeta, Tags, useApp } from '../../s
 import { QuestionContent, SourceNoticeScope, questionNoticeContents } from '../../shared/ui/content-notices';
 import { QuestionStructuredBody } from './question-structure';
 import { QuestionHistory, QuestionStatistics } from './question-history';
-import { matchesQuestionSnapshot } from './question-viewer-state';
+import { matchesQuestionSnapshot, snapshotVocabulary } from './question-viewer-state';
 import './question-viewer.css';
 import { emptyStudy } from '../../../shared/questions/study-state';
 import type { Paged } from '../../../shared/utils/pagination';
@@ -53,6 +53,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   };
   const live = !!source.data && !source.error && (partId === undefined || source.data.type === 'group' && source.data.parts?.some(part => part.id === partId && part.type === question.type));
   const sameContent = live && matchesQuestionSnapshot(question, source.data!);
+  const readingVocabulary = snapshotVocabulary(question, source.error ? undefined : source.data || undefined);
   return <div className="question-viewer" onClickCapture={event => {
     const link = (event.target as HTMLElement).closest('a');
     if (link?.getAttribute('href')?.startsWith('#/') && !link.hasAttribute('data-question-history-review')) { event.preventDefault(); toast('请先关闭看题窗口，再打开其他页面'); }
@@ -65,7 +66,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
             {question.groupStemMarkdown && <section className="group-material"><span className="section-label">共用材料 · {question.groupTitle}</span><QuestionContent>{question.groupStemMarkdown}</QuestionContent></section>}
             <QuestionContent>{question.stemMarkdown}</QuestionContent>
             {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
-            <QuestionStructuredBody question={question} /><Tags ids={question.tagIds} max={30} />
+            <QuestionStructuredBody question={{...question,vocabulary:readingVocabulary}} />{!question.vocabulary && readingVocabulary && <p className="muted">读音补充来自当前词卡；题目正文仍为题集快照。</p>}<Tags ids={question.tagIds} max={30} />
             <div className="answer-toggle"><button type="button" className={'button ' + (answerOpen ? '' : 'primary')} aria-expanded={answerOpen} onClick={() => setAnswerOpen(value => !value)}><BookOpen size={17} />{answerOpen ? '收起参考答案' : '展开答案与解析'}<ChevronDown size={15} className={answerOpen ? 'rotated' : ''} /></button></div>
             {answerOpen && <div className="answer-content"><div className="section-label">参考答案{question.correctAnswers.length ? ' · ' + question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、') : ''}</div><QuestionStructuredBody question={question} showAnswers /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><div className="section-label">解析 · 追问 · 误区</div><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</div>}
           </section>

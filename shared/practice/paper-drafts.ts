@@ -1,7 +1,8 @@
-import type { PaperFilters, QuestionType } from '../models/types.js';
+import type { PaperFilters, PaperPracticeKind, QuestionType } from '../models/types.js';
 
 /** An authoring draft is independent of an answer attempt or a saved paper. */
 export interface PaperDraftState {
+  practiceKind?: PaperPracticeKind;
   title: string; description: string; mode: 'manual' | 'random';
   organization: 'domain' | 'other'; domainId: string;
   questionIds: string[]; filters: Record<string, unknown>; random: PaperFilters;

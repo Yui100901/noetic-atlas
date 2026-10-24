@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { Download, Share2, Upload } from 'lucide-react';
 import type { SharePackage, SharePreview, ShareSelection } from '../../../shared/models/sharing';
 import type { ExportDocument } from '../../../shared/models/export-types';
@@ -8,10 +8,13 @@ import { downloadExport } from '../../shared/export/export-download';
 import { isNativeApp, saveGeneratedFile } from '@platform';
 import './sharing.css';
 
-export function ShareButton({kind,id,ids,filters,label='分享'}:ShareSelection & {label?:string}) {
-  const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false); const [error,setError]=useState(''); const {toast}=useApp();
+export function ShareButton({kind,id,ids,filters,label='分享',open:controlledOpen,onOpenChange,hideTrigger=false}:ShareSelection & {label?:string;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean}) {
+  const [internalOpen,setInternalOpen]=useState(false); const [busy,setBusy]=useState(false); const [error,setError]=useState(''); const {toast}=useApp();
+  const open=controlledOpen??internalOpen;
+  const setOpen=(value:boolean)=>{setInternalOpen(value);onOpenChange?.(value);};
+  useEffect(()=>{if(open)setError('');},[open]);
   const exportFile=async(format:'json'|'pdf')=>{setBusy(true);setError('');try{const selection={kind,...(id?{id}:{}),...(ids?.length?{ids}:{}),...(filters?{filters}: {})}; if(format === 'json'){ const data=await send<SharePackage>('/api/sharing/export','POST',selection); await saveGeneratedFile(`${data.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,100)}-分享.json`,new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'application/json'); }else{ const document=await send<ExportDocument>('/api/sharing/export-document','POST',selection); await downloadExport(document,'pdf'); } toast(isNativeApp()?'文件已准备，可在系统分享面板选择QQ、微信等应用':'分享文件已下载'); }catch(reason){setError((reason as Error).message);}finally{setBusy(false);}};
-  return <><button className="button" onClick={()=>{setError('');setOpen(true);}}><Share2 size={15}/>{label}</button>{open&&<Modal title="分享内容" onClose={()=>{if(!busy)setOpen(false);}}><p className="muted">JSON包含题目、领域、祖先分类、标签和本地图片，可直接导入另一套认知星图。PDF含答案与解析，适合发送给朋友。</p>{error&&<ErrorNotice message={error}/>}<div className="share-export-actions"><button className="button primary" disabled={busy} onClick={()=>void exportFile('json')}><Download size={16}/>{busy?'正在准备…':'导出完整JSON分享包'}</button><button className="button" disabled={busy} onClick={()=>void exportFile('pdf')}><Download size={16}/>导出分享PDF</button></div><div className="notice info">分享不包含学习笔记、练习记录、草稿、系统配置或AI密钥。题目本身如含个人项目或私密信息，请先检查再分享。Android可通过系统文件分享选择QQ或微信。</div><a className="button feature-entry" href="#/sharing" onClick={()=>setOpen(false)}><Upload size={16} />导入朋友的分享包</a></Modal>}</>;
+  return <>{!hideTrigger&&<button className="button" onClick={()=>{setError('');setOpen(true);}}><Share2 size={15}/>{label}</button>}{open&&<Modal title="分享内容" onClose={()=>{if(!busy)setOpen(false);}}><p className="muted">JSON包含题目、领域、祖先分类、标签和本地图片，可直接导入另一套认知星图。PDF含答案与解析，适合发送给朋友。</p>{error&&<ErrorNotice message={error}/>}<div className="share-export-actions"><button className="button primary" disabled={busy} onClick={()=>void exportFile('json')}><Download size={16}/>{busy?'正在准备…':'导出完整JSON分享包'}</button><button className="button" disabled={busy} onClick={()=>void exportFile('pdf')}><Download size={16}/>导出分享PDF</button></div><div className="notice info">分享不包含学习笔记、练习记录、草稿、系统配置或AI密钥。题目本身如含个人项目或私密信息，请先检查再分享。Android可通过系统文件分享选择QQ或微信。</div><a className="button feature-entry" href="#/sharing" onClick={()=>setOpen(false)}><Upload size={16} />导入朋友的分享包</a></Modal>}</>;
 }
 
 export function SharingPage(){

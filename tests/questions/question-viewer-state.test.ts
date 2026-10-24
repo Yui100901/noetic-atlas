@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Question } from '../../shared/models/types.js';
-import { matchesQuestionSnapshot } from '../../web/features/questions/question-viewer-state.js';
+import { matchesQuestionSnapshot, snapshotVocabulary } from '../../web/features/questions/question-viewer-state.js';
 
 const question = (): Question => ({ id: 'q', title: 'HTTP 缓存', type: 'single_choice', stemMarkdown: '选择正确描述。', options: [{ key: 'A', text: '浏览器缓存' }, { key: 'B', text: '数据库缓存' }], correctAnswers: ['A'], answerMarkdown: 'A', explanationMarkdown: '原解析', categoryIds: [], tagIds: [], difficulty: 1, depth: 2, frequency: 3, frequencyScope: '', frequencyBasis: '', collection: 'general', status: 'published', sourceRefs: [], sourceDocument: null, sourceAnchor: null });
 
@@ -30,4 +30,18 @@ test('fill blank aliases and combination subquestion answers are part of snapsho
   assert.equal(matchesQuestionSnapshot(fill, { ...fill, blanks: [{ ...fill.blanks[0], answers: ['HTTPS'] }] }), false);
   const group = { ...question(), type: 'group' as const, parts: [{ id: 'p1', title: '小题', type: 'short_answer' as const, stemMarkdown: '为什么', options: [], correctAnswers: [], answerMarkdown: '原答案', explanationMarkdown: '原解析' }] };
   assert.equal(matchesQuestionSnapshot(group, { ...group, parts: [{ ...group.parts[0], answerMarkdown: '新答案' }] }), false);
+});
+
+test('legacy wordlist may display matching current pronunciation without rewriting snapshots or substituting other words',()=>{
+  const snapshot={...question(),id:'word',title:'abandon',type:'short_answer' as const};
+  const vocabulary={language:'en' as const,headword:'abandon',meaningPrompt:'放弃',acceptedAnswers:['abandon'],pronunciations:[{label:'美式',ipa:'/əˈbændən/',sourceLabel:'IPA',sourceUrl:'https://example.org',license:'MIT',method:'source' as const}]};
+  const current={...snapshot,vocabulary};
+  assert.deepEqual(snapshotVocabulary(snapshot,current),vocabulary);assert.equal(snapshot.vocabulary,undefined);
+  assert.equal(snapshotVocabulary(snapshot,{...current,title:'another'}),undefined);
+  assert.equal(snapshotVocabulary(snapshot,{...current,id:'another'}),undefined);
+  assert.equal(snapshotVocabulary(snapshot,{...current,vocabulary:{...vocabulary,headword:'another'}}),undefined);
+  assert.equal(snapshotVocabulary({...snapshot,partId:'p1'},current),undefined);
+  assert.equal(snapshotVocabulary(snapshot,undefined),undefined);
+  const historical={...snapshot,vocabulary:{...vocabulary,pronunciations:[{...vocabulary.pronunciations[0]!,ipa:'/historical/'}]}};
+  assert.equal(snapshotVocabulary(historical,current)!.pronunciations[0]!.ipa,'/historical/');
 });

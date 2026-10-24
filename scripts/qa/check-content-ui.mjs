@@ -106,12 +106,17 @@ try {
   for(const id of [fixture['chemistry-inorganic'],fixture['chemistry-organic'],fixture.pharmacology,fixture.historicalId]){await question(id);await noOverflow();}
   checks.push('390px化学、药学和时效标记均无横向溢出');await snapshot('pharmacology-mobile');
   const oldPaper = await api(`/api/papers/${fixture.paperId}`);
-  const restored = await api(`/api/papers/${fixture.paperId}`, 'PUT', { id: oldPaper.id, title: oldPaper.title, description: oldPaper.description, mode: 'manual', organization: 'domain', domainId: 'english', questionIds: fixture.englishWordIds, scoring: { enabled: false } });
+  const restored = await api(`/api/papers/${fixture.paperId}`, 'PUT', { id: oldPaper.id, title: oldPaper.title, description: oldPaper.description, mode: 'manual', practiceKind: oldPaper.practiceKind || 'standard', organization: 'domain', domainId: 'english', questionIds: fixture.englishWordIds, scoring: { enabled: false } });
   assert.equal(restored.archived, false);
   assert.equal(restored.scoring.enabled, false);
   checks.push('审核后通过正式保存接口恢复100词无分卷');
   await page.goto(`${origin}/#/papers/${fixture.paperId}`);
   await page.getByRole('button', { name: '开始练习', exact: true }).click();
+  if (restored.practiceKind === 'vocabulary') {
+    const setup = page.getByRole('dialog', { name: '开始词汇练习', exact: true });
+    await setup.getByLabel('顺向：看单词想释义', { exact: false }).check();
+    await setup.getByRole('button', { name: '开始本次练习', exact: true }).click();
+  }
   await page.waitForURL(/#\/attempts\//);
   await page.getByLabel('练习顺计时').waitFor();
   const attemptId = decodeURIComponent(page.url().split('/').at(-1));
@@ -127,7 +132,8 @@ try {
   await snapshot('wordlist-submitted-mobile');
   await page.setViewportSize({ width: 1360, height: 900 });
   await page.goto(`${origin}/#/papers/${fixture.paperId}`);
-  await page.getByRole('button', { name: '导出题集', exact: true }).click();
+  await page.getByRole('button', { name: '导出与分享', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^导出题集/ }).click();
   await page.getByRole('radio', { name: /附答案卷/ }).check();
   await page.getByRole('radio', { name: /Markdown/ }).check();
   const [markdownDownload] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '下载文件', exact: true }).click()]);

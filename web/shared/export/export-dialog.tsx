@@ -8,9 +8,11 @@ import { isNativeApp } from '@platform';
 import './export.css';
 
 const descriptions: Record<ExportMode, string> = { blank: '仅含题干、选项和答题区，不含参考答案与解析。', answers: '完整题目、参考答案与解析，适合打印复习。', completed: '本次提交的作答、参考答案、正误与判分；未评主观题标为待阅。' };
-export function ExportButton({ paperId, attemptId }: { paperId?: string; attemptId?: string }) {
-  const [open, setOpen] = useState(false);
-  return <><button className="button" onClick={() => setOpen(true)}><Download size={16} />导出题集</button>{open && <ExportDialog paperId={paperId} attemptId={attemptId} onClose={() => setOpen(false)} />}</>;
+export function ExportButton({ paperId, attemptId, open: controlledOpen, onOpenChange, hideTrigger = false }: { paperId?: string; attemptId?: string; open?: boolean; onOpenChange?: (open: boolean) => void; hideTrigger?: boolean }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (value: boolean) => { setInternalOpen(value); onOpenChange?.(value); };
+  return <>{!hideTrigger && <button className="button" onClick={() => setOpen(true)}><Download size={16} />导出题集</button>}{open && <ExportDialog paperId={paperId} attemptId={attemptId} onClose={() => setOpen(false)} />}</>;
 }
 function ExportDialog({ paperId, attemptId, onClose }: { paperId?: string; attemptId?: string; onClose: () => void }) {
   const [mode, setMode] = useState<ExportMode>(attemptId ? 'completed' : 'blank'); const [format, setFormat] = useState<'md' | 'pdf'>('pdf');

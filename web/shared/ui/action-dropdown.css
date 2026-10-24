@@ -1,0 +1,17 @@
+.action-dropdown { display: inline-flex; position: relative; flex: 0 0 auto; min-width: 0; max-width: 100%; }
+.action-dropdown > .button { min-height: 44px; font-size: 13px; }
+.action-dropdown .button > span[aria-hidden], .action-dropdown-item > span[aria-hidden] { display: inline-flex; flex-shrink: 0; }
+.action-dropdown-split > .action-dropdown-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.action-dropdown-split > .action-dropdown-trigger { position: relative; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; min-width: 44px; padding-inline: 10px; }
+.action-dropdown-split > .action-dropdown-trigger::before { content: ''; position: absolute; left: 0; top: 25%; height: 50%; width: 1px; background: currentColor; opacity: .3; }
+.action-dropdown-trigger > svg { flex-shrink: 0; transition: transform .15s; }
+.action-dropdown-menu { position: fixed; z-index: 90; min-width: 0; max-width: calc(100vw - 24px); overflow-y: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--theme-border, var(--border)); border-radius: 9px; background: var(--theme-surface, var(--surface)); color: var(--theme-text, #26352f); box-shadow: 0 10px 30px var(--theme-shadow-color, #173e3224); }
+.action-dropdown-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 5px; background: transparent; color: var(--theme-text, #344b3b); text-align: left; text-decoration: none; font-size: 13px; font-weight: 500; line-height: 1.65; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.action-dropdown-item:hover, .action-dropdown-item:focus-visible { background: var(--theme-primary-soft, #edf3e8); color: var(--theme-link, var(--green)); text-decoration: none; outline: none; }
+.action-dropdown-item:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-primary-border, #9ab58e); }
+.action-dropdown-item[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.action-dropdown-item[aria-disabled="true"]:hover { background: transparent; color: inherit; }
+.action-dropdown-item.is-danger { color: var(--theme-danger, #9c3f33); }
+.action-dropdown-item.is-danger:hover, .action-dropdown-item.is-danger:focus-visible { background: var(--theme-danger-soft, #f9ebe6); color: var(--theme-danger, #9c3f33); }
+.action-dropdown-separator { margin: 5px 7px; border-top: 1px solid var(--theme-border, var(--border)); }
+@media (prefers-reduced-motion: reduce) { .action-dropdown-trigger > svg { transition: none; } }

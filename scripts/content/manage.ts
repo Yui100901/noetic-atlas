@@ -12,6 +12,7 @@ import { assetRecordSchema } from '../../server/modules/assets/schema.js';
 import type { Question } from '../../shared/models/types.js';
 import { paperExportDocument } from '../../server/modules/transfer/exports.js';
 import { enrichKnowledgePack } from '../../shared/questions/knowledge-tags.js';
+import { vocabularyPromptIsSafe } from '../../shared/questions/vocabulary.js';
 
 const root=resolve(import.meta.dirname,'../..');
 const sha=(value:Buffer|string)=>createHash('sha256').update(value).digest('hex');
@@ -79,7 +80,8 @@ export function wordlistPapers(pack:any,size=100) {
   const output=[];
   for(let start=0;start<words.length;start+=size){
     const snapshot=words.slice(start,start+size),index=String(output.length+1).padStart(3,'0');
-    output.push({id:`wordlist-${lang}-${index}`,title:`${lang==='english'?'英语':'日语'}单词表 ${index}（${snapshot.length}词）`,description:'无分词汇复习。先批量审核来源词条，再从归档练习卷恢复并调整后使用；空白卷用于默写，附答案卷用于查阅释义与例句。',mode:'manual' as const,questionIds:snapshot.map((q:Question)=>q.id),questionCount:snapshot.length,filters:null,archived:true,version:1,organization:'domain' as const,domainId:lang,createdAt:stamp,updatedAt:stamp,snapshot,scoring:normalizeScoring(snapshot,{enabled:false})});
+    const practiceKind=snapshot.every((q:Question)=>q.type==='short_answer'&&q.vocabulary&&vocabularyPromptIsSafe(q.vocabulary))?'vocabulary' as const:'standard' as const;
+    output.push({id:`wordlist-${lang}-${index}`,title:`${lang==='english'?'英语':'日语'}单词表 ${index}（${snapshot.length}词）`,description:practiceKind==='vocabulary'?'无分词汇题集。先审核来源词条，再恢复题集；开始练习时选择看单词想释义或看释义想单词。空白卷用于默写，附答案卷用于查阅。':'无分词汇复习。先审核来源词条，再恢复题集；空白卷用于默写，附答案卷用于查阅。',mode:'manual' as const,practiceKind,questionIds:snapshot.map((q:Question)=>q.id),questionCount:snapshot.length,filters:null,archived:true,version:1,organization:'domain' as const,domainId:lang,createdAt:stamp,updatedAt:stamp,snapshot,scoring:normalizeScoring(snapshot,{enabled:false})});
   }
   return output;
 }

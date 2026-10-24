@@ -73,7 +73,7 @@ export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
   });
   app.post('/api/papers/:id/attempts', async (request, reply) => {
     const paper = store.require<StoredPaper>('papers', getId(request)); if (paper.archived) fail(409, 'PAPER_ARCHIVED', '题集已归档，可查看历史作答，不能新建练习');
-    const input = parse(z.object({ mode: z.enum(['practice','exam']).optional(), durationMinutes: z.number().int().min(1).max(1440).optional(), count:z.number().int().min(1).max(500).optional(), selection:z.enum(['ordered','random']).optional() }).strict(), request.body || {});
+    const input = parse(z.object({ mode: z.enum(['practice','exam']).optional(), durationMinutes: z.number().int().min(1).max(1440).optional(), count:z.number().int().min(1).max(500).optional(), selection:z.enum(['ordered','random']).optional(), vocabularyDirection: z.enum(['word_to_meaning','meaning_to_word']).optional() }).strict(), request.body || {});
     return reply.code(201).send(attemptView(createAttempt(store, paper, input)));
   });
   app.get('/api/papers/:id/drafts', async request => {

@@ -46,9 +46,10 @@ export function inspectSQLite(sql: SqlJsStatic, bytes: Uint8Array) {
     }
     const metadata = new Map(rows(db, 'SELECT key,value FROM metadata').map(row => [String(row.key), String(row.value)]));
     if (metadata.get('schema_version') !== '1') invalid('schema_version 不是受支持的版本 1');
-    if ([...metadata.keys()].some(key => !['schema_version', 'seed_initialized', 'read_projection_version'].includes(key))) invalid('包含当前版本不支持的元数据');
+    if ([...metadata.keys()].some(key => !['schema_version', 'seed_initialized', 'read_projection_version','question_history_version'].includes(key))) invalid('包含当前版本不支持的元数据');
     if (metadata.has('seed_initialized') && !stamp.safeParse(metadata.get('seed_initialized')).success) invalid('初始化元数据时间无效');
-    if (metadata.has('read_projection_version') && !['1', '2', '3'].includes(metadata.get('read_projection_version')!)) invalid('读取模型版本比当前应用更新');
+    if (metadata.has('read_projection_version') && !['1', '2', '3','4'].includes(metadata.get('read_projection_version')!)) invalid('读取模型版本比当前应用更新');
+    if(metadata.has('question_history_version')&&metadata.get('question_history_version')!=='1')invalid('单题历史版本不受当前应用支持');
     for (const row of objects.filter(row => row.type === 'trigger')) db.run(`DROP TRIGGER ${quote(String(row.name))}`);
     for (const table of derivedTables) if (names.has(table)) db.run(`DROP TABLE ${quote(table)}`);
     for (const row of rows(db, "SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")) db.run(`DROP INDEX ${quote(String(row.name))}`);

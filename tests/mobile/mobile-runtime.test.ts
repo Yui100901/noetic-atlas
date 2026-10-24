@@ -112,6 +112,30 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   await call(`/api/attempts/${attempt.id}/ai-review`, 'POST', {}, 501);
   const reviewed = await call(`/api/attempts/${attempt.id}/review`, 'PUT', { scores: { [subjective.id]: 4 } });
   assert.equal(reviewed.totalScore, 6.5);
+  // The same history module runs against WASM SQLite. Whole-attempt cleanup
+  // archives just the retained leaf while statistics outlive both detail caps.
+  const historySettings = await call('/api/settings');
+  assert.equal(historySettings.maxQuestionHistory, 10);
+  await call('/api/settings', 'PUT', { settings: { ...historySettings, maxQuestionHistory: 2, maxHistoryPerPaper: 1 } });
+  const historyPaper = await call('/api/papers', 'POST', { title: '手机独立单题历史', mode: 'manual', questionIds: [subjective.id], scoring: { enabled: false } }, 201);
+  const historyAttempts = [];
+  for (const value of ['手机归档的单题回答', '手机整卷中的单题回答']) {
+    const draft = await call(`/api/papers/${historyPaper.id}/attempts`, 'POST', undefined, 201);
+    historyAttempts.push(await call(`/api/attempts/${draft.id}/submit`, 'POST', { answers: { [subjective.id]: { value } } }));
+  }
+  await call(`/api/attempts/${historyAttempts[1].id}/review`, 'PUT', { verdicts: { [subjective.id]: 'partial' } });
+  assert.equal((await call(`/api/questions/${subjective.id}/history`)).summary.partial, 2);
+  await call(`/api/attempts/${historyAttempts[1].id}/review`, 'PUT', { verdicts: { [subjective.id]: null } });
+  await call(`/api/attempts/${historyAttempts[0].id}`, 'GET', undefined, 404);
+  const singleHistory = await call(`/api/questions/${subjective.id}/history`);
+  assert.equal(singleHistory.summary.answered, 3); assert.equal(singleHistory.summary.partial, 1); assert.equal(singleHistory.summary.ungraded, 2);
+  assert.equal(singleHistory.total, 2); assert.equal(singleHistory.retention.available, 2);
+  const archivedLeaf = singleHistory.items.find((item: any) => item.attemptId === historyAttempts[0].id);
+  assert.equal(archivedLeaf.historyAvailable, false); assert.equal(archivedLeaf.answer.value, '手机归档的单题回答'); assert.equal(archivedLeaf.question.answerMarkdown, subjective.answerMarkdown);
+  const savesBeforeHistoryRead = saveCount; failSave = true;
+  await call(`/api/questions/${subjective.id}/history?pageSize=10`);
+  assert.equal(saveCount, savesBeforeHistoryRead, 'single-question history remains a pure read when storage is unavailable'); failSave = false;
+  await call('/api/settings', 'PUT', { settings: { ...await call('/api/settings'), maxQuestionHistory: 10, maxHistoryPerPaper: 0 } });
   const random = await call('/api/papers', 'POST', { title: '离线随机100分', mode: 'random', scoring: { enabled: true, totalPoints: 100, pointsByType: { single_choice: 20, true_false: 20, multiple_choice: 20, short_answer: 20 } } }, 201);
   assert.equal(random.scoring.totalPoints, 100); assert.equal(random.scoring.objectivePercent, 60);
   await call(`/api/study/${objective.id}`, 'PUT', { favorite: true, notes: '进程重启后仍保留' });
@@ -135,12 +159,16 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   assert.equal(desktop.prepare('PRAGMA integrity_check').get()!.integrity_check, 'ok');
   assert.equal(desktop.prepare('SELECT count(*) AS count FROM questions').get()!.count, fullSeed.questions.length);
   assert.equal(desktop.prepare('SELECT count(*) AS count FROM question_banks').get()!.count, 0, 'desktop backups do not retain obsolete bank collections');
+  assert.ok(Number(desktop.prepare('SELECT count(*) AS count FROM question_history').get()!.count) > 0, 'the native backup contains single-question reference and archived rows');
   const desktopTag = { id: 'desktop-roundtrip', name: '桌面SQLite写入', description: '', color: '#334455' };
   desktop.prepare('INSERT INTO tags(id,data) VALUES (?,?)').run(desktopTag.id, JSON.stringify(desktopTag)); desktop.close();
   await runtime.close(); durable = new Uint8Array(await readFile(backupPath));
   runtime = await createLocalRuntime(sql, fullSeed, storage);
   assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
   assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
+  const reopenedHistory = await call(`/api/questions/${subjective.id}/history`);
+  assert.equal(reopenedHistory.summary.answered, 3); assert.equal(reopenedHistory.total, 2);
+  assert.equal(reopenedHistory.items.find((item: any) => item.attemptId === historyAttempts[0].id).answer.value, '手机归档的单题回答');
   assert.deepEqual((await call(`/api/papers/${questionSet.id}`)).questionIds, [objective.id]);
   await call(`/api/papers/${questionSet.id}?permanent=true`, 'DELETE');
   assert.equal((await call(`/api/questions/${objective.id}`)).id, objective.id, 'deleting a question set leaves the canonical question intact');

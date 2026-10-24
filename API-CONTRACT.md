@@ -31,6 +31,8 @@
 
 - `GET /api/questions`：支持 search、page、pageSize、domainId、categoryId、tagIds、tagMode、type、difficulty、depth、frequency、collection、status、favorite、due、wrong。
 - `GET /api/questions/:id`：题目、答案解析与本机学习状态。
+- `GET /api/questions/:id/statistics?partId=...`：实际填写并提交的累计次数，以及 correct、partial、incorrect、ungraded；草稿与整卷漏答不计。answered 为四类总和，unknown 为旧数据无法确认是否填写的数量，不计入作答次数。
+- `GET /api/questions/:id/history?partId=...&page=1&pageSize=10`：最近完整作答及 summary、retention，始终分页。包含当时题目、公共材料、答案解析、个人回答、判定、分值与来源；historyAvailable 表示整卷是否还在。组合题可按 partId 查询，省略时汇总各小题。
 - `GET /api/vocabulary?word=...`：按NFKC及大小写规范化后的英语词头精确查找，返回`{word,matches:[{id,title,status}]}`。英文领域或题号经分享重映射后仍按实际领域及词头查询；缺词返回空数组，不自动新增或改变审核状态。多份词卡保留各自状态供选择。网页引用为`#/vocabulary/<词头>`，考试期间此接口同样受锁定。
 - `POST /api/questions`：新增题目。显式 draft 保存为草稿，其他状态统一进入 pending；新题不能直接发布。
 - `PUT /api/questions/:id`：修改题目，可携带 updatedAt 校验版本；未发布题不能借编辑直接变为 published。
@@ -83,14 +85,14 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 - `GET /api/attempts/:id`：作答快照；未交卷隐藏答案、解析和填空标准答案。
 - `PUT /api/attempts/:id`：`{answers:Record<questionId,{value}>}`，合并并持久化本次传入答案，不新建草稿。
 - `POST /api/attempts/:id/submit`：可选 `{answers}`，交卷并计算客观题得分，固定 elapsedSeconds；重复交卷不重复累计错题。
-- `PUT /api/attempts/:id/review`：`{scores?,mastery?}`，交卷后保存主观评分或掌握自评；数字评分限主观题 0 至快照满分，null 撤销评分。不能修改客观得分。
+- `PUT /api/attempts/:id/review`：`{scores?,mastery?,verdicts?}`，交卷后保存主观评分、掌握自评或 correct／partial／incorrect 判定；数字评分限主观题 0 至快照满分，null 撤销评分。计分题判定必须与分值一致；不计分题可以只判对错。不能修改客观得分。
 - `GET /api/exams/active`：`{attempt:Attempt|null}`，查询当前考试。
 - `POST /api/exams/sync`：同步到期状态，返回当前考试；`POST /api/attempts/:id/sync` 同步一份作答并返回 Attempt。
 - `POST /api/quick-practice`：指定 questionId，或使用 filters 与 excludeQuestionId 随机单题自测；`POST /api/attempts/:id/reveal` 仅允许随机／单题会话提前查看解析。
 
 计时依据 startedAt、deadlineAt 与持久化时间戳，页面刷新或休眠不依赖 interval 累加。考试进行中网页路由固定在考试页面；API 也限制使用其他功能，交卷完成后解除。到期通过界面或后续请求同步自动交卷，仅使用到期前已经保存的答案；到期后的请求不能替换答案。考试过期交卷的 submittedAt 固定为 deadlineAt，并记录 autoSubmitted。
 
-答题卡的状态由共用规则计算：提交前为未作答／已作答；提交后为未作答／正确／错误／未判定。主观题未评分为未判定，已评分是否达到满分用于状态提示；具体部分得分仍显示分值。
+答题卡的状态由共用规则计算：提交前为未作答／已作答；提交后为未作答／正确／部分正确／错误／未判定。主观题满分、部分得分和零分分别对应三种判定，不计分题使用已确认的判定；未判题保留未判定。
 
 ## 题集学习记录与系统配置
 
@@ -110,7 +112,9 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 配置包括答题草稿上限、随机自测草稿、组题草稿 maxPaperDrafts、历史保留、考试分钟、组题默认值、每种题型分值、复习间隔、自动保存等待、资料及图片大小。初始答题／组题草稿各 3 份；提交历史 0 表示不限量；组题默认 20 题、不计分；计分时默认 100 分、客观目标 60%；考试默认 120 分钟。
 
-降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪不删除独立错题状态、错误快照、来源摘要、笔记及复习安排。旧库启动和旧备份导入时从尚存历史补建学习证据，已提前删除的历史无法追溯恢复。
+单题详情由 maxQuestionHistory 独立控制，默认每个叶题10次，0关闭独立详情保留，不限制整卷历史。整卷存在时 question_history 仅引用原作答；整卷裁剪前只归档仍被单题保留的快照与回答。单题详情超限不清累计统计，也不清整卷；提高上限不会复活已裁剪详情。重评更新同一回答的分类，不增加作答次数。重置学习进度清累计统计，保留的旧详情标 beforeReset。旧备份仅能从尚存完整作答补建详情，已经清掉的回答不推算。
+
+降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring?,questionHistory?,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪不删除独立错题状态、错误快照、来源摘要、笔记及复习安排。旧库启动和旧备份导入时从尚存历史补建学习证据，已提前删除的历史无法追溯恢复。
 
 ## AI 配置与任务
 
@@ -158,9 +162,9 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 ### 解析与主观评价
 
 - `POST /api/ai/explain`：`{questionId,partId?}` → explanationMarkdown、followUpsMarkdown、pitfallsMarkdown。结合题干、原答案解析和追问补充说明，不替换原解析。
-- `POST /api/ai/grade`：`{attemptId,questionIds?}` 评价已提交卷中的 1–20 道主观题；或 `{questionId,answer,maxPoints?}` 临时评价单道简答／论述。单题满分范围0.01–1000、最多两位小数；卷题使用当时快照。
-- 评价返回逐题 score、maxPoints、comment、strengths、improvements。有分卷建议分不能超过原满分；无分卷二者为 null。仅生成建议不会改变实际成绩。
-- `POST /api/ai/runs/:id/apply`：`{confirmed:true,applyScores?,appendNotes?,questionIds?}`。至少选择一项；分值仅可应用于有分已提交卷。笔记追加保留原内容，同一结果不重复追加。应用前校验源题／作答版本，客观成绩不变。
+- `POST /api/ai/grade`：`{attemptId,questionIds?,gradingRequirements?}` 评价已提交卷中的 1–20 道主观题；或 `{questionId,answer,maxPoints?,gradingRequirements?}` 临时评价单道简答／论述。要求最多10000字符；单题满分范围0.01–1000、最多两位小数；卷题使用当时快照。`POST /api/attempts/:id/ai-review` 同样接收 questionIds 和 gradingRequirements。
+- 评价返回逐题 verdict（correct／partial／incorrect）、score、maxPoints、comment、strengths、improvements。有分卷建议分与判定须一致；无分卷分数二者为 null，仍给出判定。服务保存实际使用的 gradingRequirements。旧无明确判定且无分值的分析标 requiresRegrade，显示未判定并阻止应用，须重新评价。
+- `POST /api/ai/runs/:id/apply`：`{confirmed:true,applyScores?,appendNotes?,questionIds?}`。至少选择一项；applyScores 应用已提交作答的判定，有分题另应用分值；返回 appliedScores、appliedVerdicts。单次临时评价可写笔记，不能伪造已提交统计。笔记包含判题要求与结果并保留原内容，同一结果不重复追加。应用前校验源题／作答版本，客观成绩不变。
 
 ### 转换导入与审核
 
@@ -183,7 +187,7 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 - `GET /api/export`：完整 JSON；`POST /api/import`：`{data,mode:'merge'}`。迁移保留题目原审核状态，与新增题目导入区分；同 ID 内容不静默覆盖。
 - `GET /api/backup.sqlite`：可迁移 SQLite 下载副本，清除 AI 密钥，保留本机源库。JSON 备份／分享不包含 AI 凭据；附件较多时优先 SQLite。
 
-Android通过原生平台接口接收SQLite二进制进行完整恢复，不通过HTTP JSON传输。预览先检查原始文件头、完整性、版本、应用表结构及记录主键，再在隔离副本验证数据和引用，剥除输入触发器及派生缓存并由可信代码重建。确认绑定已校验文件、本机写入版本及磁盘基线；本机有活动考试时拒绝。替换前写入并回读独立原库副本，落盘失败回退原连接和原文件；成功后刷新应用，旧页面写入被拒绝。恢复后的AI密钥清除且AI关闭，需重新填写启用；原库私有副本仍含原配置，对外导出时脱敏。JSON完整备份包含`studyParts`及`learningResults`，与同包作答不一致的学习证据整批拒绝。
+Android通过原生平台接口接收SQLite二进制进行完整恢复，不通过HTTP JSON传输。预览先检查原始文件头、完整性、版本、应用表结构及记录主键，再在隔离副本验证数据和引用，剥除输入触发器及派生缓存并由可信代码重建。确认绑定已校验文件、本机写入版本及磁盘基线；本机有活动考试时拒绝。替换前写入并回读独立原库副本，落盘失败回退原连接和原文件；成功后刷新应用，旧页面写入被拒绝。恢复后的AI密钥清除且AI关闭，需重新填写启用；原库私有副本仍含原配置，对外导出时脱敏。JSON完整备份包含`studyParts`、`learningResults`及`questionHistory`，与同包作答不一致的学习证据整批拒绝。合并时同ID保留本地记录，不用旧备份覆盖本地较新判题。
 
 旧数据库启动、可信 JSON 导入及旧分享包导入时，会把 questionBanks／question_banks 自动转为题集，保留名称、说明、顺序与完整题目快照；ID冲突使用迁移标记和新ID处理，重复导入不重复创建。含未发布题或空集合先归档。旧 bankId 筛选被清理，已有题目、笔记和作答历史不改写。
 

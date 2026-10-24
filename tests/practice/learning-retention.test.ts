@@ -166,7 +166,7 @@ test('automatic pruning keeps a graded subjective mistake behind a newer pending
   result = (await wrong(app, saved.id)).items[0]; assert.equal(result.attemptId, old.id); assert.equal(result.wrongCount, 1); assert.equal(result.historyAvailable, false);
   const exported = await call(app, '/api/export');
   assert.equal(exported.learningResults.find((entry: any) => entry.id === pending.id).items[0].judgment, undefined);
-  assert.equal(exported.learningResults.find((entry: any) => entry.id === old.id).items[0].judgment, 'incorrect');
+  assert.equal(exported.learningResults.find((entry: any) => entry.id === old.id).items[0].judgment, 'partial');
 });
 
 test('reset preview detects same-count edits and reset preserves favorites, notes, historical scores and drafts across root and part state', async t => {
@@ -277,6 +277,8 @@ test('persistent grouped wrong snapshots alone protect assets and remain readabl
   const copy = await fixture(t); await call(copy, '/api/import', 'POST', { mode: 'merge', data: backup });
   assert.equal((await wrong(copy, saved.id)).items[0].question.groupStemMarkdown, q.stemMarkdown); await call(copy, `/api/assets/${asset.id}`, 'DELETE', undefined, 409);
   const preview = await call(copy, '/api/learning/reset-preview'); await call(copy, '/api/learning/reset', 'POST', { confirmed: true, fingerprint: preview.fingerprint });
+  await call(copy, `/api/assets/${asset.id}`, 'DELETE', undefined, 409);
+  await prune(copy, { maxQuestionHistory: 0 });
   await call(copy, `/api/assets/${asset.id}`, 'DELETE');
-  assert.equal((await call(copy, '/api/assets')).length, 0, 'explicitly resetting the last learning evidence releases its otherwise unused asset');
+  assert.equal((await call(copy, '/api/assets')).length, 0, 'resetting learning evidence and separately removing retained question details releases the final asset reference');
 });

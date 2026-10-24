@@ -5,6 +5,7 @@ import { idPath, localDate, send, useResource } from '../../shared/lib/api';
 import { ErrorNotice, Field, Loading, QuestionMeta, Tags, useApp } from '../../shared/ui/components';
 import { QuestionContent, SourceNoticeScope, questionNoticeContents } from '../../shared/ui/content-notices';
 import { QuestionStructuredBody } from './question-structure';
+import { QuestionHistory } from './question-history';
 import { matchesQuestionSnapshot } from './question-viewer-state';
 import './question-viewer.css';
 import { emptyStudy } from '../../../shared/questions/study-state';
@@ -56,7 +57,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
     const link = (event.target as HTMLElement).closest('a');
     // Opening linked vocabulary or settings in this dialog must not discard the
     // set's paging and the currently selected question.
-    if (link?.getAttribute('href')?.startsWith('#/')) { event.preventDefault(); toast('请先关闭看题窗口，再打开其他页面'); }
+    if (link?.getAttribute('href')?.startsWith('#/') && !link.hasAttribute('data-question-history-review')) { event.preventDefault(); toast('请先关闭看题窗口，再打开其他页面'); }
   }}>
     {!studyOnly && <SourceNoticeScope contents={questionNoticeContents(question)}>
       <section className="question-viewer-reading question-body">
@@ -69,6 +70,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
         {answerOpen && <div className="answer-content"><div className="section-label">参考答案{question.correctAnswers.length ? ` · ${question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、')}` : ''}</div><QuestionStructuredBody question={question} showAnswers /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><div className="section-label">解析 · 追问 · 误区</div><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</div>}
       </section>
     </SourceNoticeScope>}
+    <QuestionHistory questionId={sourceId} partId={partId} aggregate={question.type === 'group'} beforeOpenReview={() => !busy && (!dirty || confirm('学习笔记尚未保存，确定离开这道题并打开整卷复盘？'))} />
     {source.loading ? <Loading text="正在读取学习记录…" /> : !live ? <div className="notice info">{contentSource === 'current' ? '当前原题已删除或暂时无法读取，仍展示打开窗口时读取的内容；关闭窗口刷新后重新确认。' : '原题已删除或暂时无法读取，仍可查看题集保存的完整题目与解析。'}当前无法保存原题学习记录。{source.error && <button type="button" className="text-button" onClick={source.refresh}>重试学习记录</button>}</div> : <>
       <section className="card question-viewer-study">
         <div className="list-toolbar"><h3><Bookmark size={17} />{partId !== undefined ? '本小题的学习进度与笔记' : '学习进度与笔记'}</h3><button type="button" className={`button ${favorite ? 'favorited' : ''}`} disabled={busy} onClick={() => void updateStudy({ favorite: !favorite })}><Star size={16} fill={favorite ? 'currentColor' : 'none'} />{favorite ? '已收藏' : partId !== undefined ? '收藏整组' : '收藏'}</button></div>

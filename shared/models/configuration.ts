@@ -11,7 +11,7 @@ export interface ConfigurationExport {
 }
 
 export interface ConfigurationChange { key: string; before: unknown; after: unknown }
-export interface ConfigurationRetention { drafts: number; history: number; authoring: number; total: number }
+export interface ConfigurationRetention { drafts: number; history: number; authoring: number; total: number; questionHistory?:number }
 export interface ConfigurationPreview {
   fingerprint: string;
   systemChanges: ConfigurationChange[];

@@ -25,4 +25,7 @@
 .answer-state-text.status-unanswered { color: #65716a; }
 .answer-state-text.status-correct { color: #226c48; }
 .answer-state-text.status-incorrect { color: #a23b32; }
+.question-navigator a.status-partial, .answer-status-legend .status-partial { color: #655399; background: #eee7fa; border-color: #b29acb; }
+.exam-question .number-label.status-partial { color: #655399; background: #eee7fa; }
+.answer-state-text.status-partial { color: #655399; }
 .answer-state-text.status-ungraded { color: #8a6017; }

@@ -21,13 +21,13 @@ export function durationText(seconds: number): string {
 export function isAnswerPresent(answer?: Pick<AttemptAnswer, 'value'>): boolean {
   return !!answer && (Array.isArray(answer.value) ? answer.value.some(value => value.trim().length > 0) : answer.value.trim().length > 0);
 }
-export type AnswerState = 'unanswered' | 'answered' | 'correct' | 'incorrect' | 'ungraded';
-export const answerStateLabels: Record<AnswerState, string> = { unanswered: '未作答', answered: '已作答', correct: '回答正确', incorrect: '回答错误', ungraded: '未判定' };
+export type AnswerState = 'unanswered' | 'answered' | 'correct' | 'partial' | 'incorrect' | 'ungraded';
+export const answerStateLabels: Record<AnswerState, string> = { unanswered: '未作答', answered: '已作答', correct: '回答正确', partial: '部分正确', incorrect: '回答错误', ungraded: '未判定' };
 /** The same exact objective matcher handles ordinary questions and flattened group leaves. */
 export function answerState(question: Pick<AttemptQuestion, 'type' | 'correctAnswers' | 'blanks'>, answer: AttemptAnswer | undefined, submitted: boolean, maximumPoints?: number): AnswerState {
   if (!isAnswerPresent(answer)) return 'unanswered';
   if (!submitted) return 'answered';
   if (!isSubjectiveType(question.type)) return getObjectiveCorrect(question, answer) ? 'correct' : 'incorrect';
-  if (answer?.selfScore == null || maximumPoints == null) return 'ungraded';
-  return answer.selfScore >= maximumPoints ? 'correct' : 'incorrect';
+  if (answer?.selfScore != null && maximumPoints != null) return answer.selfScore >= maximumPoints ? 'correct' : answer.selfScore > 0 ? 'partial' : 'incorrect';
+  return answer?.verdict || 'ungraded';
 }

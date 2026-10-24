@@ -22,7 +22,7 @@ export const configurationImportInputSchema = configurationPreviewInputSchema.ex
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/), confirmed: z.literal(true), confirmedRetention: z.literal(true).optional(),
 }).strict();
 export const configurationExportQuerySchema = z.object({ includeAi: z.enum(['true', 'false']).default('true') }).strict();
-export const configurationRetentionSchema = z.object({ drafts: z.number().int().nonnegative(), history: z.number().int().nonnegative(), authoring: z.number().int().nonnegative(), total: z.number().int().nonnegative() }).strict();
+export const configurationRetentionSchema = z.object({ drafts: z.number().int().nonnegative(), history: z.number().int().nonnegative(), authoring: z.number().int().nonnegative(), total: z.number().int().nonnegative(),questionHistory:z.number().int().nonnegative().optional() }).strict();
 const changeSchema = z.object({ key: z.string(), before: z.unknown(), after: z.unknown() }).strict();
 export const configurationPreviewSchema = z.object({
   fingerprint: z.string(), systemChanges: z.array(changeSchema), aiChanges: z.array(changeSchema), retention: configurationRetentionSchema,
@@ -86,6 +86,7 @@ export function previewConfiguration(store: Store, raw: unknown): ConfigurationP
     data, system: getSettings(store), ai: currentAi,
     attempts: store.all('attempts').sort((a, b) => a.id.localeCompare(b.id)),
     paperDrafts: store.all('paper_drafts').sort((a, b) => a.id.localeCompare(b.id)),
+    questionHistory:store.all('question_history').sort((a,b)=>a.id.localeCompare(b.id)),
   })).digest('hex');
   return {
     fingerprint, systemChanges: changes(systemFields(store), data.system), aiChanges: data.ai ? changes(aiFields(store), data.ai) : [],

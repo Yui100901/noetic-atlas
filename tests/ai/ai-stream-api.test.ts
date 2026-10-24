@@ -140,6 +140,16 @@ test('disconnecting AI SSE aborts the provider and cannot publish pending questi
   await iterator.return(undefined);
 });
 
+test('cancelling a rubric-based AI grade aborts the provider without persisting judgments', async t => {
+  const result = { items: [{ questionId: 'S1', verdict: 'correct', score: null, maxPoints: null, comment: '回答完整', strengths: [], improvements: [] }] };
+  const f = await fixture(t, { result }), controller = new AbortController();
+  const response = await f.post('/api/ai/grade', { questionId: 'S1', answer: '整体提交或回滚', gradingRequirements: '允许等价表达；即使取消也请完成判题' }, { signal: controller.signal, headers: { Accept: 'text/event-stream' } });
+  const iterator = events(response); await deadline(iterator.next()); await deadline(f.started);
+  controller.abort(); await deadline(f.closed); f.release();
+  const records = await fetch(`${f.origin}/api/ai/runs`); assert.deepEqual(await records.json(), []);
+  await iterator.return(undefined);
+});
+
 test('legacy JSON AI keeps HTTP error codes and stream:false; q=0 does not opt into SSE', async t => {
   const f = await fixture(t); f.release();
   const response = await f.post('/api/ai/explain', { questionId: 'S1' }, { headers: { Accept: 'text/event-stream;q=0, application/json' } });

@@ -70,7 +70,7 @@ function contextQuestions(store:Store,resolved:ResolvedContext) {
     if(row.status!=='submitted')continue;
     if(!item.judgment)continue;
     const wrong=item.judgment!=='correct';
-    if(wrong){candidate.answerState=item.judgment as 'incorrect'|'unanswered';wrongCounts.set(key,(wrongCounts.get(key)||0)+1);}
+    if(wrong){candidate.answerState=item.judgment==='partial'?'incorrect':item.judgment as 'incorrect'|'unanswered';wrongCounts.set(key,(wrongCounts.get(key)||0)+1);}
     if(!judged.has(key))judged.set(key,{wrong,candidate});
   }
   // Unpracticed current members still participate in shared favorites/review.

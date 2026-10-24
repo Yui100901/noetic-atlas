@@ -102,6 +102,6 @@ export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
     const body = parse(z.object({ answers: answersSchema.optional() }).strict(), request.body || {}); return attemptView(submitAttempt(store, attempt, body.answers));
   });
   app.put('/api/attempts/:id/review', async request => {
-    const { scores, mastery } = parse(scoreSchema, request.body); return attemptView(reviewAttempt(store, store.require<StoredAttempt>('attempts', getId(request)), scores, mastery));
+    const { scores, mastery, verdicts } = parse(scoreSchema, request.body); return attemptView(reviewAttempt(store, store.require<StoredAttempt>('attempts', getId(request)), scores, mastery,verdicts));
   });
 }

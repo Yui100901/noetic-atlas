@@ -29,6 +29,7 @@ export class SqliteExpressions {
       'correctAnswers',json_extract(item.value,'$.correctAnswers'),'blanks',json_extract(item.value,'$.blanks'),
       'answerValue',case when json_extract(item.value,'$.type') in ('short_answer','essay') then null else json_extract(${data},${answerPath} || '.value') end,
       'selfScore',json_extract(${data},${answerPath} || '.selfScore'),
+      'verdict',json_extract(${data},${answerPath} || '.verdict'),
       'scoringEnabled',coalesce(json_extract(${data},'$.scoring.enabled'),1),
       'maximumPoints',json_extract(${data},'$.scoring.questionPoints.' || json_quote(${qid}))
     )),'[]') from json_each(${data},'$.questions') as item)`;
@@ -56,6 +57,12 @@ export class SqliteExpressions {
     const wanted = JSON.stringify(identities.map(item => [item.sourceId, item.id]));
     return sql<string>`(select coalesce(json_group_array(json(item.value)),'[]') from json_each(${sql.ref(ref)},'$.questions') as item
       where exists(select 1 from json_each(${wanted}) as selected where json_extract(selected.value,'$[0]')=coalesce(json_extract(item.value,'$.sourceQuestionId'),json_extract(item.value,'$.id')) and json_extract(selected.value,'$[1]')=json_extract(item.value,'$.id')))`;
+  }
+  learningQuestionItems(ref:string,questionId:string,partId?:string):RawBuilder<string> {
+    return sql<string>`(select coalesce(json_group_array(json(item.value)),'[]') from json_each(${sql.ref(ref)},'$.items') as item where coalesce(json_extract(item.value,'$.sourceQuestionId'),json_extract(item.value,'$.id'))=${questionId} ${partId===undefined?sql``:sql`and json_extract(item.value,'$.partId')=${partId}`})`;
+  }
+  selectedAttemptAnswers(ref:string,ids:readonly string[]):RawBuilder<string> {
+    return sql<string>`(select coalesce(json_group_object(item.key,json(item.value)),'{}') from json_each(${sql.ref(ref)},'$.answers') as item where item.key in (select value from json_each(${JSON.stringify(ids)})))`;
   }
   arrayRecordsByIds(ref: string, key: string, ids: readonly string[]): RawBuilder<string> {
     return sql<string>`(select coalesce(json_group_array(json(item.value)),'[]') from json_each(${sql.ref(ref)},${this.path(key)}) as item where json_extract(item.value,'$.id') in (select value from json_each(${JSON.stringify(ids)})))`;

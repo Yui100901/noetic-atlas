@@ -1,4 +1,5 @@
 import type { Attempt } from '../../../shared/models/types';
+import type { AiRun } from '../../../shared/ai/ai';
 import { ApiError, idPath, send } from '../../shared/lib/api';
 import { AI_PROGRESS_HEADER, subscribeNativeAiProgress, type AiProgressUpdate, type AiStreamEvent } from '../../../shared/ai/ai-progress';
 import { isNativeApp, nativeFetch } from '@platform';
@@ -6,7 +7,7 @@ import { createSseParser } from '../../../shared/ai/sse';
 
 // View contracts mirror the local AI service; provider credentials never enter results.
 export type { AiSettings as AiSettingsView, AiRun as AiRunView, AiExplanation as AiExplanationResult, AiGradeItem, AiGradeResult, AiImportResult, AiReviewItem, AiReviewResult } from '../../../shared/ai/ai';
-export const aiRunApply = (id:string, options:{applyScores?:boolean;appendNotes?:boolean;questionIds?:string[]}) => send<{attempt?:Attempt}>(`/api/ai/runs/${idPath(id)}/apply`, 'POST', { confirmed:true, ...options });
+export const aiRunApply = <Result=unknown>(id:string, options:{applyScores?:boolean;appendNotes?:boolean;questionIds?:string[]}) => send<{attempt?:Attempt;run:AiRun<Result>}>(`/api/ai/runs/${idPath(id)}/apply`, 'POST', { confirmed:true, ...options });
 
 export interface AiRequestOptions { onProgress?: (event: AiProgressUpdate) => void; signal?: AbortSignal }
 function aborted(signal?: AbortSignal) { if (signal?.aborted) throw new DOMException('已取消本次 AI 请求', 'AbortError'); }

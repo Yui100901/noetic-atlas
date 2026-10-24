@@ -26,6 +26,8 @@ import { registerGlobalLearningRoutes } from './modules/practice/global-learning
 import { registerTransferRoutes } from './modules/transfer/routes.js';
 import { migrateLearningResults } from './modules/practice/learning-results.js';
 import { registerLearningResetRoutes } from './modules/study/reset.js';
+import { migrateQuestionHistory } from './modules/questions/history-store.js';
+import { registerQuestionHistoryRoutes } from './modules/questions/history.js';
 
 export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void }
 export async function buildApp(options: AppOptions = {}) {
@@ -43,7 +45,7 @@ export async function buildApp(options: AppOptions = {}) {
       importData(store, JSON.parse(readFileSync(seedPath, 'utf8')));
       store.database.run(store.database.query.insertInto('metadata').values({key:'seed_initialized',value:now()}).onConflict(c=>c.column('key').doUpdateSet({value:now()})));
     }
-    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store); validateAllAssetReferences(store); return migrated || learning > 0; });
+    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); validateAllAssetReferences(store); return migrated || learning > 0 || history>0; });
     if (migrated) options.onDataMigrated?.();
     store.database.projections.refreshAll();
   } catch (error) { store.db.close(); throw error; }
@@ -66,6 +68,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerAiRoutes(app, store, { native: options.native });
   registerPaperDraftRoutes(app, store);
   registerQuestionRoutes(app, store);
+  registerQuestionHistoryRoutes(app,store);
 
   registerTaxonomyRoutes(app, store);
 

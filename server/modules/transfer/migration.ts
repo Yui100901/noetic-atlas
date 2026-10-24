@@ -15,6 +15,7 @@ import { cleanLearningEnvelope } from '../../../shared/questions/learning-record
 import { cleanLegacyBankFilters, legacyBankPaper, legacyBankPaperId, migrateLegacyBanks } from '../banks/legacy-banks.js';
 import { studyPartKey } from '../../../shared/questions/study-state.js';
 import { learningResultSchema, validateLearningResult, migrateLearningResults } from '../practice/learning-results.js';
+import { questionHistorySchema,validateQuestionHistory,migrateQuestionHistory } from '../questions/history-store.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
@@ -38,8 +39,9 @@ const envelopeSchema = z.object({
   questionBanks: z.array(questionBankSchema.safeExtend({ id })).default([]),
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
+  questionHistory:z.array(questionHistorySchema).default([]),
 });
-const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table;
+const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -146,6 +148,10 @@ export function importData(store: Store, raw: unknown) {
     const importedAttempts = new Map(data.attempts.map(value => [value.id, value as StoredAttempt]));
     insert('learning_results', data.learningResults.map(value => validateLearningResult(store, value, importedAttempts.get(value.id))));
     migrateLearningResults(store);
+    // The envelope already checked every row's schema. A colliding index keeps
+    // its local version, which may reflect a newer grade than this backup.
+    insert('question_history',data.questionHistory.map(value=>store.get('question_history',value.id)?value:validateQuestionHistory(store,value)));
+    migrateQuestionHistory(store,true,!(raw&&typeof raw==='object'&&Object.hasOwn(raw,'questionHistory')));
     // Reviews remain useful study events after retention removes their attempt.
     for (const r of data.reviews) store.require('questions', r.questionId);
     insert('reviews', data.reviews);

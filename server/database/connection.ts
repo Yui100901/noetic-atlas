@@ -32,6 +32,8 @@ export class DatabaseConnection {
       ['attempts_exam_status_started_idx','attempts',['practiceMode','status','startedAt']],
       ['attempts_source_paper_status_idx','attempts',['source','paperId','status']],
       ['learning_results_source_paper_idx','learning_results',['source','paperId']],
+      ['question_history_question_part_date_idx','question_history',['questionId','partId','submittedAt']],
+      ['question_history_attempt_idx','question_history',['attemptId']],
       ['documents_archived_updated_idx','documents',['_archived','updatedAt']],
       ['questions_type_title_idx','questions',['type','title']],
     ] as const) {

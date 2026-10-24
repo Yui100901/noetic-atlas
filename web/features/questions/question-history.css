@@ -1,0 +1,56 @@
+.question-history { min-width: 0; }
+.question-history-toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: var(--green); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.question-history-toggle > span { display: flex; align-items: center; gap: 9px; }
+.question-history-toggle > svg { flex: none; }
+.question-history-intro { margin: 10px 0 0; font-size: 12px; }
+.question-history-body { margin-top: 16px; }
+.question-history-body > p { line-height: 1.9; font-size: 12px; }
+.question-history-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 18px 0 12px; }
+.question-history-stats > div { padding: 12px 10px; background: #f4f6f0; border-radius: 8px; text-align: center; }
+.question-history-stats dt { color: var(--muted); font-size: 11px; }
+.question-history-stats dd { margin: 7px 0 0; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.question-history-stats dd small { font-size: 11px; font-weight: 400; }
+.question-history-stat-correct dd { color: var(--green); }
+.question-history-stat-incorrect dd { color: #ad4c39; }
+.question-history-stat-partial dd { color: #996124; }
+.question-history-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.question-history-status p { margin: 0; }
+.question-history-status .text-button { display: flex; align-items: center; gap: 5px; }
+.question-history-retention { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.question-history-items { display: grid; gap: 10px; }
+.question-history-record { border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.question-history-record > summary { display: flex; align-items: center; gap: 10px; padding: 14px; cursor: pointer; list-style: none; }
+.question-history-record > summary::-webkit-details-marker { display: none; }
+.question-history-record > summary > svg { flex: none; }
+.question-history-verdict { border-radius: 5px; padding: 4px 7px; font-size: 11px; white-space: nowrap; background: #edf0eb; color: #68756b; }
+.question-history-verdict.verdict-correct { color: var(--green); background: var(--green-soft); }
+.question-history-verdict.verdict-incorrect { color: #a14936; background: #f9ede5; }
+.question-history-verdict.verdict-partial { color: #906022; background: #f8f0df; }
+.question-history-record-info { display: grid; gap: 5px; flex: 1; min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.question-history-record-info > span { color: var(--muted); font-size: 11px; }
+.question-history-score { font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.question-history-record-body { padding: 18px 16px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.question-history-record-body h3 { font-size: 17px; margin: 12px 0 18px; }
+.question-history-record-body h4 { font-size: 13px; margin: 0 0 12px; }
+.question-history-snapshot-heading { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.question-history-user-answer, .question-history-reference { padding: 16px; margin-top: 18px; border-radius: 8px; background: #f5f7f1; }
+.question-history-reference { background: #faf9f1; }
+.question-history-reference h4:not(:first-child) { margin-top: 18px; }
+.question-history-user-answer ol { padding-left: 20px; }
+.question-history-user-answer li { margin: 8px 0; }
+.question-history-user-answer p { margin: 13px 0 0; font-size: 11px; }
+.question-history-answer-text { white-space: pre-wrap; line-height: 1.85; font-size: 13px; overflow-wrap: anywhere; }
+.question-history-record-footer { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 11px; }
+.question-history-empty { margin: 20px 0 8px; color: var(--muted); }
+@media (max-width: 700px) {
+  .question-history { padding: 16px 12px; }
+  .question-history-toggle { font-size: 13px; }
+  .question-history-stats { gap: 4px; }
+  .question-history-stats > div { padding: 10px 4px; }
+  .question-history-stats dd { font-size: 20px; }
+  .question-history-record > summary { gap: 7px; padding: 12px 9px; flex-wrap: wrap; }
+  .question-history-record-info { min-width: 110px; }
+  .question-history-score { max-width: 105px; }
+  .question-history-record-body { padding: 15px 10px; }
+  .question-history-user-answer, .question-history-reference { padding: 12px; }
+}

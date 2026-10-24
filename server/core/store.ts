@@ -9,7 +9,7 @@ import { QuestionQueries, type QuestionSelection } from '../modules/questions/qu
 import { emptyStudy, studyPartKey } from '../../shared/questions/study-state.js';
 
 export type Entity = Domain | Category | Tag | Question | QuestionBank | DocumentRecord | StudyState | Paper | Attempt;
-export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts'] as const;
+export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts'] as const;
 export type Table = typeof tables[number];
 export const now = () => new Date().toISOString();
 export const nextStamp = (previous?: string) => new Date(Math.max(Date.now(), previous ? Date.parse(previous) + 1 : 0)).toISOString();

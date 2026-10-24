@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import type { Attempt, AttemptAnswer, ExamQuestion, Paper, PaperFilters, Question, ScoringInput } from '../../../shared/models/types.js';
+import type { AnswerVerdict, Attempt, AttemptAnswer, ExamQuestion, Paper, PaperFilters, Question, ScoringInput } from '../../../shared/models/types.js';
 import { Store, makeId, now, nextStamp } from '../../core/store.js';
 import { fail } from '../../core/validation.js';
 import { normalizeScoring, planScoredQuestions, cents, fromCents } from './scoring.js';
@@ -140,8 +140,11 @@ export function validateAttemptTiming(attempt: StoredAttempt): void {
 }
 export const QUICK_PAPER_ID = 'quick-practice';
 function draftStamp(store: Store, source: 'paper' | 'quick', paperId: string) {
-  const stamps = store.all<StoredAttempt>('attempts').filter(a => (a.source || 'paper') === source && a.paperId === paperId).map(a => a.updatedAt || a.startedAt).sort();
-  return nextStamp(stamps.at(-1));
+  const db = store.database, field = db.expressions.field.bind(db.expressions);
+  let query = db.query.selectFrom('attempts').select([field<string | null>('data', 'updatedAt').as('updatedAt'), field<string>('data', 'startedAt').as('startedAt')]).where(field('data', 'paperId'), '=', paperId);
+  query = source === 'quick' ? query.where(field('data', 'source'), '=', 'quick') : query.where(eb => eb.or([eb(field('data', 'source'), '=', 'paper'), eb(field('data', 'source'), 'is', null)]));
+  const latest = db.one(query.orderBy(eb => eb.fn.coalesce(field<string>('data', 'updatedAt'), field<string>('data', 'startedAt')), 'desc').limit(1));
+  return nextStamp(latest?.updatedAt || latest?.startedAt);
 }
 export function createQuickAttempt(store: Store, input: { questionId?: string; excludeQuestionId?: string; filters?: PaperFilters }): StoredAttempt {
   const pool = input.questionId ? [store.require<Question>('questions', input.questionId)] : store.questions(input.filters || {}).filter(q => q.id !== input.excludeQuestionId);
@@ -171,7 +174,7 @@ export function mergeAnswers(attempt: StoredAttempt, answers: Record<string, Att
   for (const [id, answer] of Object.entries(answers)) {
     const q = attempt.questions.find(q => q.id === id);
     if (!q) fail(400, 'INVALID_ANSWER_QUESTION', `作答题目不属于本次练习：${id}`);
-    if (answer.selfScore != null || answer.mastery != null) fail(400, 'EARLY_SELF_SCORE', '判分和掌握自评仅在交卷后通过复盘接口提交');
+    if (answer.selfScore != null || answer.mastery != null || answer.verdict != null) fail(400, 'EARLY_SELF_SCORE', '判分和掌握自评仅在交卷后通过复盘接口提交');
     if (isSubjectiveType(q!.type)) {
       if (typeof answer.value !== 'string') fail(400, 'INVALID_ANSWER', '主观题答案须为文本');
     } else if (q!.type === 'fill_blank') {
@@ -207,7 +210,8 @@ export function validateAttemptSnapshot(attempt: StoredAttempt) {
   for (const [qid, answer] of Object.entries(attempt.answers)) {
     plainAnswers[qid] = { value: answer.value };
     const q = attempt.questions.find(q => q.id === qid);
-    if (!q || (!isSubjectiveType(q.type) && answer.selfScore != null) || (attempt.status === 'in_progress' && (answer.selfScore != null || answer.mastery != null)) || (answer.selfScore != null && (!scoring.enabled || answer.selfScore < 0 || cents(answer.selfScore) > cents(scoring.questionPoints[qid]!)))) fail(400, 'INVALID_ATTEMPT', '评分或掌握自评与题型、满分或作答状态不一致');
+    if (!q || (!isSubjectiveType(q.type) && (answer.selfScore != null || answer.verdict != null)) || (attempt.status === 'in_progress' && (answer.selfScore != null || answer.mastery != null || answer.verdict != null)) || (answer.selfScore != null && (!scoring.enabled || answer.selfScore < 0 || cents(answer.selfScore) > cents(scoring.questionPoints[qid]!)))) fail(400, 'INVALID_ATTEMPT', '评分或掌握自评与题型、满分或作答状态不一致');
+    if(answer.verdict!=null&&scoring.enabled&&answer.selfScore!=null&&answer.verdict!==(answer.selfScore>=scoring.questionPoints[qid]!? 'correct':answer.selfScore>0?'partial':'incorrect'))fail(400,'INVALID_ATTEMPT','主观判定与保存分值不一致');
   }
   mergeAnswers(validationCopy, plainAnswers);
   const expectedObjectiveScore = attempt.status === 'submitted' ? fromCents(attempt.questions.reduce((n, q) => n + (!isSubjectiveType(q.type) && isCorrect(q, attempt.answers[q.id]) ? cents(scoring.questionPoints[q.id]!) : 0), 0)) : 0;
@@ -243,7 +247,7 @@ export function submitAttempt(store: Store, attempt: StoredAttempt, answers?: Re
     applyAttemptRetention(store, attempt);
   }); return attempt;
 }
-export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Record<string, number | null> = {}, mastery: Record<string, number> = {}) {
+export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Record<string, number | null> = {}, mastery: Record<string, number> = {}, verdicts:Record<string,AnswerVerdict|null> = {}) {
   if (attempt.status !== 'submitted') fail(409, 'NOT_SUBMITTED', '请先交卷，再进行主观题自评');
   const scoring = normalizeScoring(attempt.questions, attempt.scoring); attempt.scoring = scoring;
   store.transaction(() => {
@@ -253,8 +257,15 @@ export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Reco
       if (!scoring.enabled) fail(400, 'SCORING_DISABLED', '本卷不计分，请提交0至3的掌握自评');
       if (score != null && (score < 0 || cents(score) > cents(scoring.questionPoints[id]!))) fail(400, 'SCORE_EXCEEDS_MAX', '主观题分数不可超过该题满分', { questionId: id, max: scoring.questionPoints[id] });
       const old = attempt.answers[id];
-      attempt.answers[id] = { ...old, value: old?.value || '', selfScore: score };
+      attempt.answers[id] = { ...old, value: old?.value || '', selfScore: score, verdict:score==null?null:score>=scoring.questionPoints[id]!? 'correct':score>0?'partial':'incorrect' };
       if (score != null && mastery[id] === undefined) mastery[id] = scoring.questionPoints[id]! > 0 ? Math.round(score / scoring.questionPoints[id]! * 3) : 3;
+    }
+    for(const [id,verdict] of Object.entries(verdicts)){
+      const q=attempt.questions.find(q=>q.id===id);if(!q||!isSubjectiveType(q.type))fail(400,'INVALID_VERDICT','只能判定本次作答中的主观题');
+      const old=attempt.answers[id],score=old?.selfScore;
+      if(scoring.enabled&&score!=null&&verdict!==(score>=scoring.questionPoints[id]!? 'correct':score>0?'partial':'incorrect'))fail(400,'VERDICT_SCORE_MISMATCH','判题结果与数字分值不一致，请同时更新或撤销评分');
+      attempt.answers[id]={...old,value:old?.value||'',verdict};
+      if(verdict!=null&&mastery[id]===undefined)mastery[id]=verdict==='correct'?3:verdict==='partial'?2:0;
     }
     const changedMastery = new Set<string>();
     for (const [id, level] of Object.entries(mastery)) {

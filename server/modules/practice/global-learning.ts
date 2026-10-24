@@ -48,7 +48,7 @@ function attemptContexts(store:Store,paperIds?:readonly string[]):Context[] {
       if(attempt.status!=='submitted')continue;
       if(!item.judgment)continue;
       const wrong=item.judgment!=='correct';
-      if(wrong)entry.answerState=item.judgment as 'incorrect'|'unanswered';
+      if(wrong)entry.answerState=item.judgment==='partial'?'incorrect':item.judgment as 'incorrect'|'unanswered';
       if(wrong)context.wrongCounts.set(key,(context.wrongCounts.get(key)||0)+1);
       if(!context.judged.has(key))context.judged.set(key,{wrong,entry});
     }

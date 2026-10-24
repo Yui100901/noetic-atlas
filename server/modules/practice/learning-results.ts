@@ -5,11 +5,13 @@ import type { StoredAttempt } from './service.js';
 import type { StoredLeafQuestion } from '../questions/structure.js';
 import { normalizeScoring } from './scoring.js';
 import { learningJudgment, learningQuestionKey, type LearningJudgingItem } from './learning-state.js';
+import { isAnswerPresent } from '../../../shared/practice/attempt-timing.js';
+import { preserveQuestionHistory } from '../questions/history-store.js';
 
 const stamp = z.string().datetime({ offset: true });
 const itemSchema = z.object({
   id: leafId, sourceQuestionId: id.optional(), partId: id.optional(),
-  judgment: z.enum(['correct', 'incorrect', 'unanswered']).optional(),
+  judgment: z.enum(['correct', 'partial', 'incorrect', 'unanswered']).optional(), answered: z.boolean().optional(),
 }).strict();
 /** Independent learning evidence deliberately excludes answers, correct-question
  * bodies and whole-paper scores. Wrong leaves retain their own reading material. */
@@ -18,6 +20,7 @@ export const learningResultSchema = z.object({
   paperVersion: z.number().int().positive(), status: z.literal('submitted'),
   startedAt: stamp, submittedAt: stamp, updatedAt: stamp,
   reset: z.literal(true).optional(), items: z.array(itemSchema).max(500),
+  historyIndexed:z.literal(true).optional(),
   questions: z.array(snapshotQuestionSchema.safeExtend({ id: leafId })).max(500),
 }).strict().superRefine((value, ctx) => {
   if (value.reset && (value.items.length || value.questions.length)) ctx.addIssue({ code: 'custom', message: '重置标记不能携带旧学习结果' });
@@ -42,12 +45,16 @@ export type LearningResultItem = z.infer<typeof itemSchema>;
 
 const orderedJson = (value: unknown): string => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 export function validateLearningResult(store: Store, input: unknown, importedAttempt?: StoredAttempt): LearningResult {
-  const result = parse(learningResultSchema, input);
+  let result = parse(learningResultSchema, input);
   if (importedAttempt) {
     if (importedAttempt.status !== 'submitted') fail(400, 'LEARNING_RESULT_MISMATCH', '未提交作答不能携带已判学习结果');
     const expected = parse(learningResultSchema, resultFromAttempt(importedAttempt));
+    if(!result.reset)result={...result,items:result.items.map(item=>{const prior=expected.items.find(value=>value.id===item.id&&value.sourceQuestionId===item.sourceQuestionId);return item.answered===undefined?{...item,answered:prior?.answered,...(item.judgment==='incorrect'&&prior?.judgment==='partial'?{judgment:'partial' as const}:{})}:item;})};
     const origin = (value: LearningResult) => [value.id, value.source, value.paperId, value.paperTitle, value.paperVersion, value.startedAt, value.submittedAt];
-    if (orderedJson(origin(result)) !== orderedJson(origin(expected)) || !result.reset && orderedJson(result) !== orderedJson(expected)) fail(400, 'LEARNING_RESULT_MISMATCH', '学习结果与同一备份中的原作答不一致');
+    // This maintenance marker is absent from genuine old backups. Preserve that
+    // absence until the history migration can recover their retained answers.
+    const evidence = ({ historyIndexed: _indexed, ...value }: LearningResult) => value;
+    if (orderedJson(origin(result)) !== orderedJson(origin(expected)) || !result.reset && orderedJson(evidence(result)) !== orderedJson(evidence(expected))) fail(400, 'LEARNING_RESULT_MISMATCH', '学习结果与同一备份中的原作答不一致');
   }
   // Asset references are checked by the enclosing import's complete graph
   // validation, after every table is present. Keep retention free of HTTP/config
@@ -60,17 +67,19 @@ export function resultFromAttempt(attempt: StoredAttempt): LearningResult {
   const questions: StoredLeafQuestion[] = [];
   const items = attempt.questions.map(q => {
     const answer = attempt.answers[q.id];
-    const judgment = learningJudgment({ ...q, answerValue: answer?.value, selfScore: answer?.selfScore, scoringEnabled: scoring.enabled, maximumPoints: scoring.questionPoints[q.id] });
+    const judgment = learningJudgment({ ...q, answerValue: answer?.value, selfScore: answer?.selfScore, verdict:answer?.verdict, scoringEnabled: scoring.enabled, maximumPoints: scoring.questionPoints[q.id] });
     if (judgment?.wrong) { const { study: _state, partStudies: _parts, ...snapshot } = q; questions.push(snapshot); }
-    return { id: q.id, ...(q.sourceQuestionId ? { sourceQuestionId: q.sourceQuestionId } : {}), ...(q.partId ? { partId: q.partId } : {}), ...(judgment ? { judgment: judgment.wrong ? judgment.answerState! : 'correct' as const } : {}) };
+    return { id: q.id, answered:isAnswerPresent(answer), ...(q.sourceQuestionId ? { sourceQuestionId: q.sourceQuestionId } : {}), ...(q.partId ? { partId: q.partId } : {}), ...(judgment ? { judgment: judgment.wrong ? judgment.verdict||judgment.answerState! : 'correct' as const } : {}) };
   });
-  return { id: attempt.id, source: attempt.source || 'paper', paperId: attempt.paperId, paperTitle: attempt.paperTitle, paperVersion: attempt.paperVersion, status: 'submitted', startedAt: attempt.startedAt, submittedAt: attempt.submittedAt!, updatedAt: attempt.updatedAt || attempt.submittedAt || attempt.startedAt, items, questions };
+  return { id: attempt.id, historyIndexed:true, source: attempt.source || 'paper', paperId: attempt.paperId, paperTitle: attempt.paperTitle, paperVersion: attempt.paperVersion, status: 'submitted', startedAt: attempt.startedAt, submittedAt: attempt.submittedAt!, updatedAt: attempt.updatedAt || attempt.submittedAt || attempt.startedAt, items, questions };
 }
 
 /** Call inside the same transaction as submit/grade and BEFORE history pruning. */
 export function preserveLearningResults(store: Store, attempt: StoredAttempt): void {
-  if (attempt.status !== 'submitted' || store.get<LearningResult>('learning_results', attempt.id)?.reset) return;
-  store.put('learning_results', attempt.id, resultFromAttempt(attempt));
+  if (attempt.status !== 'submitted') return;
+  const previous=store.get<LearningResult>('learning_results',attempt.id);
+  if(!previous?.reset)store.put('learning_results', attempt.id, resultFromAttempt(attempt));
+  preserveQuestionHistory(store,attempt,true,!previous?.historyIndexed);
 }
 
 /** Idempotent upgrade/import: previously pruned history cannot be reconstructed. */

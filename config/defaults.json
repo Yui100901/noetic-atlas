@@ -9,6 +9,7 @@
     "examDurationMinutes": 120,
     "maxHistoryPerPaper": 0,
     "maxQuickHistory": 0,
+    "maxQuestionHistory": 10,
     "randomQuestionCount": 20,
     "scoringEnabledByDefault": false,
     "randomTotalPoints": 100,

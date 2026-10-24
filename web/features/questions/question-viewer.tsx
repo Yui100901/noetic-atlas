@@ -17,7 +17,7 @@ export interface QuestionViewerHandle { confirmLeave: () => boolean }
 
 /** Read immutable content from the set, and bind only learning state to the
  * original question. An edited/deleted original never replaces this snapshot. */
-export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: QuestionSnapshot; onStudyChange?: () => void }>(function QuestionViewer({ question, onStudyChange }, ref) {
+export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: QuestionSnapshot; onStudyChange?: () => void; contentSource?: 'snapshot' | 'current' }>(function QuestionViewer({ question, onStudyChange, contentSource = 'snapshot' }, ref) {
   const sourceId = question.sourceQuestionId || question.id;
   const source = useResource<Question>(`/api/questions/${idPath(sourceId)}`);
   const { toast, reload } = useApp();
@@ -58,7 +58,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
         {answerOpen && <div className="answer-content"><div className="section-label">参考答案{question.correctAnswers.length ? ` · ${question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、')}` : ''}</div><QuestionStructuredBody question={question} showAnswers /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><div className="section-label">解析 · 追问 · 误区</div><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</div>}
       </section>
     </SourceNoticeScope>
-    {source.loading ? <Loading text="正在读取学习记录…" /> : !live ? <div className="notice info">原题已删除或暂时无法读取，仍可查看题集保存的完整题目与解析。当前无法保存原题学习记录。{source.error && <button type="button" className="text-button" onClick={source.refresh}>重试学习记录</button>}</div> : <>
+    {source.loading ? <Loading text="正在读取学习记录…" /> : !live ? <div className="notice info">{contentSource === 'current' ? '当前原题已删除或暂时无法读取，仍展示打开窗口时读取的内容；关闭窗口刷新后重新确认。' : '原题已删除或暂时无法读取，仍可查看题集保存的完整题目与解析。'}当前无法保存原题学习记录。{source.error && <button type="button" className="text-button" onClick={source.refresh}>重试学习记录</button>}</div> : <>
       <section className="card question-viewer-study">
         <div className="list-toolbar"><h3><Bookmark size={17} />学习进度与笔记</h3><button type="button" className={`button ${study?.favorite ? 'favorited' : ''}`} disabled={busy} onClick={() => void updateStudy({ favorite: !study?.favorite })}><Star size={16} fill={study?.favorite ? 'currentColor' : 'none'} />{study?.favorite ? '已收藏' : '收藏'}</button></div>
         <p className="muted">收藏、掌握程度与笔记同步到原题{question.groupStemMarkdown ? '（本组小题共用学习记录）' : ''}。</p>
@@ -68,9 +68,9 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
         <Field label="我的学习笔记"><textarea rows={5} value={notes} onChange={event => setNotes(event.target.value)} placeholder="记录理解、错误原因和下一次要验证的问题…" /></Field>
         <div className="form-actions"><span className="muted">{dirty ? '有未保存的笔记' : '笔记已同步'}</span><button type="button" className="button primary" disabled={busy || !dirty} onClick={() => void updateStudy({ notes })}>保存笔记</button></div>
       </section>
-      {!sameContent && !question.groupStemMarkdown && <p className="muted">原题内容已修改，此处继续展示题集保存时的内容。学习记录仍与原题共用。</p>}
+      {contentSource === 'snapshot' && !sameContent && !question.groupStemMarkdown && <p className="muted">原题内容已修改，此处继续展示题集保存时的内容。学习记录仍与原题共用。</p>}
     </>}
-    <p className="muted">题集保留保存时的内容；AI 解析可在知识题库中针对当前原题使用。</p>
+    <p className="muted">{contentSource === 'current' ? '当前展示原题内容；收藏、复习与笔记共享原题学习记录。' : '题集保留保存时的内容；AI 解析可在知识题库中针对当前原题使用。'}</p>
     <section className="card sources-card"><details><summary>资料来源与常见度依据</summary><p>{question.frequency ? `F${question.frequency} 常见度：` : '常见度未标注：'}{question.frequencyBasis || '经验估计，非统计频率'}{question.frequencyScope && <><br />适用范围：{question.frequencyScope}</>}</p>{question.sourceRefs.length ? <ul>{question.sourceRefs.map((sourceRef, index) => <li key={index}>{/^https?:\/\//i.test(sourceRef.url) ? <a href={sourceRef.url} target="_blank" rel="noopener noreferrer">{sourceRef.label || sourceRef.url}</a> : <span>{sourceRef.label || sourceRef.url}</span>}</li>)}</ul> : <p className="muted">尚未添加参考资料。</p>}</details></section>
   </div>;
 });

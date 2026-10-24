@@ -10,6 +10,7 @@ import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/pap
 import { paginationFields } from '../core/pagination.js';
 import { vocabularyQuerySchema } from '../modules/questions/vocabulary.js';
 import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuestionsQuerySchema, learningContextsQuerySchema } from '../modules/practice/learning.js';
+import { globalLearningSummaryQuerySchema, globalLearningQuestionsQuerySchema, learningCardSummariesInputSchema } from '../modules/practice/global-learning.js';
 
 interface RouteEntry { method: string; url: string; schema?: FastifySchema }
 type JsonSchema = Record<string, any>;
@@ -34,12 +35,16 @@ const shareSelection=z.object({kind:z.enum(['questions','paper']),id:id.optional
 const learningSummaryOutput:JsonSchema={type:'object',properties:{source:{enum:['paper','quick']},paperId:{type:'string'},title:{type:'string'},deleted:{type:'boolean'},archived:{type:'boolean'},counts:{type:'object',properties:Object.fromEntries(['drafts','submitted','wrong','due','favorite'].map(key=>[key,{type:'integer',minimum:0}]))},suggestions:{type:'array',items:{type:'string'}}}};
 const learningHistoryOutput:JsonSchema={type:'object',additionalProperties:false,properties:{id:{type:'string'},source:{enum:['paper','quick']},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},status:{enum:['in_progress','submitted']},practiceMode:{enum:['practice','exam']},startedAt:{type:'string'},updatedAt:{type:'string'},submittedAt:{type:['string','null']},referenceViewedAt:{type:['string','null']},elapsedSeconds:{type:'integer'},durationMinutes:{type:['integer','null']},deadlineAt:{type:['string','null']},autoSubmitted:{type:'boolean'},questionCount:{type:'integer'},answeredCount:{type:'integer'},scoringEnabled:{type:'boolean'},totalPoints:{type:'number'},objectiveScore:{type:'number'},objectiveMax:{type:'number'},subjectiveScore:{type:'number'},subjectiveMax:{type:'number'},totalScore:{type:['number','null']},pendingSubjectiveCount:{type:'integer'},gradingStatus:{enum:['not_applicable','pending','partial','complete']}}};
 const learningQuestionOutput:JsonSchema={type:'object',properties:{question:toJson(validation.snapshotQuestionSchema),attemptId:{type:'string'},answerState:{enum:['incorrect','unanswered']},wrongCount:{type:'integer'},lastPracticedAt:{type:'string'},study:object}};
+const learningOriginOutput:JsonSchema={type:'object',required:['source','paperTitle'],properties:{source:{enum:['paper','quick','library']},paperId:{type:'string'},paperTitle:{type:'string'},deleted:{type:'boolean'},archived:{type:'boolean'},attemptId:{type:'string'},paperVersion:{type:'integer'},startedAt:{type:'string'},submittedAt:{type:['string','null']},questionId:{type:'string'},answerState:{enum:['incorrect','unanswered']},wrongCount:{type:'integer',minimum:0}}};
+const globalLearningQuestionOutput:JsonSchema={...learningQuestionOutput,required:['key','question','origins','snapshotSource','wrongCount'],properties:{...learningQuestionOutput.properties,key:{type:'string'},snapshotSource:{enum:['attempt','library']},origins:{type:'array',description:'完整来源，不截断；错题为各仍错来源的最新已判错误，收藏/复习为当前成员关系及各来源最新历史。',items:learningOriginOutput}}};
+const globalLearningSummaryOutput:JsonSchema={type:'object',required:['counts'],properties:{counts:{type:'object',required:['wrong','favorite','due'],properties:Object.fromEntries(['wrong','favorite','due'].map(key=>[key,{type:'integer',minimum:0}]))}}};
 const learningPage=(item:JsonSchema):JsonSchema=>({type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}});
 const pathBodies: Record<string,z.ZodType> = {
   '/api/questions': validation.questionSchema, '/api/domains': validation.domainSchema, '/api/categories': validation.categorySchema,
   '/api/tags': validation.tagSchema, '/api/documents': validation.documentSchema,
   '/api/papers': validation.paperInputSchema, '/api/papers/preview': validation.paperInputSchema,
   '/api/questions/metadata': validation.questionMetadataInputSchema,
+  '/api/learning/card-summaries': learningCardSummariesInputSchema,
   '/api/questions/bulk-import': validation.bulkQuestionImportSchema, '/api/questions/review': validation.questionReviewSchema,
   '/api/ai/settings': ai.aiSettingsSchema, '/api/ai/paper-plan': ai.aiPaperPlanInputSchema,
   '/api/ai/import': z.object({text:z.string().min(1).max(400000),sourceName:z.string().optional(),categoryIds:z.array(id).default([]),tagIds:z.array(id).default([]),count:z.number().int().min(1).max(50).default(20)}),
@@ -78,7 +83,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(parameters.length)schema.params={type:'object',properties:Object.fromEntries(parameters.map(name=>[name,{type:'string'}])),required:parameters};
   if(list)schema.querystring=toJson(z.object({...paginationFields}));
   if(url==='/api/papers/:id')schema.querystring=toJson(z.object({summary:z.enum(['true','false']).optional()}).strict());
-  const learningQueries:Record<string,z.ZodType>={'/api/learning/summary':learningSummaryQuerySchema,'/api/learning/attempts':learningAttemptsQuerySchema,'/api/learning/questions':learningQuestionsQuerySchema,'/api/learning/contexts':learningContextsQuerySchema};
+  const learningQueries:Record<string,z.ZodType>={'/api/learning/summary':learningSummaryQuerySchema,'/api/learning/attempts':learningAttemptsQuerySchema,'/api/learning/questions':learningQuestionsQuerySchema,'/api/learning/contexts':learningContextsQuerySchema,'/api/learning/global/summary':globalLearningSummaryQuerySchema,'/api/learning/global/questions':globalLearningQuestionsQuerySchema};
   if(learningQueries[url])schema.querystring=toJson(learningQueries[url]!);
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
@@ -95,6 +100,9 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/learning/attempts')success=learningPage(learningHistoryOutput);
   if(url==='/api/learning/questions')success=learningPage(learningQuestionOutput);
   if(url==='/api/learning/contexts')success=learningPage(learningSummaryOutput);
+  if(url==='/api/learning/global/summary')success=globalLearningSummaryOutput;
+  if(url==='/api/learning/global/questions')success=learningPage(globalLearningQuestionOutput);
+  if(url==='/api/learning/card-summaries')success={type:'object',required:['items'],properties:{items:{type:'array',items:{type:'object',required:['paperId','counts'],properties:{paperId:{type:'string'},counts:learningSummaryOutput.properties.counts}}}}};
   if(list)success=paged(success);
   if(url==='/api/questions'&&method==='GET')success=(paged(outputs.questions!) as any).anyOf[1];
   if(url==='/api/questions/metadata')success=toJson(z.object({items:z.array(z.object({id,title:z.string(),type:validation.types,status:z.enum(['published','pending','draft','archived'])})),missingIds:z.array(id)}));
@@ -130,6 +138,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
     if(schema.body) (schema.body as JsonSchema).examples=[url.endsWith('/preview')?{data:configurationExample}:{data:configurationExample,fingerprint:'0'.repeat(64),confirmed:true}];
   }
   if(url.startsWith('/api/learning/'))schema.description+=' 学习记录按题集或随机练习来源隔离。已删除题集只要还有历史仍可查看；错题仅依据该来源保留的已提交作答，按交卷时间取最新已判结果，未判主观题不记错也不覆盖上次已判结果。收藏和复习日期绑定存活原题，共享笔记；建议是本地规则，不调用AI。分页历史不返回题目或答案正文。';
+  if(url.startsWith('/api/learning/global/'))schema.description+=' 特殊题集是只读聚合视图，不创建实体题集。全部错题按原题和叶题合并，来源A答对不会清除来源B仍错的题；展示最近错误快照，完整origins记录各仍错来源及历史版本。全部收藏/待复习覆盖未入集或未练习的存活原题，展示当前内容，origins保留当前题集成员关系及各来源最近保留作答，无关联来源标记library。';
+  if(url==='/api/learning/card-summaries')schema.description+=' 只读批量统计，最多100个不重复题集ID，返回顺序与请求一致。已删除题集按保留历史统计；完全不存在的ID返回零计数。';
   if(url==='/api/questions/metadata')schema.description+=' 只读批量查询题目元数据，最多50000个唯一题号；按输入顺序返回 id/title/type/status，含待审核与归档题。不存在的题号列入 missingIds，不查询题干、答案、笔记。';
   if(url==='/api/papers/:id/restore')schema.description+=' 恢复前确认所有成员原题已审核发布且题集非空。首次恢复且未经编辑的旧集合无分题集按原顺序重新读取已审核题目，保持无分数并产生新版本；其他题集保留原快照、版本和分值。恢复均不改写历史作答。';
   if(url==='/api/papers/:id/questions/:questionId')schema.description+=' 返回这份题集保存的单题快照与解析，含组合题公共材料；不从当前题库替换历史内容。';

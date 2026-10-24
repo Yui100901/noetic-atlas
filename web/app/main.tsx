@@ -17,6 +17,7 @@ import { QuestionReviewPage } from '../features/questions/question-review';
 import { QuestionImportPage } from '../features/questions/question-import';
 import { DocumentDetailPage, DocumentEditor, DocumentsPage } from '../features/library/documents';
 import { DeletedSetActivityPage } from '../features/practice/context-learning';
+import { GlobalLearningPage } from '../features/practice/global-learning';
 import { AiWorkspacePage as AiPage } from '../features/ai/ai-workspace';
 import { SettingsPage } from '../features/settings/settings';
 import { VocabularyReferencePage } from '../features/questions/vocabulary';
@@ -49,6 +50,7 @@ function Router({ hash }: { hash: string }) {
   if (section === 'questions') { if (id === 'import') return <QuestionImportPage key={key} />; if (id === 'review') return <QuestionReviewPage key={key} />; if (id === 'new') return <QuestionEditor key={key} />; if (id && action === 'edit') return <QuestionEditor key={key} id={id} />; if (id) return <QuestionDetail key={key} id={id} showAnswer={params.get('answer') === '1'} />; return <QuestionsPage key={key} initial={{...Object.fromEntries(['search', 'domainId', 'categoryId', 'frequency', 'collection', 'status'].map(name => [name, params.get(name) || ''])),...Object.fromEntries(['due','favorite','wrong'].map(name=>[name,['true','1'].includes(params.get(name)||'')]))}} />; }
   if (section === 'banks') return <LegacyBankRedirect />;
   if (section === 'papers') { if (id === 'new') return <PaperEditor key={key} mode={action === 'random' ? 'random' : 'manual'} />; if (id && action === 'activity') return <DeletedSetActivityPage key={key} paperId={id} initialTab={params.get('tab') || 'history'} />; if (id && action === 'edit') return <PaperEditor key={key} id={id} />; if (id) return <PaperDetailPage key={key} id={id} initialTab={params.get('tab') || 'content'} />; return <PapersPage />; }
+  if (section === 'learning' && (id === 'wrong' || id === 'favorite' || id === 'due')) return <GlobalLearningPage key={key} kind={id} />;
   if (section === 'quick') return <QuickPracticePage key={key} initialTab={params.get('tab') || undefined} />;
   if (section === 'attempts' && id) return <AttemptPage key={key} id={id} />;
   if (section === 'documents') { if (id === 'new') return <DocumentEditor key={key} />; if (id && action === 'edit') return <DocumentEditor key={key} id={id} />; if (id) return <DocumentDetailPage key={key} id={id} />; return <DocumentsPage />; }
@@ -66,7 +68,7 @@ class ErrorBoundary extends React.Component<{ children: ReactNode }, { error: st
 }
 function App() {
   const bootstrap = useResource<Bootstrap>('/api/bootstrap'); const hash = useHash(); const [mobile, setMobile] = useState(false); const [notification, setNotification] = useState<{ message: string; error?: boolean } | null>(null); const [globalSearch, setGlobalSearch] = useState('');
-  const section = hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'overview'; const current = nav.find(item => item.key === section || section === 'attempts' && item.key === 'papers' || section === 'quick' && item.key === 'papers' || section === 'vocabulary' && item.key === 'questions');
+  const section = hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'overview'; const current = nav.find(item => item.key === section || section === 'attempts' && item.key === 'papers' || section === 'quick' && item.key === 'papers' || section === 'learning' && item.key === 'papers' || section === 'vocabulary' && item.key === 'questions');
   useEffect(() => { setMobile(false); document.title = `${current?.label || ((section === 'data' || section === 'settings') ? '系统配置' : section === 'ai' ? 'AI 定向组题' : '认知星图')} · 认知星图`; }, [hash]);
   useEffect(() => { if (!notification) return; const timer = setTimeout(() => setNotification(null), 5000); return () => clearTimeout(timer); }, [notification]);
   if (bootstrap.loading && !bootstrap.data) return <ExamNavigationGuard><div className="app-startup"><div className="brand-mark"><Command size={28} /></div><h1>认知星图</h1><Loading text="正在打开你的学习工作台…" /></div></ExamNavigationGuard>;

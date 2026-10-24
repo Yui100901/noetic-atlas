@@ -98,6 +98,9 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 - `GET /api/learning/attempts`：同一上下文，必填 `status=in_progress|submitted`，支持 page、pageSize，返回不含题目和答案正文的分页历史摘要。
 - `GET /api/learning/questions`：同一上下文，必填 `kind=wrong|due|favorite`，支持分页，返回当次内容快照、关联作答及必要原题学习状态。
 - `GET /api/learning/contexts`：分页返回仍有作答记录、但源题集已永久删除的上下文，供题集页保留历史入口。
+- `GET /api/learning/global/summary`：返回三个固定汇总题集的去重题数 `{counts:{wrong,favorite,due}}`。
+- `GET /api/learning/global/questions?kind=wrong|favorite|due`：分页返回汇总题目、复合 `key`、完整 `origins` 及 `snapshotSource`。错题合并各来源仍待巩固的错误，默认返回最近错误快照；收藏与到期采用存活原题，包含没有题集或作答关联的题目。来源可含题集、版本、是否已删除、具体作答ID与时间；不截断来源列表。
+- `POST /api/learning/card-summaries`：严格接收 `{paperIds}`，1—100个不重复题集ID，返回 `{items:[{paperId,counts:{wrong,favorite,due,drafts,submitted}}]}`。只读批量统计，不写学习状态；移动运行时不触发落盘。
 - `GET /api/study`：学习状态和复习记录；`GET /api/reviews` 可按 questionId 与分页查询复习事件。
 - `PUT /api/study/:id`：`{favorite?,mastery?,notes?,nextReviewAt?}`；`POST /api/study/:id/review`：`{mastery:0..3}`。
 - `GET /api/settings`：SystemSettings；`PUT /api/settings`：`{settings,confirmedRetention?,expectedRetention?}`。

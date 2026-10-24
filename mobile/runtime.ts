@@ -28,7 +28,7 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       const method=(options.method||'GET').toUpperCase();
       // These queries carry JSON through POST rather than a long URL. They
       // must also work with read-only storage and never trigger a full save.
-      const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata'].includes(new URL(url,'https://localhost').pathname);
+      const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata','/api/learning/card-summaries'].includes(new URL(url,'https://localhost').pathname);
       const write = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!readOnlyPost;
       const before = write ? database.export() : undefined;
       const response = await app.inject(url, options);

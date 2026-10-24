@@ -32,6 +32,24 @@ export class SqliteExpressions {
       'maximumPoints',json_extract(${data},'$.scoring.questionPoints.' || json_quote(${qid}))
     )),'[]') from json_each(${data},'$.questions') as item)`;
   }
+  /** Identity metadata only; summary reads never materialize question bodies. */
+  questionLearningLeaves(ref:string):RawBuilder<string> {
+    const data=sql.ref(ref),root=sql`json_extract(${data},'$.id')`;
+    return sql<string>`case when json_extract(${data},'$.type')='group' then
+      (select coalesce(json_group_array(json_object('id',${root} || '::' || json_extract(part.value,'$.id'),'sourceId',${root})),'[]') from json_each(${data},'$.parts') as part)
+      else json_array(json_object('id',${root},'sourceId',${root})) end`;
+  }
+  paperLearningLeaves(ref:string):RawBuilder<string> {
+    const data=sql.ref(ref);
+    return sql<string>`(select coalesce(json_group_array(json_object('id',leaf_id,'sourceId',source_id)),'[]') from (
+      select json_extract(member.value,'$.id') as leaf_id,coalesce(json_extract(member.value,'$.sourceQuestionId'),json_extract(member.value,'$.id')) as source_id
+      from json_each(${data},'$.snapshot') as member where json_extract(member.value,'$.type')!='group'
+      union all
+      select json_extract(member.value,'$.id') || '::' || json_extract(part.value,'$.id') as leaf_id,json_extract(member.value,'$.id') as source_id
+      from json_each(${data},'$.snapshot') as member join json_each(member.value,'$.parts') as part
+      where json_extract(member.value,'$.type')='group'
+    ))`;
+  }
   idInJson(ref: string, values: readonly string[]): RawBuilder<SqlBool> { return sql<SqlBool>`${sql.ref(ref)} in (select value from json_each(${JSON.stringify(values)}))`; }
   unicodeContains(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`atlas_unicode_contains(${value},${needle})=1`; }
   containsLiteral(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`instr(${value},${needle})>0`; }

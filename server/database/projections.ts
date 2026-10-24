@@ -34,10 +34,10 @@ export class RecordProjections {
         `);
       }
       const version=d.one(q.selectFrom('metadata').select('value').where('key','=','read_projection_version'))?.value;
-      if(version!=='1'||!complete) {
+      if(version!=='2'||!complete) {
         d.run(q.deleteFrom('question_read_model'));d.run(q.deleteFrom('paper_read_model'));d.run(q.deleteFrom('asset_references'));
         for(const table of projectionSources)d.run(q.insertInto('projection_pending').columns(['source_table','source_id']).expression(eb=>eb.selectFrom(table).select([eb.val(table).as('source_table'),'id as source_id']).where('id','is not',null)).onConflict(c=>c.columns(['source_table','source_id']).doNothing()));
-        d.run(q.insertInto('metadata').values({key:'read_projection_version',value:'1'}).onConflict(c=>c.column('key').doUpdateSet({value:'1'})));
+        d.run(q.insertInto('metadata').values({key:'read_projection_version',value:'2'}).onConflict(c=>c.column('key').doUpdateSet({value:'2'})));
       }
     });
   }
@@ -74,7 +74,7 @@ export class RecordProjections {
             if(source==='papers'){
               // Retain every scoring input, including group part weights/types,
               // so list views still reject invalid snapshots through normalizeScoring.
-              const snapshot=Array.isArray(record.snapshot)?record.snapshot.map((question:any)=>({id:question.id,type:question.type,...(question.groupId?{groupId:question.groupId}:{}),...(Array.isArray(question.parts)?{parts:question.parts.map((part:any)=>({id:part.id,type:part.type,...(part.weight!==undefined?{weight:part.weight}:{})}))}:{})})):record.snapshot;
+              const snapshot=Array.isArray(record.snapshot)?record.snapshot.map((question:any)=>({id:question.id,type:question.type,...(question.sourceQuestionId?{sourceQuestionId:question.sourceQuestionId}:{}),...(question.groupId?{groupId:question.groupId}:{}),...(Array.isArray(question.parts)?{parts:question.parts.map((part:any)=>({id:part.id,type:part.type,...(part.weight!==undefined?{weight:part.weight}:{})}))}:{})})):record.snapshot;
               const data=JSON.stringify({...record,snapshot});
               d.run(q.insertInto('paper_read_model').values({id,data}).onConflict(c=>c.column('id').doUpdateSet({data})));
             }

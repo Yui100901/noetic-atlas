@@ -10,6 +10,7 @@ import './paper-learning.css';
 const tabs = [
   { id: 'content', label: '题集内容' },
   { id: 'wrong', label: '错题集' },
+  { id: 'favorite', label: '收藏集' },
   { id: 'review', label: '复习建议' },
   { id: 'drafts', label: '作答草稿' },
   { id: 'history', label: '历史答题' },

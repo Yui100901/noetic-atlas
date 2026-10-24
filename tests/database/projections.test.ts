@@ -111,8 +111,19 @@ test('obsolete projection version invalidates stale derived content and rebuilds
     database.run(database.query.updateTable('metadata').set({ value: 'obsolete-test-version' }).where('key', '=', 'read_projection_version'));
     database.projections.initialize(); assert.ok(pending(database).length > 0); database.projections.refreshAll();
     assert.deepEqual(derived(database), expected); assert.deepEqual(canonical(database), originals);
-    assert.equal(database.one(database.query.selectFrom('metadata').select('value').where('key', '=', 'read_projection_version'))?.value, '1');
+    assert.equal(database.one(database.query.selectFrom('metadata').select('value').where('key', '=', 'read_projection_version'))?.value, '2');
   } finally { database.close(); }
+});
+
+test('compact paper snapshots retain original-root identities without retaining leaf bodies',()=>{
+  const database=new DatabaseConnection(':memory:');
+  try{
+    database.putRecord('papers','identity-paper',{id:'identity-paper',snapshot:[question({id:'group::leaf',sourceQuestionId:'group',groupId:'group',stemMarkdown:'LEAF_BODY_CANARY'})]});
+    database.projections.ensure(['papers']);
+    const projected=database.one(database.query.selectFrom('paper_read_model').select('data').where('id','=','identity-paper'))!;
+    assert.deepEqual(JSON.parse(projected.data).snapshot,[{id:'group::leaf',type:'short_answer',sourceQuestionId:'group',groupId:'group'}]);
+    assert.ok(!projected.data.includes('LEAF_BODY_CANARY'));
+  }finally{database.close();}
 });
 
 test('explicit rebuild preserves byte-identical entities, notes, dates, statuses, settings and AI key', () => {

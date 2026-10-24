@@ -1,17 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { AttemptAnswer, Question, QuestionType, StudyState } from '../../../shared/models/types.js';
+import type { Question, StudyState } from '../../../shared/models/types.js';
 import type { AttemptHistoryItem, ContextLearningQuestion, ContextLearningSummary, LearningContext } from '../../../shared/practice/context-learning.js';
 import type { Paged } from '../../../shared/utils/pagination.js';
 import { isAnswerPresent, attemptElapsedSeconds } from '../../../shared/practice/attempt-timing.js';
-import { getObjectiveCorrect, isSubjectiveType } from '../../../shared/questions/question-utils.js';
+import { isSubjectiveType } from '../../../shared/questions/question-utils.js';
 import { cleanLearningRecord } from '../../../shared/questions/learning-records.js';
 import type { Store } from '../../core/store.js';
 import { fail, id, parse } from '../../core/validation.js';
 import { paginationFields } from '../../core/pagination.js';
 import { flattenQuestions, type StoredLeafQuestion } from '../questions/structure.js';
-import { normalizeScoring, LEGACY_POINTS } from './scoring.js';
+import { normalizeScoring } from './scoring.js';
 import { QUICK_PAPER_ID, type StoredAttempt, type StoredPaper } from './service.js';
+import { learningQuestionKey, learningJudgment, type LearningJudgingItem } from './learning-state.js';
 
 const contextFields={source:z.enum(['paper','quick']),paperId:id.optional()};
 const pageFields={...paginationFields,page:paginationFields.page.default(1),pageSize:paginationFields.pageSize.default(20)};
@@ -51,11 +52,10 @@ function resolveContext(store:Store,input:LearningContext) {
   return {context:{source:'paper' as const,paperId:input.paperId!},title:paper?.title||rows[0]!.title||'已删除题集',deleted:!paper,archived:!!paper?.archived,headers:rows};
 }
 type ResolvedContext=ReturnType<typeof resolveContext>;
-interface JudgingItem {id:string;type:QuestionType;sourceQuestionId?:string|null;correctAnswers?:string[];blanks?:Question['blanks'];answerValue?:string|string[]|null;selfScore?:number|null;scoringEnabled?:boolean|number;maximumPoints?:number|null}
 interface Candidate {id:string;sourceId:string;attemptId?:string;lastPracticedAt?:string;wrongCount:number;answerState?:'incorrect'|'unanswered'}
 // An ordinary question may legally contain "::" in its ID and match another
 // root's flattened leaf ID. Retain both the owning root and leaf identity.
-const candidateKey=(candidate:Pick<Candidate,'sourceId'|'id'>)=>JSON.stringify([candidate.sourceId,candidate.id]);
+const candidateKey=(candidate:Pick<Candidate,'sourceId'|'id'>)=>learningQuestionKey(candidate.sourceId,candidate.id);
 function contextQuestions(store:Store,resolved:ResolvedContext) {
   const db=store.database,field=db.expressions.field.bind(db.expressions),context=resolved.context;
   // Only this source's attempts are read, and only compact judging fields.
@@ -64,19 +64,14 @@ function contextQuestions(store:Store,resolved:ResolvedContext) {
     field<string>('a.data','status').as('status'),field<string>('a.data','startedAt').as('startedAt'),field<string|null>('a.data','submittedAt').as('submittedAt'),field<string|null>('a.data','updatedAt').as('updatedAt'),db.expressions.attemptLearningItems('a.data').as('items'),
   ])).sort((a,b)=>time(b.submittedAt||b.updatedAt||b.startedAt)-time(a.submittedAt||a.updatedAt||a.startedAt)||b.id.localeCompare(a.id));
   const latest=new Map<string,Candidate>(),judged=new Map<string,{wrong:boolean;candidate:Candidate}>(),wrongCounts=new Map<string,number>();
-  for(const row of rows)for(const item of JSON.parse(row.items) as JudgingItem[]) {
+  for(const row of rows)for(const item of JSON.parse(row.items) as LearningJudgingItem[]) {
     const candidate:Candidate={id:item.id,sourceId:item.sourceQuestionId||item.id,attemptId:row.id,lastPracticedAt:row.submittedAt||row.updatedAt||row.startedAt,wrongCount:0};
     const key=candidateKey(candidate);
     if(!latest.has(key))latest.set(key,candidate);
     if(row.status!=='submitted')continue;
-    let wrong:boolean;
-    if(isSubjectiveType(item.type)){
-      // A missing subjective grade does not erase a previous judged result.
-      if(!item.scoringEnabled||item.selfScore==null)continue;
-      wrong=item.selfScore<(item.maximumPoints??LEGACY_POINTS[item.type]);
-    }else wrong=!getObjectiveCorrect(item,{value:item.answerValue??''});
-    if(wrong){candidate.answerState=!isSubjectiveType(item.type)&&!isAnswerPresent({value:item.answerValue??''})?'unanswered':'incorrect';wrongCounts.set(key,(wrongCounts.get(key)||0)+1);}
-    if(!judged.has(key))judged.set(key,{wrong,candidate});
+    const judgment=learningJudgment(item);if(!judgment)continue;
+    if(judgment.wrong){candidate.answerState=judgment.answerState;wrongCounts.set(key,(wrongCounts.get(key)||0)+1);}
+    if(!judged.has(key))judged.set(key,{wrong:judgment.wrong,candidate});
   }
   // Unpracticed current members still participate in shared favorites/review.
   if(context.source==='paper'&&!resolved.deleted){

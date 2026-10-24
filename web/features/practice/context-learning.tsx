@@ -9,7 +9,7 @@ import { pointText } from '../../shared/lib/scoring';
 import { QuestionViewer, type QuestionViewerHandle } from '../questions/question-viewer';
 import './context-learning.css';
 
-type LearningTab = 'wrong' | 'review' | 'drafts' | 'history';
+type LearningTab = 'wrong' | 'favorite' | 'review' | 'drafts' | 'history';
 interface ContextLearningPanelProps {
   source: LearningSource;
   paperId?: string;
@@ -17,8 +17,8 @@ interface ContextLearningPanelProps {
   refreshKey?: string | number;
   showTabs?: boolean;
 }
-const normalizeTab = (value?: string): LearningTab => value === 'wrong' || value === 'drafts' || value === 'history' ? value : 'review';
-const tabLabels = { wrong: '错题集', review: '复习建议', drafts: '作答草稿', history: '历史答题' };
+const normalizeTab = (value?: string): LearningTab => value === 'wrong' || value === 'favorite' || value === 'drafts' || value === 'history' ? value : 'review';
+const tabLabels = { wrong: '错题集', favorite: '收藏集', review: '复习建议', drafts: '作答草稿', history: '历史答题' };
 const emptyDescriptions: Record<string, [string, string]> = {
   wrong: ['当前没有错题', '提交练习后，最近一次已经判定为错误或客观题漏答的题目会出现在这里；重新答对后移出。'],
   due: ['当前没有到期复习', '查看题目并记录掌握程度后，系统会安排下次复习；尚未到期的题目不会列入这里。'],
@@ -43,9 +43,9 @@ function LearningPanelBody({ source, paperId, initialTab, refreshKey, showTabs =
   const [reviewKind, setReviewKind] = useState<'due' | 'favorite'>(initialTab === 'favorite' ? 'favorite' : 'due');
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const query = contextQuery(source, paperId);
-  const kind = tab === 'wrong' ? 'wrong' : reviewKind;
+  const kind = tab === 'wrong' ? 'wrong' : tab === 'favorite' ? 'favorite' : reviewKind;
   const scopeLabel = source === 'quick' ? '随机答题' : '本题集';
-  const showQuestions = tab === 'wrong' || tab === 'review';
+  const showQuestions = tab === 'wrong' || tab === 'favorite' || tab === 'review';
   const contextValid = source === 'quick' || !!paperId;
   const questions = useResource<Paged<ContextLearningQuestion>>(contextValid && showQuestions ? `/api/learning/questions?${query}&${qs({ kind, page, pageSize })}` : null);
   const attempts = useResource<Paged<AttemptHistoryItem>>(contextValid && !showQuestions ? `/api/learning/attempts?${query}&${qs({ status: tab === 'drafts' ? 'in_progress' : 'submitted', page, pageSize })}` : null);
@@ -102,6 +102,7 @@ function LearningPanelBody({ source, paperId, initialTab, refreshKey, showTabs =
   if (!summary) return <ErrorNotice message={summaryError || '无法读取学习进度'} retry={refreshSummary} />;
   const tabs = [
     { id: 'wrong' as const, label: tabLabels.wrong, count: summary.counts.wrong, Icon: Target },
+    { id: 'favorite' as const, label: tabLabels.favorite, count: summary.counts.favorite, Icon: Star },
     { id: 'review' as const, label: tabLabels.review, count: summary.counts.due, Icon: CalendarCheck2 },
     { id: 'drafts' as const, label: tabLabels.drafts, count: summary.counts.drafts, Icon: NotebookPen },
     { id: 'history' as const, label: tabLabels.history, count: summary.counts.submitted, Icon: History },

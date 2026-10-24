@@ -22,6 +22,7 @@ import { registerTaxonomyRoutes } from './modules/taxonomy/routes.js';
 import { registerStudyRoutes } from './modules/study/routes.js';
 import { registerPracticeRoutes } from './modules/practice/routes.js';
 import { registerContextLearningRoutes } from './modules/practice/learning.js';
+import { registerGlobalLearningRoutes } from './modules/practice/global-learning.js';
 import { registerTransferRoutes } from './modules/transfer/routes.js';
 
 export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void }
@@ -72,6 +73,7 @@ export async function buildApp(options: AppOptions = {}) {
 
   registerPracticeRoutes(app, store);
   registerContextLearningRoutes(app, store);
+  registerGlobalLearningRoutes(app, store);
 
   registerTransferRoutes(app, store);
 

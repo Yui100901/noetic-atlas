@@ -297,6 +297,56 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
     assert.equal(saveCount, savesBeforeLearning, 'all context-learning GETs remain readable with unavailable storage');
     assert.deepEqual(durable, bytesBeforeLearning, 'learning reads do not rewrite durable SQLite bytes');
   } finally { failSave = false; }
+  // Global views merge provenance rather than treating a correct answer from
+  // one source as a correction of another source's retained mistake.
+  const crossPaper = await call('/api/papers', 'POST', { title: '手机全局来源验证', mode: 'manual', questionIds: [group.id], scoring: { enabled: false } }, 201);
+  const crossWrong = await call(`/api/papers/${crossPaper.id}/attempts`, 'POST', undefined, 201);
+  await call(`/api/attempts/${crossWrong.id}/submit`, 'POST', { answers: { [`${group.id}::sum`]: { value: ['5'] }, [`${group.id}::mutate`]: { value: 'true' } } });
+  const mergedWrong = await call('/api/learning/global/questions?kind=wrong&page=1&pageSize=100');
+  const sharedMistake = mergedWrong.items.filter((item: any) => item.question.id === `${group.id}::mutate`);
+  assert.equal(sharedMistake.length, 1, 'a leaf wrong in two contexts occupies one global row');
+  assert.equal(sharedMistake[0].key, JSON.stringify([group.id, `${group.id}::mutate`]));
+  assert.equal(sharedMistake[0].snapshotSource, 'attempt');
+  assert.deepEqual(new Set(sharedMistake[0].origins.map((origin: any) => origin.attemptId)), new Set([wrongQuick.id, crossWrong.id]));
+  assert.equal(sharedMistake[0].origins.find((origin: any) => origin.source === 'quick').answerState, 'unanswered');
+  assert.equal(sharedMistake[0].origins.find((origin: any) => origin.paperId === crossPaper.id).answerState, 'incorrect');
+  const crossCorrect = await call(`/api/papers/${crossPaper.id}/attempts`, 'POST', undefined, 201);
+  await call(`/api/attempts/${crossCorrect.id}/submit`, 'POST', { answers: groupAnswers });
+  await call('/api/questions/review', 'POST', { ids: [nativeWord.id], action: 'approve', confirmed: true, expectedUpdatedAt: { [nativeWord.id]: nativeWord.updatedAt } });
+  await call(`/api/study/${nativeWord.id}`, 'PUT', { favorite: true, nextReviewAt: '2020-01-01T00:00:00.000Z', notes: '全局只读查询后保留此写入' });
+  const savesBeforeGlobal = saveCount, bytesBeforeGlobal = durable!.slice(); failSave = true;
+  try {
+    const globalSummary = await call('/api/learning/global/summary');
+    const globalWrong = await call('/api/learning/global/questions?kind=wrong&page=1&pageSize=100');
+    assert.equal(globalWrong.total, globalSummary.counts.wrong);
+    const retained = globalWrong.items.find((item: any) => item.question.id === `${group.id}::mutate`);
+    assert.equal(retained.attemptId, wrongQuick.id);
+    assert.equal(retained.origins.length, 1); assert.equal(retained.origins[0].source, 'quick');
+    assert.equal(retained.origins[0].attemptId, wrongQuick.id, 'correcting the paper leaves the other source mistake and its tracing intact');
+    const deletedOrigin = globalWrong.items.find((item: any) => item.question.id === `${group.id}::discuss`).origins[0];
+    assert.equal(deletedOrigin.paperId, groupPaper.id); assert.equal(deletedOrigin.deleted, true); assert.equal(deletedOrigin.attemptId, groupAttempt.id);
+    for (const kind of ['favorite', 'due']) {
+      const globalQuestions = await call(`/api/learning/global/questions?kind=${kind}&page=1&pageSize=100`);
+      assert.equal(globalQuestions.total, globalSummary.counts[kind]);
+      const direct = globalQuestions.items.find((item: any) => item.question.id === nativeWord.id);
+      assert.equal(direct.snapshotSource, 'library'); assert.equal(direct.attemptId, undefined);
+      assert.equal(direct.origins.length, 1); assert.equal(direct.origins[0].source, 'library'); assert.equal(direct.origins[0].questionId, nativeWord.id);
+      const grouped = globalQuestions.items.filter((item: any) => item.question.id === `${group.id}::mutate`);
+      assert.equal(grouped.length, 1);
+      assert.ok(grouped[0].origins.some((origin: any) => origin.paperId === crossPaper.id && !origin.attemptId), 'current paper membership remains an origin alongside its latest attempt');
+      assert.ok(grouped[0].origins.some((origin: any) => origin.attemptId === crossCorrect.id));
+      assert.ok(grouped[0].origins.some((origin: any) => origin.attemptId === wrongQuick.id));
+    }
+    const cards = await call('/api/learning/card-summaries', 'POST', { paperIds: [crossPaper.id, groupPaper.id, draftPaper.id] });
+    assert.deepEqual(cards.items.map((item: any) => item.paperId), [crossPaper.id, groupPaper.id, draftPaper.id]);
+    assert.deepEqual(cards.items[0].counts, { drafts: 0, submitted: 2, wrong: 0, due: 3, favorite: 3 });
+    assert.deepEqual(cards.items[1].counts, { drafts: 0, submitted: 1, wrong: 1, due: 3, favorite: 3 });
+    assert.deepEqual(cards.items[2].counts, { drafts: 3, submitted: 0, wrong: 0, due: 0, favorite: 0 });
+    assert.equal((await call(`/api/questions/${nativeWord.id}`)).study.notes, '全局只读查询后保留此写入');
+    assert.equal(saveCount, savesBeforeGlobal, 'global GETs and the read-only batch POST work while saving is unavailable');
+    assert.deepEqual(durable, bytesBeforeGlobal, 'global reads preserve the preceding committed writes');
+  } finally { failSave = false; }
+  await call(`/api/papers/${crossPaper.id}?permanent=true`, 'DELETE');
   await call(`/api/questions/${group.id}`, 'DELETE');
   const savesBeforeSnapshotRead = saveCount; failSave = true;
   try {
@@ -306,6 +356,9 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
     assert.deepEqual(frozenSum.question.blanks[0].answers, ['6']);
     assert.equal(frozenSum.question.explanationMarkdown, '1 + 2 + 3 = 6。', 'wrong-question content survives deletion of both source set and original question');
     assert.equal((await call(`/api/learning/questions?${groupScope}&kind=wrong`)).items[0].question.id, `${group.id}::discuss`);
+    const globalFrozen = await call('/api/learning/global/questions?kind=wrong&page=1&pageSize=100');
+    const globalFrozenSum = globalFrozen.items.find((item: any) => item.question.id === `${group.id}::sum`);
+    assert.deepEqual(globalFrozenSum.question.blanks[0].answers, ['6']); assert.equal(globalFrozenSum.origins[0].attemptId, wrongQuick.id);
     assert.equal(saveCount, savesBeforeSnapshotRead);
   } finally { failSave = false; }
 });

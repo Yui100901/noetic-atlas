@@ -11,17 +11,25 @@
 .question-viewer-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 280px); align-items: start; gap: 22px; }
 .question-viewer-main, .question-viewer-aside { min-width: 0; }
 .question-viewer-main > * + * { margin-top: 20px; }
-.question-viewer-aside .card { padding: 20px 16px; }
+.question-viewer-aside .card.question-viewer-study { padding: 16px; }
 .question-viewer-aside .list-toolbar { flex-wrap: wrap; }
-.question-viewer-aside .mastery-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.question-viewer-aside .mastery-buttons { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 10px; }
+.question-viewer-aside .mastery-buttons > button { min-height: 44px; padding: 5px 2px; font-size: 9px; }
+.question-viewer-aside .mastery-buttons > button > span { font-size: 14px; line-height: 1.3; }
+.question-viewer-aside .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0; padding-top: 8px; }
+.question-viewer-aside .facts > div { margin: 0; }
+.question-viewer-aside .facts dt, .question-viewer-aside .facts dd { font-size: 10px; }
+.question-viewer-study > .muted { font-size: 11px; line-height: 1.6; }
+.question-viewer-study .full-width { min-height: 36px; padding: 6px 10px; }
 .question-viewer-notes h3 { display: flex; align-items: center; gap: 8px; }
 .question-viewer-notes > .field { margin-top: 18px; }
 .group-study-tools .question-viewer-layout { grid-template-columns: minmax(0, 1fr) minmax(220px, 240px); gap: 16px; }
 .question-viewer-reading { padding: 8px 0; }
 .question-viewer-title { font-size: 22px; line-height: 1.65; margin: 15px 0 20px; overflow-wrap: anywhere; }
-.question-viewer-study .list-toolbar { margin: 0 0 12px; }
+.question-viewer-study .list-toolbar { margin: 0 0 8px; }
 .question-viewer-study h3 { display: flex; gap: 8px; align-items: center; }
-.question-viewer-study > .field { margin: 18px 0 10px; }
+.question-viewer-study > .field { margin: 10px 0 8px; gap: 4px; }
+.question-viewer-study > .field input { padding: 7px 9px; }
 .question-viewer-study .mastery-buttons { max-width: 460px; }
 @media (max-width: 1050px) {
   .group-study-tools .question-viewer-layout { grid-template-columns: 1fr; }

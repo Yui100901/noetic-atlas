@@ -1,8 +1,13 @@
 import type { QuestionType } from './types.js';
 
+export const THEMES = ['green', 'dark', 'pink', 'sky', 'mint'] as const;
+export type Theme = typeof THEMES[number];
+export const THEME_LABELS: Record<Theme, string> = { green: '森林绿', dark: '暗色', pink: '淡粉色', sky: '天蓝色', mint: '薄荷绿' };
+
 export interface SystemSettings {
   id: 'system';
   updatedAt: string;
+  theme: Theme;
   maxDraftsPerPaper: number;
   maxQuickDrafts: number;
   maxPaperDrafts: number;
@@ -24,7 +29,7 @@ export interface SystemSettings {
 }
 
 export const DEFAULT_SETTINGS: SystemSettings = {
-  id: 'system', updatedAt: '1970-01-01T00:00:00.000Z',
+  id: 'system', updatedAt: '1970-01-01T00:00:00.000Z', theme: 'green',
   maxDraftsPerPaper: 3, maxQuickDrafts: 3,
   maxPaperDrafts: 3, examDurationMinutes: 120,
   maxHistoryPerPaper: 0, maxQuickHistory: 0, maxQuestionHistory: 10,

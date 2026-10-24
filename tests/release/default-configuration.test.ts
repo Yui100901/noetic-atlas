@@ -16,6 +16,7 @@ test('release base configuration rejects opaque credentials and private fields e
     (data:any)=>{data.ai.baseUrl='https://private-provider.example';},
     (data:any)=>{data.system.notes='private preferences';},
     (data:any)=>{data.system.maxHistoryPerPaper='opaque-secret';},
+    (data:any)=>{data.system.theme='unregistered-theme';},
     (data:any)=>{data.questions=[];},
   ]){const data=clean();mutate(data);assert.throws(()=>validateBaseConfiguration(data));}
 });

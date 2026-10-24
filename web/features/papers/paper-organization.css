@@ -1,10 +1,10 @@
-.paper-groups { display: grid; gap: 30px; }
-.paper-organization-group > h2 { font-size: 18px; margin: 0 0 16px; }
-.paper-organization-group > h2 .muted { font-size: 14px; font-weight: 400; margin-left: 8px; }
-.paper-list-tools select { min-width: 160px; max-width: 220px; }
-.paper-organization-label { margin: 0 0 12px; }
-.deleted-paper-notice { color: var(--muted); font-size: 13px; margin: 0; }
+.paper-groups {display:grid;gap:30px; }
+.paper-organization-group > h2 {font-size:18px;margin:0 0 16px; }
+.paper-organization-group > h2 .muted {font-size:14px;font-weight:400;margin-left:8px; }
+.paper-list-tools select {min-width:160px;max-width:220px; }
+.paper-organization-label {margin:0 0 12px; }
+.deleted-paper-notice {color:var(--muted);font-size:13px;margin:0; }
 @media (max-width: 700px) {
-  .paper-list-tools { flex-wrap: wrap; }
-  .paper-list-tools select { min-width: 0; max-width: 100%; flex: 1 1 160px; }
+  .paper-list-tools {flex-wrap:wrap; }
+  .paper-list-tools select {min-width:0;max-width:100%;flex:1 1 160px; }
 }

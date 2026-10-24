@@ -1,0 +1,75 @@
+.settings-page {min-width:0; }
+.settings-page .page-header {margin-bottom:18px; }
+.settings-page .settings-tabs {gap:8px;margin-bottom:16px; }
+.settings-page .settings-section {padding:18px 20px; }
+.settings-page .settings-section h2 {font-size:16px;margin-bottom:14px; }
+.settings-page .settings-section h3 {font-size:14px;margin:18px 0 12px; }
+.settings-page .settings-footer {gap:10px;padding:0 0 14px; }
+.settings-appearance {margin-bottom:14px; }
+.settings-sections-grid {display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));align-items:start;gap:14px; }
+.settings-sections-grid > .settings-retention,
+.settings-sections-grid > .settings-defaults {grid-column:1 / -1; }
+.settings-page .settings-section .form-grid {grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px 20px; }
+.settings-page .settings-review .form-grid,
+.settings-page .settings-files .form-grid {grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.settings-page .settings-defaults .form-grid,
+.settings-page .settings-defaults .settings-points-grid {grid-template-columns:repeat(4, minmax(0, 1fr)); }
+.settings-page .settings-section .field {gap:5px;align-content:start; }
+.settings-page .settings-section .field-label {font-size:12px;line-height:1.65; }
+.settings-page input[type="number"] {width:144px;max-width:100%;min-height:36px;padding:6px 10px;font-size:13px; }
+.settings-page .settings-section > .check-row {margin-bottom:14px; }
+.settings-page .settings-section > p {margin-top:12px;font-size:12px;line-height:1.7; }
+.settings-field-help {margin-top:4px;font-size:11px; }
+.settings-field-help > summary,
+.settings-section-help > summary {width:fit-content;cursor:pointer;color:var(--muted);line-height:1.7; }
+.settings-field-help > summary {padding:2px 0; }
+.settings-field-help > p {font-size:12px;line-height:1.7;padding-top:6px; }
+.settings-section-help {border-top:1px solid var(--border);margin-top:14px;padding-top:10px;font-size:12px; }
+.settings-section-help > p {margin-top:8px; }
+.settings-page > section[aria-label="重置学习进度"] {margin-top:14px; }
+.settings-page > section[aria-label="重置学习进度"] p {max-width:none; }
+.settings-page > section[aria-label="重置学习进度"] > .button {margin-top:12px; }
+.settings-page > .ai-tools .form-grid {grid-template-columns:repeat(3, minmax(0, 1fr)); }
+.settings-page > .ai-tools .field:has(input[type="url"]),
+.settings-page > .ai-tools .field:has(input[type="password"]) {grid-column:span 2; }
+.settings-page > .ai-tools input:not([type="number"]):not([type="checkbox"]) {width:100%; }
+.settings-page .configuration-transfer {margin-bottom:14px; }
+.settings-page .data-grid {gap:14px; }
+.settings-page .data-card {padding:20px; }
+.settings-page .data-card .data-icon {margin-bottom:10px;width:36px;height:36px; }
+.settings-page .data-card p {margin-top:8px;line-height:1.75; }
+.settings-page .import-card {margin-top:14px;padding:20px; }
+.settings-page .import-dropzone {padding:20px;min-height:120px; }
+@media (max-width: 1100px) {
+  .settings-page .settings-defaults .form-grid {grid-template-columns:repeat(3, minmax(0, 1fr)); }
+  .settings-page .settings-review .form-grid {grid-template-columns:1fr; }
+}
+@media (max-width: 760px) {
+  .settings-sections-grid {grid-template-columns:1fr; }
+  .settings-page .settings-section {padding:16px; }
+  .settings-page .settings-section .form-grid,
+  .settings-page .settings-defaults .form-grid,
+  .settings-page .settings-review .form-grid,
+  .settings-page > .ai-tools .form-grid {grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px; }
+  .settings-page .settings-files .form-grid {grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .settings-page .settings-footer .action-row {flex-wrap:wrap; }
+  .settings-page > .ai-tools .field:has(input[type="url"]),
+  .settings-page > .ai-tools .field:has(input[type="password"]) {grid-column:1 / -1; }
+}
+@media (max-width: 390px) {
+  .settings-page .settings-section .form-grid,
+  .settings-page .settings-defaults .form-grid,
+  .settings-page .settings-review .form-grid,
+  .settings-page .settings-files .form-grid,
+  .settings-page > .ai-tools .form-grid {grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px 10px; }
+  .settings-page input[type="number"] {width:128px; }
+  .settings-page .settings-footer > .action-row {width:100%;gap:8px; }
+  .settings-page .settings-footer > .action-row > .button {padding-inline:10px; }
+}
+@media (max-width: 340px) {
+  .settings-page .settings-section .form-grid,
+  .settings-page .settings-defaults .form-grid,
+  .settings-page .settings-review .form-grid,
+  .settings-page .settings-files .form-grid,
+  .settings-page > .ai-tools .form-grid {grid-template-columns:1fr; }
+}

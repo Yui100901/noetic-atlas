@@ -111,6 +111,8 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 - `GET /api/learning/reset-preview`：读取影响数量及新鲜度指纹；`POST /api/learning/reset`接收`{confirmed:true,fingerprint}`，事务内重新核对。清除掌握、复习安排、错误状态与复习事件，保留收藏、笔记、卷面历史成绩和草稿。过期返回`LEARNING_RESET_PREVIEW_STALE`，必须重新预览。
 - `GET /api/settings`：SystemSettings；`PUT /api/settings`：`{settings,confirmedRetention?,expectedRetention?}`。
 
+`SystemSettings.theme`为`green|dark|pink|sky|mint`，默认`green`；旧配置缺少该字段时补默认值。主题属于可迁移的外观偏好，配置导出、完整备份及Android本地持久化均保留，未知主题拒绝写入。
+
 前端不再设置全局学习记录导航：题集详情组织各自草稿、历史、错题与复习，随机与单题在随机练习页单独组织。上下文错题取该范围内每个叶题最新已判结果，后续正确则移出，未判不覆盖已判，未答客观题需巩固。`learning_results`独立保存判定、来源及错误题目必要快照，不保留整卷答案；清理历史后仍可阅读公共材料和错误题目，`historyAvailable:false`表示不再有完整复盘，客户端不生成失效链接。组合小题使用原题ID与小题ID的元组保存学习状态；收藏整组，掌握、日期及笔记独立。
 
 配置包括答题草稿上限、随机自测草稿、组题草稿 maxPaperDrafts、历史保留、考试分钟、组题默认值、每种题型分值、复习间隔、自动保存等待、资料及图片大小。初始答题／组题草稿各 3 份；提交历史 0 表示不限量；组题默认 20 题、不计分；计分时默认 100 分、客观目标 60%；考试默认 120 分钟。

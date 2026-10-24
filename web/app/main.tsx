@@ -26,6 +26,10 @@ import '../shared/ui/action-row.css';
 import './styles.css';
 import './navigation.css';
 import '../shared/ui/feature-entry.css';
+import { applyTheme, initializeTheme } from '../shared/theme/theme';
+import '../shared/theme/themes.css';
+
+initializeTheme();
 
 function Dashboard() {
   const { bootstrap } = useApp(); const stats = bootstrap.stats;
@@ -69,6 +73,7 @@ class ErrorBoundary extends React.Component<{ children: ReactNode }, { error: st
 }
 function App() {
   const bootstrap = useResource<Bootstrap>('/api/bootstrap'); const hash = useHash(); const [mobile, setMobile] = useState(false); const [notification, setNotification] = useState<{ message: string; error?: boolean } | null>(null); const [globalSearch, setGlobalSearch] = useState('');
+  useEffect(() => { if (bootstrap.data?.settings) applyTheme(bootstrap.data.settings.theme, { persist: true }); }, [bootstrap.data?.settings?.theme]);
   const section = hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'overview'; const current = nav.find(item => item.key === section || section === 'attempts' && item.key === 'papers' || section === 'quick' && item.key === 'papers' || section === 'learning' && item.key === 'papers' || section === 'vocabulary' && item.key === 'questions');
   useEffect(() => { setMobile(false); document.title = `${current?.label || ((section === 'data' || section === 'settings') ? '系统配置' : section === 'ai' ? 'AI 定向组题' : '认知星图')} · 认知星图`; }, [hash]);
   useEffect(() => { if (!notification) return; const timer = setTimeout(() => setNotification(null), 5000); return () => clearTimeout(timer); }, [notification]);

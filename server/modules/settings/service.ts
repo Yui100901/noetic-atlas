@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_SETTINGS, type RetentionPreview, type SystemSettings } from '../../../shared/models/settings.js';
+import { DEFAULT_SETTINGS, THEMES, type RetentionPreview, type SystemSettings } from '../../../shared/models/settings.js';
 import { nextStamp, type Store } from '../../core/store.js';
 import { fail, typePointsSchema } from '../../core/validation.js';
 import type { StoredAttempt } from '../practice/service.js';
@@ -9,6 +9,7 @@ import { archiveAttemptQuestionHistory, questionHistoryRetentionCandidates } fro
 
 export const settingsSchema = z.object({
   id: z.literal('system'), updatedAt: z.string().datetime({ offset: true }),
+  theme: z.enum(THEMES).default('green'),
   maxDraftsPerPaper: z.number().int().min(1).max(100), maxQuickDrafts: z.number().int().min(1).max(100),
   maxPaperDrafts: z.number().int().min(1).max(100).default(3), examDurationMinutes: z.number().int().min(1).max(1440).default(120),
   maxHistoryPerPaper: z.number().int().min(0).max(10000), maxQuickHistory: z.number().int().min(0).max(10000),

@@ -92,7 +92,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
             <p className="muted">{partId !== undefined ? '本小题独立记录掌握、复习与笔记；收藏属于整组。' : '掌握程度与复习日期同步到原题。'}</p>
             <div className="mastery-buttons">{[0, 1, 2, 3].map(value => <button type="button" key={value} className={study?.mastery === value ? 'selected' : ''} disabled={busy} onClick={() => void updateStudy({ mastery: value }, true)}><span>{value}</span>{['不会', '需提示', '能独立', '能深入'][value]}</button>)}</div>
             <dl className="facts"><div><dt>最近复习</dt><dd>{localDate(study?.lastReviewedAt)}</dd></div><div><dt>下次复习</dt><dd>{localDate(study?.nextReviewAt)}</dd></div></dl>
-            <Field label="调整复习日期"><input type="date" value={reviewDate} onChange={event => setReviewDate(event.target.value)} /></Field><button type="button" className="button full-width" disabled={busy} onClick={() => void updateStudy({ nextReviewAt: reviewDate ? new Date(reviewDate + 'T09:00:00').toISOString() : null })}>更新日期</button>
+            <div className="study-review-date"><Field label="调整复习日期"><input type="date" value={reviewDate} onChange={event => setReviewDate(event.target.value)} /></Field><button type="button" className="button full-width" disabled={busy} onClick={() => void updateStudy({ nextReviewAt: reviewDate ? new Date(reviewDate + 'T09:00:00').toISOString() : null })}>更新日期</button></div>
           </>}
         </section>
       </aside>

@@ -44,7 +44,7 @@ test('mobile offline assets, configuration and paper organization use the exact 
   });
   await t.test('configuration persists and dynamic draft/history limits apply separately', async () => {
     const settings = await api('/api/settings'); assert.equal(settings.maxDraftsPerPaper, 3);
-    const saved = await api('/api/settings', 'PUT', { settings: { ...settings, maxDraftsPerPaper: 2, maxQuickDrafts: 1, maxHistoryPerPaper: 1, randomQuestionCount: 7, autosaveDebounceMs: 250 } });
+    const saved = await api('/api/settings', 'PUT', { settings: { ...settings, theme: 'dark', maxDraftsPerPaper: 2, maxQuickDrafts: 1, maxHistoryPerPaper: 1, randomQuestionCount: 7, autosaveDebounceMs: 250 } });
     assert.equal(saved.settings.maxDraftsPerPaper, 2);
     const source = seed.questions.find((q: any) => q.status === 'published' && q.type === 'true_false');
     const draftPaper = await api('/api/papers', 'POST', { title: '配置保留验证', mode: 'manual', questionIds: [source.id], scoring: { enabled: false } }, 201);
@@ -54,7 +54,7 @@ test('mobile offline assets, configuration and paper organization use the exact 
     assert.equal((await api(`/api/attempts?paperId=${draftPaper.id}&status=submitted`)).length, 1);
     for (let i = 0; i < 2; i++) await api('/api/quick-practice', 'POST', { questionId: source.id }, 201);
     assert.equal((await api('/api/attempts?source=quick&status=in_progress')).length, 1);
-    await runtime.close(); runtime = await createLocalRuntime(sql, seed, storage); assert.equal((await api('/api/bootstrap')).settings.autosaveDebounceMs, 250);
+    await runtime.close(); runtime = await createLocalRuntime(sql, seed, storage); assert.equal((await api('/api/bootstrap')).settings.autosaveDebounceMs, 250); assert.equal((await api('/api/bootstrap')).settings.theme, 'dark');
   });
   await t.test('Markdown and PDF materials plus managed assets/settings migrate together', async () => {
     const { PDFDocument } = await import('pdf-lib'); const pdf = await PDFDocument.create(); pdf.addPage([120, 120]); const pdfBytes = await pdf.save();

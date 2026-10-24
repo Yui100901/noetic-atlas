@@ -1,43 +1,43 @@
-.context-learning-panel { margin: 18px 0 30px; }
-.context-learning-tabs { overflow-x: auto; flex-wrap: nowrap; }
-.context-learning-tabs > button { flex-shrink: 0; }
-.context-learning-heading { display: flex; gap: 18px; align-items: flex-start; justify-content: space-between; margin: 22px 0 18px; }
-.context-learning-heading h2 { font-size: 20px; margin-bottom: 7px; }
-.context-learning-heading p, .context-rule-note { color: var(--muted); font-size: 12px; line-height: 1.9; }
-.context-learning-heading > .text-button { flex-shrink: 0; margin-top: 4px; }
-.context-review-suggestions { padding: 22px 25px; margin-bottom: 18px; }
-.context-review-suggestions h3 { display: flex; align-items: center; gap: 9px; font-size: 17px; }
-.context-review-suggestions ul { padding-left: 22px; font-size: 14px; line-height: 2; margin-top: 12px; }
-.context-review-suggestions > .context-rule-note { padding-top: 14px; margin-top: 15px; border-top: 1px solid var(--border); }
-.context-review-switch { margin: 18px 0; width: fit-content; }
-.context-review-switch > button { display: inline-flex; align-items: center; gap: 7px; }
-.context-review-switch > button > span { opacity: .75; font-variant-numeric: tabular-nums; }
-.context-learning-questions, .context-attempt-list { display: grid; gap: 12px; margin: 18px 0; }
-.context-learning-question { display: flex; gap: 20px; align-items: center; justify-content: space-between; padding: 19px 22px; }
-.context-learning-question > div { min-width: 0; }
-.context-learning-question-title { display: block; text-align: left; font-size: 16px; line-height: 1.7; padding: 7px 0; white-space: normal; }
-.context-question-state { font-size: 12px; color: var(--muted); line-height: 1.8; margin-top: 4px; }
-.context-wrong-state { background: #f9eae5; color: #a54e43; margin-right: 7px; }
-.context-question-reading[aria-busy="true"] { opacity: .6; }
-.context-attempt-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto 18px; gap: 15px; align-items: center; padding: 21px 23px; color: inherit; }
-.context-attempt-row:hover { border-color: var(--green); }
-.context-attempt-icon { width: 40px; height: 43px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); border-radius: 8px; }
-.context-attempt-icon.in_progress { background: #fbf0df; color: #8d6944; }
-.context-attempt-main h3 { font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
-.context-attempt-main p { color: var(--muted); font-size: 12px; line-height: 1.9; margin-top: 4px; }
-.context-attempt-result { text-align: right; }
-.context-attempt-result p { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.context-learning-panel {margin:18px 0 30px; }
+.context-learning-tabs {overflow-x:auto;flex-wrap:nowrap; }
+.context-learning-tabs > button {flex-shrink:0; }
+.context-learning-heading {display:flex;gap:18px;align-items:flex-start;justify-content:space-between;margin:22px 0 18px; }
+.context-learning-heading h2 {font-size:20px;margin-bottom:7px; }
+.context-learning-heading p, .context-rule-note {color:var(--muted);font-size:12px;line-height:1.9; }
+.context-learning-heading > .text-button {flex-shrink:0;margin-top:4px; }
+.context-review-suggestions {padding:22px 25px;margin-bottom:18px; }
+.context-review-suggestions h3 {display:flex;align-items:center;gap:9px;font-size:17px; }
+.context-review-suggestions ul {padding-left:22px;font-size:14px;line-height:2;margin-top:12px; }
+.context-review-suggestions > .context-rule-note {padding-top:14px;margin-top:15px;border-top:1px solid var(--border); }
+.context-review-switch {margin:18px 0;width:fit-content; }
+.context-review-switch > button {display:inline-flex;align-items:center;gap:7px; }
+.context-review-switch > button > span {opacity:.75;font-variant-numeric:tabular-nums; }
+.context-learning-questions, .context-attempt-list {display:grid;gap:12px;margin:18px 0; }
+.context-learning-question {display:flex;gap:20px;align-items:center;justify-content:space-between;padding:19px 22px; }
+.context-learning-question > div {min-width:0; }
+.context-learning-question-title {display:block;text-align:left;font-size:16px;line-height:1.7;padding:7px 0;white-space:normal; }
+.context-question-state {font-size:12px;color:var(--muted);line-height:1.8;margin-top:4px; }
+.context-wrong-state {background:var(--theme-danger-soft, #f9eae5);color:var(--theme-danger, #a54e43);margin-right:7px; }
+.context-question-reading[aria-busy="true"] {opacity:.6; }
+.context-attempt-row {display:grid;grid-template-columns:42px minmax(0, 1fr) auto 18px;gap:15px;align-items:center;padding:21px 23px;color:inherit; }
+.context-attempt-row:hover {border-color:var(--green); }
+.context-attempt-icon {width:40px;height:43px;display:grid;place-items:center;background:var(--green-soft);color:var(--theme-link, var(--green));border-radius:8px; }
+.context-attempt-icon.in_progress {background:var(--theme-warning-soft, #fbf0df);color:var(--theme-warning, #8d6944); }
+.context-attempt-main h3 {font-size:15px;line-height:1.8;overflow-wrap:anywhere; }
+.context-attempt-main p {color:var(--muted);font-size:12px;line-height:1.9;margin-top:4px; }
+.context-attempt-result {text-align:right; }
+.context-attempt-result p {font-size:12px;color:var(--muted);margin-top:8px; }
 @media (max-width: 700px) {
-  .context-learning-heading { gap: 12px; }
-  .context-learning-heading h2 { font-size: 18px; }
-  .context-review-suggestions { padding: 19px 16px; }
-  .context-review-suggestions h3 { font-size: 16px; }
-  .context-review-suggestions ul { font-size: 13px; }
-  .context-learning-question { flex-wrap: wrap; padding: 16px; gap: 10px; }
-  .context-learning-question > .button { margin-left: auto; }
-  .context-attempt-row { grid-template-columns: 32px minmax(0, 1fr) 16px; padding: 17px 13px; gap: 12px; }
-  .context-attempt-icon { width: 31px; height: 34px; }
-  .context-attempt-main h3 { font-size: 14px; }
-  .context-attempt-result { grid-column: 2; text-align: left; }
-  .context-attempt-row > svg:last-child { grid-column: 3; grid-row: 1 / span 2; }
+  .context-learning-heading {gap:12px; }
+  .context-learning-heading h2 {font-size:18px; }
+  .context-review-suggestions {padding:19px 16px; }
+  .context-review-suggestions h3 {font-size:16px; }
+  .context-review-suggestions ul {font-size:13px; }
+  .context-learning-question {flex-wrap:wrap;padding:16px;gap:10px; }
+  .context-learning-question > .button {margin-left:auto; }
+  .context-attempt-row {grid-template-columns:32px minmax(0, 1fr) 16px;padding:17px 13px;gap:12px; }
+  .context-attempt-icon {width:31px;height:34px; }
+  .context-attempt-main h3 {font-size:14px; }
+  .context-attempt-result {grid-column:2;text-align:left; }
+  .context-attempt-row > svg:last-child {grid-column:3;grid-row:1 / span 2; }
 }

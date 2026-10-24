@@ -34,6 +34,29 @@ test('settings retain current defaults, validate all fields and reject stale wri
   assert.deepEqual(await settings(app), saved);
 });
 
+test('built-in themes validate, round-trip through portable configuration and default old configurations to green', async t => {
+  const app = await fixture(t);
+  for (const theme of ['dark', 'pink', 'sky', 'mint', 'green'] as const) {
+    const saved = await configure(app, { theme });
+    assert.equal(saved.theme, theme);
+    assert.equal(json(await app.inject('/api/bootstrap')).settings.theme, theme);
+    assert.equal(json(await app.inject('/api/settings/export')).system.theme, theme);
+  }
+  const saved = await settings(app);
+  assert.equal((await app.inject({ method: 'PUT', url: '/api/settings', payload: { settings: { ...saved, theme: 'unknown-theme' } } })).statusCode, 400);
+  assert.deepEqual(await settings(app), saved);
+  const exported = json(await app.inject('/api/settings/export'));
+  exported.system.theme = 'sky';
+  const preview = json(await app.inject({ method: 'POST', url: '/api/settings/import/preview', payload: { data: exported } }));
+  assert.deepEqual(preview.systemChanges.find((change: any) => change.key === 'theme'), { key: 'theme', before: 'green', after: 'sky' });
+  json(await app.inject({ method: 'POST', url: '/api/settings/import', payload: { data: exported, fingerprint: preview.fingerprint, confirmed: true } }));
+  assert.equal((await settings(app)).theme, 'sky');
+  delete exported.system.theme;
+  const legacy = json(await app.inject({ method: 'POST', url: '/api/settings/import/preview', payload: { data: exported } }));
+  json(await app.inject({ method: 'POST', url: '/api/settings/import', payload: { data: exported, fingerprint: legacy.fingerprint, confirmed: true } }));
+  assert.equal((await settings(app)).theme, 'green');
+});
+
 test('lower retention limits preview exact counts, reconfirm changed counts and preserve study events', async t => {
   const app = await fixture(t);
   await configure(app, { maxDraftsPerPaper: 5, maxQuickDrafts: 5 });

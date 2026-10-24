@@ -39,16 +39,14 @@ export function QuestionStatistics({ questionId, partId, aggregate = false }: Pi
   const resource = useResource<QuestionStatisticsSummary>(`/api/questions/${idPath(questionId)}/statistics?${qs({ partId })}`);
   const summary = resource.data;
   return <div className="question-study-statistics" data-question-id={questionId} data-part-id={partId ?? ''}>
-    <h3>{aggregate ? '整组累计作答 · 小题合计' : partId !== undefined ? '本小题累计作答' : '累计作答'}</h3>
+    <div className="question-study-heading"><h3>{aggregate ? '整组累计作答 · 小题合计' : partId !== undefined ? '本小题累计作答' : '累计作答'}</h3><button type="button" className="icon-button question-study-refresh" aria-label="刷新统计" title="刷新统计" onClick={resource.refresh}><RefreshCw size={14} /></button></div>
     {resource.loading ? <Loading text="正在读取作答统计…" /> : resource.error ? <ErrorNotice message={resource.error} retry={resource.refresh} /> : summary && <>
       <dl className="question-history-stats" aria-label="实际作答统计">
         <div className="question-study-total"><dt>实际作答</dt><dd>{summary.answered.toLocaleString()}<small> 次</small></dd></div>
         {(['correct', 'partial', 'incorrect', 'ungraded'] as const).map(verdict => <div key={verdict} className={`question-history-stat-${verdict}`}><dt>{verdictLabels[verdict]}</dt><dd>{summary[verdict].toLocaleString()}</dd></div>)}
       </dl>
       <p className="muted question-study-last-answer">最近作答：{localDate(summary.lastAnsweredAt)}</p>
-      <p className="muted question-study-counting-note">{aggregate ? '各小题独立计次后合计。' : '跨题集与随机自测累计。'}仅计实际填写并提交的回答，漏答和草稿不计。</p>
-      {!!summary.unknown && <p className="notice info">另有 {summary.unknown} 条旧记录无法确认实际填写，未计入统计。</p>}
-      <button type="button" className="button question-study-refresh" onClick={resource.refresh}><RefreshCw size={14} />刷新统计</button>
+      <details className="question-study-counting-note"><summary>统计口径{summary.unknown ? ` · ${summary.unknown}条旧记录未计入` : ''}</summary><p>{aggregate ? '各小题独立计次后合计。' : '跨题集与随机自测累计。'}仅计实际填写并提交的回答，漏答和草稿不计。{summary.unknown ? `另有${summary.unknown}条旧记录无法确认实际填写，未计入统计。` : ''}</p></details>
     </>}
   </div>;
 }

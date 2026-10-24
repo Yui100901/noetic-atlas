@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Download, Upload } from 'lucide-react';
 import type { ConfigurationChange, ConfigurationExport, ConfigurationImportResult, ConfigurationPreview } from '../../../shared/models/configuration';
+import { THEME_LABELS, type Theme } from '../../../shared/models/settings';
 import { typeLabels, type QuestionType } from '../../../shared/models/types';
 import { ApiError, request, send } from '../../shared/lib/api';
 import { ErrorNotice, useApp } from '../../shared/ui/components';
@@ -8,6 +9,7 @@ import { saveGeneratedFile } from '@platform';
 import './configuration-transfer.css';
 
 const labels: Record<string, string> = {
+  theme:'外观主题',
   maxDraftsPerPaper:'每卷草稿上限', maxQuickDrafts:'随机自测草稿上限', maxPaperDrafts:'组题草稿上限',
   examDurationMinutes:'默认考试时长（分钟）', maxHistoryPerPaper:'每卷历史上限', maxQuickHistory:'随机自测历史上限', maxQuestionHistory:'每题完整作答历史上限',
   randomQuestionCount:'默认随机题量', scoringEnabledByDefault:'默认计分', randomTotalPoints:'默认总分',
@@ -16,15 +18,16 @@ const labels: Record<string, string> = {
   enabled:'启用AI', baseUrl:'AI接口地址', model:'模型', supportsImages:'模型支持图片', sendImages:'发送图片',
   timeoutSeconds:'请求超时（秒）', maxTokens:'最大输出Token数',
 };
-function display(value: unknown): string {
+function display(value: unknown, key?: string): string {
+  if (key === 'theme' && typeof value === 'string' && Object.hasOwn(THEME_LABELS, value)) return THEME_LABELS[value as Theme];
   if (typeof value === 'boolean') return value ? '开启' : '关闭';
   if (value === '') return '未设置';
-  if (Array.isArray(value)) return value.map(display).join('、');
+  if (Array.isArray(value)) return value.map(item => display(item)).join('、');
   if (value && typeof value === 'object') return Object.entries(value).map(([key, item]) => `${typeLabels[key as QuestionType] || key} ${display(item)}`).join('；');
   return String(value ?? '无');
 }
 function Changes({ title, changes }: { title: string; changes: ConfigurationChange[] }) {
-  return <><h3>{title}</h3>{changes.length ? <div className="table-scroll"><table className="configuration-values"><thead><tr><th>设置</th><th>当前值</th><th>导入值</th></tr></thead><tbody>{changes.map(change => <tr key={change.key}><td>{labels[change.key] || change.key}</td><td>{display(change.before)}</td><td>{display(change.after)}</td></tr>)}</tbody></table></div> : <p className="muted">没有差异。</p>}</>;
+  return <><h3>{title}</h3>{changes.length ? <div className="table-scroll"><table className="configuration-values"><thead><tr><th>设置</th><th>当前值</th><th>导入值</th></tr></thead><tbody>{changes.map(change => <tr key={change.key}><td>{labels[change.key] || change.key}</td><td>{display(change.before, change.key)}</td><td>{display(change.after, change.key)}</td></tr>)}</tbody></table></div> : <p className="muted">没有差异。</p>}</>;
 }
 
 export function ConfigurationTransfer() {

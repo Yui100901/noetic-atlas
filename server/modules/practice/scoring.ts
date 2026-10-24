@@ -3,7 +3,7 @@ import { fail } from '../../core/validation.js';
 import { isSubjectiveType } from '../../../shared/questions/question-utils.js';
 import { distributeGroupPoints, flattenQuestions, type StoredLeafQuestion } from '../questions/structure.js';
 
-export const DEFAULT_POINTS: Record<QuestionType, number> = { short_answer: 3, true_false: 1, single_choice: 2, multiple_choice: 2, fill_blank: 2, essay: 10, group: 6 };
+export const DEFAULT_POINTS: Record<QuestionType, number> = { short_answer: 3, true_false: 1, single_choice: 2, multiple_choice: 4, fill_blank: 2, essay: 10, group: 6 };
 export const LEGACY_POINTS: Record<QuestionType, number> = { short_answer: 3, true_false: 1, single_choice: 1, multiple_choice: 2, fill_blank: 2, essay: 10, group: 6 };
 export const cents = (value: number) => Math.round(value * 100);
 export const fromCents = (value: number) => value / 100;

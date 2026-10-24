@@ -9,7 +9,7 @@ import { QuestionQueries, type QuestionSelection } from '../modules/questions/qu
 import { emptyStudy, studyPartKey } from '../../shared/questions/study-state.js';
 
 export type Entity = Domain | Category | Tag | Question | QuestionBank | DocumentRecord | StudyState | Paper | Attempt;
-export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts'] as const;
+export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts', 'daily_pushes'] as const;
 export type Table = typeof tables[number];
 export const now = () => new Date().toISOString();
 export const nextStamp = (previous?: string) => new Date(Math.max(Date.now(), previous ? Date.parse(previous) + 1 : 0)).toISOString();
@@ -73,6 +73,8 @@ export class Store {
   }
   validateCategory(category: Category) {
     if (!this.get('domains', category.domainId)) fail(400, 'INVALID_REFERENCE', '领域不存在');
+    const daily = this.get<any>('settings', 'system')?.dailyPush;
+    if (daily?.enabled && daily.categoryIds?.includes(category.id) && daily.domainId !== category.domainId) fail(409, 'DAILY_PUSH_CATEGORY_IN_USE', '每日推题正在使用此分类，请先调整推题范围');
     let current = category.parentId;
     const seen = new Set([category.id]);
     while (current) {
@@ -86,6 +88,8 @@ export class Store {
   }
   deleteTaxonomy(table: 'domains' | 'categories' | 'tags', id: string) {
     this.require(table, id);
+    const daily = this.get<any>('settings', 'system')?.dailyPush;
+    if (daily?.enabled && (table === 'domains' ? daily.domainId === id : table === 'categories' && daily.categoryIds?.includes(id))) fail(409, 'DAILY_PUSH_SCOPE_IN_USE', '每日推题正在使用此范围，请先关闭或调整推题配置');
     const categories = this.all<Category>('categories');
     if (table === 'domains' && categories.some(c => c.domainId === id)) fail(409, 'IN_USE', '领域仍被分类引用');
     if (table === 'domains' && this.all<Tag>('tags').some(tag => tag.domainId === id)) fail(409, 'IN_USE', '领域仍被标签引用');

@@ -17,6 +17,7 @@ import { studyPartKey } from '../../../shared/questions/study-state.js';
 import { learningResultSchema, validateLearningResult, migrateLearningResults } from '../practice/learning-results.js';
 import { validateVocabularyPaperSnapshot } from '../practice/vocabulary-practice.js';
 import { questionHistorySchema,validateQuestionHistory,migrateQuestionHistory } from '../questions/history-store.js';
+import { dailyPushRecordSchema, validateDailyPushConfiguration } from '../daily-push/schema.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
@@ -42,8 +43,9 @@ const envelopeSchema = z.object({
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
   questionHistory:z.array(questionHistorySchema).default([]),
+  dailyPushes:z.array(dailyPushRecordSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table;
+const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -88,6 +90,7 @@ export function importData(store: Store, raw: unknown) {
     insert('questions', data.questions.map(q => ({ ...q, createdAt: q.createdAt || now(), updatedAt: q.updatedAt || now() })));
     insert('documents', data.documents.map(d => ({ ...d, updatedAt: d.updatedAt || now() })));
     store.normalizeLegacyTags(); store.validateTaxonomyReferences();
+    validateDailyPushConfiguration(store, getSettings(store).dailyPush);
     const papers: StoredPaper[] = [];
     for (const p of data.papers) {
       if (p.id === QUICK_PAPER_ID) fail(400, 'RESERVED_PAPER_ID', '随机单题标识不能用作题集ID');
@@ -112,6 +115,7 @@ export function importData(store: Store, raw: unknown) {
       papers.push({ ...p, snapshot: snapshot as Question[], scoring, questionCount: snapshot.length, createdAt: p.createdAt || now(), updatedAt: p.updatedAt || now() });
     }
     insert('papers', papers);
+    insert('daily_pushes', data.dailyPushes);
     for (const bank of data.questionBanks) {
       for (const qid of bank.questionIds) store.require('questions', qid);
       if (!store.get('question_banks', bank.id)) store.insert('question_banks', bank.id, bank);

@@ -19,7 +19,7 @@
       "short_answer": 3,
       "true_false": 1,
       "single_choice": 2,
-      "multiple_choice": 2,
+      "multiple_choice": 4,
       "fill_blank": 2,
       "essay": 10,
       "group": 6
@@ -32,7 +32,16 @@
     ],
     "autosaveDebounceMs": 1000,
     "maxDocumentMiB": 20,
-    "maxImageMiB": 5
+    "maxImageMiB": 5,
+    "dailyPush": {
+      "enabled": false,
+      "domainId": null,
+      "categoryIds": [],
+      "reviewPoints": 30,
+      "newPoints": 20,
+      "scheduleTime": "00:00",
+      "timeZone": "Asia/Shanghai"
+    }
   },
   "ai": {
     "enabled": false,

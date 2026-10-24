@@ -356,7 +356,7 @@ test('legacy backups retain fixed scores and AI grading stays unconfigured witho
 test('random scoring respects single-type filters and explains the resulting ratio rather than inventing missing question types', async t => {
   const { app } = await fixture(t);
   for (const [type, totalPoints, expectedCount, expectedPercent] of [
-    ['single_choice', 2, 1, 100], ['multiple_choice', 2, 1, 100], ['true_false', 1, 1, 100], ['short_answer', 6, 2, 0],
+    ['single_choice', 2, 1, 100], ['multiple_choice', 4, 1, 100], ['true_false', 1, 1, 100], ['short_answer', 6, 2, 0],
   ] as const) {
     const paper = json(await app.inject({ method: 'POST', url: '/api/papers/preview', payload: { title: `只含${type}`, mode: 'random', filters: { types: [type] }, scoring: { enabled: true, totalPoints } } }));
     assert.equal(paper.questionCount, expectedCount); assert.equal(paper.scoring.objectivePercent, 60); assert.equal(paper.scoring.actualObjectivePercent, expectedPercent); assert.ok(paper.questions.every((q: any) => q.type === type));

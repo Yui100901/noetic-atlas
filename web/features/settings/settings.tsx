@@ -15,11 +15,12 @@ import { LearningReset } from './learning-reset';
 import { ThemePicker } from '../../shared/theme/theme-picker';
 import { applyTheme, savedTheme } from '../../shared/theme/theme';
 import './settings-layout.css';
+import { DailyPushSettingsForm } from '../daily-push/daily-settings';
 
-type Tab = 'practice' | 'assets' | 'backup' | 'ai';
+type Tab = 'practice' | 'assets' | 'backup' | 'ai' | 'daily';
 export function SettingsPage({ initialTab = 'practice' }: { initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab);
-  return <div className="settings-page"><PageHeader eyebrow="SYSTEM SETTINGS" title="让学习空间，适合自己的节奏。" description="主题外观、练习默认值、记录保留与文件限制。" /><nav className="settings-tabs" aria-label="系统配置分区">{([['practice','学习与练习'],['assets','文件资源'],['backup','数据与备份'],['ai','AI辅助']] as const).map(([value,label]) => <button className={`button ${tab === value ? 'selected' : ''}`} key={value} onClick={() => setTab(value)} aria-current={tab === value ? 'page' : undefined}>{label}</button>)}</nav>{tab === 'practice' ? <><SettingsForm /><LearningReset /></> : tab === 'assets' ? <AssetsManager /> : tab === 'ai' ? <AiSettingsForm /> : <DataPage embedded />}</div>;
+  return <div className="settings-page"><PageHeader eyebrow="SYSTEM SETTINGS" title="让学习空间，适合自己的节奏。" description="主题外观、练习默认值、记录保留与文件限制。" /><nav className="settings-tabs" aria-label="系统配置分区">{([['practice','学习与练习'],['daily','每日推题'],['assets','文件资源'],['backup','数据与备份'],['ai','AI辅助']] as const).map(([value,label]) => <button className={`button ${tab === value ? 'selected' : ''}`} key={value} onClick={() => setTab(value)} aria-current={tab === value ? 'page' : undefined}>{label}</button>)}</nav>{tab === 'practice' ? <><SettingsForm /><LearningReset /></> : tab === 'daily' ? <DailyPushSettingsForm /> : tab === 'assets' ? <AssetsManager /> : tab === 'ai' ? <AiSettingsForm /> : <DataPage embedded />}</div>;
 }
 function SettingsForm() {
   const resource = useResource<SystemSettings>('/api/settings'); const { reload, toast } = useApp();

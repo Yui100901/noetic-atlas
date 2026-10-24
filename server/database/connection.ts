@@ -8,6 +8,7 @@ import { RecordProjections } from './projections.js';
 /** The only native-driver boundary. Services use compiled, bound queries.
  * SQLite maintenance SQL is intentionally confined to this directory. */
 export class DatabaseConnection {
+  readonly schemaChanged: boolean;
   readonly query = createQueryBuilder();
   readonly expressions = new SqliteExpressions();
   readonly projections: RecordProjections;
@@ -18,6 +19,7 @@ export class DatabaseConnection {
     this.maintenance = { exec: value=>this.client.exec(value), prepare: value=>this.client.prepare(value), function: this.client.function.bind(this.client) };
     this.client.function('atlas_unicode_contains',{deterministic:true},(value,needle)=>Number(String(value).toLowerCase().includes(String(needle))));
     this.projections=new RecordProjections(this);
+    this.schemaChanged = initialize && recordTables.some(table => !this.hasTable(table));
     if (initialize) { this.initialize();this.projections.initialize(); }
   }
   private initialize() {

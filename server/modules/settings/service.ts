@@ -6,6 +6,8 @@ import type { StoredAttempt } from '../practice/service.js';
 import { paperDraftRetentionCandidates } from '../practice/paper-draft-retention.js';
 import { preserveLearningResults } from '../practice/learning-results.js';
 import { archiveAttemptQuestionHistory, questionHistoryRetentionCandidates } from '../questions/history-store.js';
+import { DEFAULT_DAILY_PUSH } from '../../../shared/models/daily-push.js';
+import { dailyPushSettingsSchema, validateDailyPushConfiguration } from '../daily-push/schema.js';
 
 export const settingsSchema = z.object({
   id: z.literal('system'), updatedAt: z.string().datetime({ offset: true }),
@@ -21,11 +23,12 @@ export const settingsSchema = z.object({
   reviewIntervalsDays: z.tuple([z.number().int().min(0).max(3650), z.number().int().min(0).max(3650), z.number().int().min(0).max(3650), z.number().int().min(0).max(3650)]),
   autosaveDebounceMs: z.number().int().min(100).max(10000),
   maxDocumentMiB: z.number().int().min(1).max(50), maxImageMiB: z.number().int().min(1).max(20),
+  dailyPush: dailyPushSettingsSchema,
 }).strict();
 
 export function getSettings(store: Store): SystemSettings {
   const value = store.get<SystemSettings>('settings', 'system');
-  return structuredClone({ ...DEFAULT_SETTINGS, ...value });
+  return structuredClone({ ...DEFAULT_SETTINGS, ...value, dailyPush: { ...DEFAULT_DAILY_PUSH, ...value?.dailyPush } });
 }
 
 export function ensureSettings(store: Store) {
@@ -95,6 +98,7 @@ export function settingsRetentionPlan(store: Store, settings: SystemSettings) {
 
 /** Caller owns the transaction, so configuration import can atomically update both sections. */
 export function saveSettings(store: Store, settings: SystemSettings, options: { confirmedRetention?: boolean; expectedRetention?: RetentionPreview } = {}) {
+  validateDailyPushConfiguration(store, settings.dailyPush);
   const previous = getSettings(store);
   if (settings.updatedAt !== previous.updatedAt) fail(409, 'SETTINGS_VERSION_CONFLICT', '配置已被修改，请刷新后重新编辑');
   const { attempts, authoring, questionHistory, retention } = settingsRetentionPlan(store, settings);

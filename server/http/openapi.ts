@@ -45,6 +45,7 @@ const globalLearningSummaryOutput:JsonSchema={type:'object',required:['counts'],
 const learningPage=(item:JsonSchema):JsonSchema=>({type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}});
 const learningResetPreviewOutput:JsonSchema={type:'object',required:['fingerprint','counts','retained'],properties:{fingerprint:{type:'string',pattern:'^[a-f0-9]{64}$'},counts:{type:'object',properties:Object.fromEntries(['states','partStates','reviews','results'].map(key=>[key,{type:'integer',minimum:0}]))},retained:{type:'object',properties:{attempts:{type:'integer',minimum:0},drafts:{type:'integer',minimum:0}}}}};
 const pathBodies: Record<string,z.ZodType> = {
+  '/api/daily-push/check': z.object({}).strict(), '/api/daily-push/:id/read': z.object({}).strict(),
   '/api/questions': validation.questionSchema, '/api/domains': validation.domainSchema, '/api/categories': validation.categorySchema,
   '/api/tags': validation.tagSchema, '/api/documents': validation.documentSchema,
   '/api/papers': validation.paperInputSchema, '/api/papers/preview': validation.paperInputSchema,

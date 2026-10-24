@@ -1,4 +1,5 @@
 import type { QuestionType } from './types.js';
+import { DEFAULT_DAILY_PUSH, type DailyPushSettings } from './daily-push.js';
 
 export const THEMES = ['green', 'dark', 'pink', 'sky', 'mint'] as const;
 export type Theme = typeof THEMES[number];
@@ -26,6 +27,7 @@ export interface SystemSettings {
   autosaveDebounceMs: number;
   maxDocumentMiB: number;
   maxImageMiB: number;
+  dailyPush: DailyPushSettings;
 }
 
 export const DEFAULT_SETTINGS: SystemSettings = {
@@ -35,9 +37,10 @@ export const DEFAULT_SETTINGS: SystemSettings = {
   maxHistoryPerPaper: 0, maxQuickHistory: 0, maxQuestionHistory: 10,
   randomQuestionCount: 20, scoringEnabledByDefault: false,
   randomTotalPoints: 100, objectivePercent: 60,
-  pointsByType: { short_answer: 3, true_false: 1, single_choice: 2, multiple_choice: 2, fill_blank: 2, essay: 10, group: 6 },
+  pointsByType: { short_answer: 3, true_false: 1, single_choice: 2, multiple_choice: 4, fill_blank: 2, essay: 10, group: 6 },
   reviewIntervalsDays: [1, 2, 7, 21], autosaveDebounceMs: 1000,
   maxDocumentMiB: 20, maxImageMiB: 5,
+  dailyPush: { ...DEFAULT_DAILY_PUSH, categoryIds: [] },
 };
 
 export interface RetentionPreview { drafts: number; history: number; total: number; authoring?: number; questionHistory?: number }

@@ -28,8 +28,11 @@ import { migrateLearningResults } from './modules/practice/learning-results.js';
 import { registerLearningResetRoutes } from './modules/study/reset.js';
 import { migrateQuestionHistory } from './modules/questions/history-store.js';
 import { registerQuestionHistoryRoutes } from './modules/questions/history.js';
+import { registerDailyPushRoutes } from './modules/daily-push/routes.js';
+import { checkDailyPush } from './modules/daily-push/service.js';
+import { createDailyPushScheduler, dailyPushRefreshesAfter, type DailyPushSchedulerClock } from './scheduling/daily-push.js';
 
-export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void }
+export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void; dailyPushNow?: () => Date; dailyPushScheduler?: boolean; dailyPushSchedulerClock?: DailyPushSchedulerClock }
 export async function buildApp(options: AppOptions = {}) {
   const dbPath = options.databasePath || process.env.DATABASE_PATH || resolve('data/noetic-atlas.sqlite');
   // Normal installations start empty. A seed is an explicit test/operator input,
@@ -38,14 +41,20 @@ export async function buildApp(options: AppOptions = {}) {
   const app = Fastify({ logger: options.logger ?? false, bodyLimit: 80 * 1024 * 1024, routerOptions: { maxParamLength: 4096 } });
   await registerApiDocs(app, { native: options.native });
   const store = new Store(dbPath);
-  app.addHook('onClose', async () => { store.db.close(); });
+  const scheduler = !options.native && options.dailyPushScheduler !== false ? createDailyPushScheduler({
+    readConfig: () => getSettings(store).dailyPush,
+    check: at => checkDailyPush(store, at),
+    ...(options.dailyPushSchedulerClock ? { clock: options.dailyPushSchedulerClock } : options.dailyPushNow ? { clock: { now: options.dailyPushNow, setTimeout: (run, delay) => setTimeout(run, delay), clearTimeout: handle => clearTimeout(handle as ReturnType<typeof setTimeout>) } } : {}),
+    onError: error => app.log.error(error),
+  }) : undefined;
+  app.addHook('onClose', async () => { scheduler?.stop(); store.db.close(); });
   try {
     const initialized = store.database.one(store.database.query.selectFrom('metadata').select('value').where('key','=','seed_initialized'));
     if (!initialized && tablesEmpty(store) && seedPath && existsSync(seedPath)) {
       importData(store, JSON.parse(readFileSync(seedPath, 'utf8')));
       store.database.run(store.database.query.insertInto('metadata').values({key:'seed_initialized',value:now()}).onConflict(c=>c.column('key').doUpdateSet({value:now()})));
     }
-    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); validateAllAssetReferences(store); return migrated || learning > 0 || history>0; });
+    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); validateAllAssetReferences(store); return store.database.schemaChanged || migrated || learning > 0 || history>0; });
     if (migrated) options.onDataMigrated?.();
     store.database.projections.refreshAll();
   } catch (error) { store.db.close(); throw error; }
@@ -82,6 +91,11 @@ export async function buildApp(options: AppOptions = {}) {
   registerGlobalLearningRoutes(app, store);
 
   registerTransferRoutes(app, store);
+  registerDailyPushRoutes(app, store, { now: options.dailyPushNow || options.dailyPushSchedulerClock?.now.bind(options.dailyPushSchedulerClock) });
+  if (scheduler) {
+    app.addHook('onReady', async () => { scheduler.refresh(); });
+    app.addHook('onResponse', async request => { if (dailyPushRefreshesAfter(request.method, request.url.split('?')[0]!)) scheduler.refresh(); });
+  }
 
   const staticRoot = resolve(options.staticRoot || 'dist/web');
   if (existsSync(join(staticRoot, 'index.html'))) {

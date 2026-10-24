@@ -1,7 +1,7 @@
 import { isSubjectiveType } from '../../../shared/questions/question-utils';
 import type { Attempt, ExamQuestion, PaperScoring, QuestionType } from '../../../shared/models/types';
 
-export const defaultPoints: Record<QuestionType, number> = { single_choice: 2, multiple_choice: 2, true_false: 1, short_answer: 3, fill_blank: 2, essay: 10, group: 6 };
+export const defaultPoints: Record<QuestionType, number> = { single_choice: 2, multiple_choice: 4, true_false: 1, short_answer: 3, fill_blank: 2, essay: 10, group: 6 };
 export const legacyPoints: Record<QuestionType, number> = { single_choice: 1, multiple_choice: 2, true_false: 1, short_answer: 3, fill_blank: 2, essay: 10, group: 6 };
 export const pointNumber = (value: number) => Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
 export const pointText = (value: number) => Number.isFinite(value) ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value) : '—';

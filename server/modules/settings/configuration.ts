@@ -8,6 +8,7 @@ import { aiSettingsSchema } from '../ai/schema.js';
 import { completionEndpoint } from '../ai/provider.js';
 import { getPublicAiSettings, readPrivateSettings, saveAiSettings } from '../ai/settings.js';
 import { getSettings, settingsSchema, settingsRetentionPlan, saveSettings } from './service.js';
+import { validateDailyPushConfiguration } from '../daily-push/schema.js';
 
 const { key: _key, clearKey: _clearKey, updatedAt: _updatedAt, ...portableAiFields } = aiSettingsSchema.shape;
 export const portableAiSettingsSchema = z.object(portableAiFields).strict();
@@ -60,12 +61,14 @@ function sameEndpoint(before: string, after: string) {
 export function exportConfiguration(store: Store, includeAi = true): ConfigurationExport {
   const data: ConfigurationExport = { format: 'noetic-atlas-configuration', schemaVersion: 1, exportedAt: now(), system: systemFields(store), ...(includeAi ? { ai: aiFields(store) } : {}) };
   validateAi(data);
+  validateDailyPushConfiguration(store, data.system.dailyPush);
   return parse(configurationSchema, data);
 }
 
 export function previewConfiguration(store: Store, raw: unknown): ConfigurationPreview {
   const data = parse(configurationSchema, raw);
   validateAi(data);
+  validateDailyPushConfiguration(store, data.system.dailyPush);
   const currentAi = readPrivateSettings(store);
   const retention = settingsRetentionPlan(store, { ...getSettings(store), ...data.system }).retention;
   const clearsKey = Boolean(data.ai && currentAi.key && !sameEndpoint(currentAi.baseUrl, data.ai.baseUrl));

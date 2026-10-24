@@ -6,6 +6,9 @@ import type { LocalApp } from './shims/fastify';
 import type { SQLiteRecoveryBackup, SQLiteRestorePreview, SQLiteRestoreResult } from '../shared/models/sqlite-restore';
 import { prepareSQLiteRestore, shareableRecoveryBytes } from './restore-validation';
 import { databaseCounts, hasActiveExam } from './database/restore-database';
+import { dailyPushTimerDelay, dailyPushRefreshesAfter } from '../server/scheduling/daily-push';
+import { isDailyPushDue } from '../server/modules/daily-push/calendar';
+import type { DailyPushOverview, DailyPushSettings } from '../shared/models/daily-push';
 
 export interface DurableStorage {
   load(): Promise<Uint8Array | undefined>;
@@ -21,16 +24,20 @@ async function sha256(bytes: Uint8Array) { const value = await crypto.subtle.dig
  * A successful mutation is acknowledged only after its SQLite bytes are durable.
  * A failed file commit restores the same live DB object to its previous snapshot.
  */
-export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storage: DurableStorage) {
+export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storage: DurableStorage, options: { dailyPushNow?: () => Date; dailyPushScheduler?: boolean } = {}) {
   const initial = await storage.load(); configureSQLite(sql, initial); configureSeed(seed);
+  const dailyNow = options.dailyPushNow || (() => new Date());
+  let requestDailyAt: Date | undefined;
   let startupMigrated = false;
-  const app = await buildApp({ databasePath: ':memory:', seedPath: SEED_PATH, staticRoot: '/not-a-web-server', native: true, onDataMigrated:()=>{startupMigrated=true;} }) as unknown as LocalApp;
+  const app = await buildApp({ databasePath: ':memory:', seedPath: SEED_PATH, staticRoot: '/not-a-web-server', native: true, dailyPushNow: () => requestDailyAt || dailyNow(), onDataMigrated:()=>{startupMigrated=true;} }) as unknown as LocalApp;
   const database = currentDatabase();
   if (!initial || startupMigrated) {
     try { await storage.save(database.export()); }
     catch (error) { await app.close(); throw error; }
   }
   let queue = Promise.resolve(); let closed = false; let revision = 0; let reloadRequired = false;
+  let closing = false, dailyRequested = false, dailyChecking: Promise<void> | undefined;
+  let dailyTimer: ReturnType<typeof setTimeout> | undefined;
   let durableBaseline = (await storage.load())?.slice();
   let pending: { preview: SQLiteRestorePreview; bytes: Uint8Array; revision: number; disk: Uint8Array | undefined } | undefined;
   function enqueue<T>(run: () => Promise<T>): Promise<T> {
@@ -40,15 +47,30 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
   function assertNoActiveExam() {
     if (hasActiveExam(database)) throw new Error('考试进行中，请先交卷，再恢复数据库');
   }
+  function stopDailyTimer() { if (dailyTimer !== undefined) { clearTimeout(dailyTimer); dailyTimer = undefined; } }
   const fetch = (url: string, options: RequestInit = {}): Promise<Response> => {
     // Reads are queued too: they must not observe a mutation awaiting durable commit.
-    return enqueue(async () => {
+    const operation = enqueue(async () => {
       if (options.signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
       const method=(options.method||'GET').toUpperCase();
+      const pathname = new URL(url, 'https://localhost').pathname;
       // These queries carry JSON through POST rather than a long URL. They
       // must also work with read-only storage and never trigger a full save.
       const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata','/api/learning/card-summaries'].includes(new URL(url,'https://localhost').pathname);
-      const write = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!readOnlyPost;
+      const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!readOnlyPost;
+      // Freeze only the daily calendar for this serialized operation. A no-op
+      // check must not export/rewrite a potentially large SQLite file, and the
+      // preflight and handler must agree even across the midnight boundary.
+      requestDailyAt = new Date(dailyNow().getTime());
+      let noDailyMutation = false;
+      if (method === 'POST' && pathname === '/api/daily-push/check') {
+        const preflight = await app.inject('/api/daily-push');
+        if (preflight.ok) {
+          const overview = await preflight.json() as DailyPushOverview;
+          noDailyMutation = !overview.config.enabled || !!overview.today || !isDailyPushDue(overview.config, requestDailyAt);
+        } else if (preflight.status === 409) noDailyMutation = true;
+      }
+      const write = mutation && !noDailyMutation;
       if (write && reloadRequired) return new Response(JSON.stringify({ error: { code: 'DATABASE_RESTORED', message: '数据库已恢复，请刷新应用后继续修改。' } }), { status: 409, headers: { 'Content-Type': 'application/json' } });
       const before = write ? database.export() : undefined;
       let response: Response;
@@ -62,9 +84,46 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
           return new Response(JSON.stringify({ error: { code: 'LOCAL_STORAGE_FAILED', message: '保存到手机失败，本次修改已撤销。请检查剩余空间后重试，并及时导出备份。' } }), { status: 507, headers: { 'Content-Type': 'application/json' } });
         }
       }
+      requestDailyAt = undefined;
+      return response;
+    });
+    return operation.finally(() => { requestDailyAt = undefined; }).then(response => {
+      if (response.ok && dailyPushRefreshesAfter((options.method || 'GET').toUpperCase(), new URL(url, 'https://localhost').pathname)) void refreshDailySchedule();
       return response;
     });
   };
+  /** Native timers cannot write Store directly: all generated papers and
+   * notifications commit through fetch(), including rollback on disk failure. */
+  function refreshDailySchedule(): Promise<void> {
+    if (closing || closed || reloadRequired || options.dailyPushScheduler === false) return Promise.resolve();
+    dailyRequested = true; stopDailyTimer();
+    if (dailyChecking) return dailyChecking;
+    dailyChecking = (async () => {
+      let config: DailyPushSettings | undefined;
+      try {
+        do {
+          dailyRequested = false;
+          const response = await fetch('/api/daily-push');
+          // The active exam guard stays intact. Submission/sync wakes us later.
+          if (response.status === 409) { config = undefined; return; }
+          if (!response.ok) throw new Error('Daily push overview unavailable');
+          const overview = await response.json() as DailyPushOverview; config = overview.config;
+          if (config.enabled && !overview.today && isDailyPushDue(config, dailyNow())) await fetch('/api/daily-push/check', { method: 'POST' });
+        } while (dailyRequested && !closing && !closed && !reloadRequired);
+      } catch {
+        // A later visible/foreground check retries. Never acknowledge an
+        // uncommitted generated paper or expose private error payloads.
+      } finally {
+        dailyChecking = undefined;
+        if (!closing && !closed && !reloadRequired && config?.enabled) {
+          dailyTimer = setTimeout(() => { dailyTimer = undefined; void refreshDailySchedule(); }, dailyPushTimerDelay(dailyNow(), config));
+          if (typeof dailyTimer === 'object' && 'unref' in dailyTimer) dailyTimer.unref();
+        }
+      }
+    })();
+    return dailyChecking;
+  }
+  await refreshDailySchedule();
   return {
     fetch,
     previewRestore(bytes: Uint8Array, filename: string): Promise<SQLiteRestorePreview> {
@@ -117,6 +176,6 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       if (!storage.loadRecoveryBackup) throw new Error('当前存储不支持读取恢复前副本');
       return shareableRecoveryBytes(sql, await storage.loadRecoveryBackup(id));
     }),
-    close: async () => { await queue; closed = true; pending = undefined; await app.close(); },
+    close: async () => { closing = true; stopDailyTimer(); await dailyChecking; await queue; closed = true; pending = undefined; await app.close(); },
   };
 }

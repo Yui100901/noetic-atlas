@@ -1,5 +1,5 @@
 /** Persisted document tables. Names are a closed set, never taken from requests. */
-export const recordTables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts', 'ai_settings', 'ai_runs'] as const;
+export const recordTables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts', 'daily_pushes', 'ai_settings', 'ai_runs'] as const;
 export type RecordTable = typeof recordTables[number];
 export interface DocumentRow { id: string; data: string }
 export type AtlasDatabase = { [K in RecordTable]: DocumentRow } & {

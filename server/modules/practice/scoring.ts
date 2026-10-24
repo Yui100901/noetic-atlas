@@ -16,7 +16,8 @@ export function normalizeScoring(questions: Question[], input?: ScoringInput | P
   if (scheme === 'legacy' && input && !input.enabled) fail(400, 'INVALID_SCORING', '旧版计分不能标记为禁用');
   const pointsByType = { ...(scheme === 'legacy' ? LEGACY_POINTS : DEFAULT_POINTS), ...(scheme === 'custom' ? input?.pointsByType : {}) };
   const questionPoints: Record<string, number> = {};
-  if (input?.questionPoints && Object.keys(input.questionPoints).some(qid => !questions.some(q => q.id === qid))) fail(400, 'INVALID_QUESTION_POINTS', '分值表包含不在本卷中的题号');
+  const questionIds = new Set(questions.map(q=>q.id));
+  if (input?.questionPoints && Object.keys(input.questionPoints).some(qid => !questionIds.has(qid))) fail(400, 'INVALID_QUESTION_POINTS', '分值表包含不在本卷中的题号');
   for (const q of questions) {
     const point = scheme === 'none' ? 0 : scheme === 'legacy' ? LEGACY_POINTS[q.type] : input?.questionPoints ? input.questionPoints[q.id] : pointsByType[q.type];
     if (point === undefined || !Number.isFinite(point) || (enabled && (point < ((q as StoredLeafQuestion).groupId ? 0 : 0.01) || point > 1000)) || Math.abs(point * 100 - cents(point)) > 1e-6) fail(400, 'INVALID_QUESTION_POINTS', '计分卷每题须有0.01至1000之间、最多两位小数的分值（组合题按分分配后允许零分子题）');

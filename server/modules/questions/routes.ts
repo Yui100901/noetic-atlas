@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Question, QuestionBank } from '../../../shared/models/types.js';
+import type { Question } from '../../../shared/models/types.js';
 import type { PaperDraft } from '../../../shared/practice/paper-drafts.js';
 import { Store, makeId, now, nextStamp } from '../../core/store.js';
-import { fail, parse, id, types, questionSchema, questionReviewSchema, selectedIdsSchema, pendingEnvelopeSchema } from '../../core/validation.js';
+import { fail, parse, id, types, questionSchema, questionReviewSchema, selectedIdsSchema, pendingEnvelopeSchema, questionMetadataInputSchema } from '../../core/validation.js';
 import type { StoredPaper } from '../practice/service.js';
 import { assertNewQuestionId } from '../banks/routes.js';
 import { validateAssetReferences } from '../assets/routes.js';
@@ -11,14 +11,15 @@ import { getSettings } from '../settings/routes.js';
 import { getId } from '../../http/request.js';
 
 const questionQuerySchema = z.object({
-  search: z.string().max(1000).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(30), domainId: id.optional(), categoryId: id.optional(), bankId: id.optional(), tagIds: z.string().max(10000).optional(), tagMode: z.enum(['all', 'any']).default('all'), type: types.optional(),
+  search: z.string().max(1000).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(30), domainId: id.optional(), categoryId: id.optional(), paperId: id.optional(), tagIds: z.string().max(10000).optional(), tagMode: z.enum(['all', 'any']).default('all'), type: types.optional(),
   difficulty: z.coerce.number().int().min(1).max(4).optional(), depth: z.coerce.number().int().min(1).max(4).optional(), frequency: z.coerce.number().int().min(0).max(3).optional(), collection: z.enum(['general', 'personal', 'all']).optional(), status: z.enum(['published', 'pending', 'draft', 'archived', 'all']).optional(), favorite: z.enum(['true', 'false', '1', '0']).optional(), due: z.enum(['true', 'false', '1', '0']).optional(), wrong: z.enum(['true', 'false', '1', '0']).optional(),
-});
+}).strict();
 export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/questions', async request => {
     const query = parse(questionQuerySchema, request.query);return store.questionPage(query);
   });
   app.get('/api/questions/:id', async request => store.question(getId(request)));
+  app.post('/api/questions/metadata', async request => store.questionMetadataByIds(parse(questionMetadataInputSchema,request.body).ids));
   app.post('/api/questions', async (request, reply) => {
     const input = parse(questionSchema, request.body); assertNewQuestionId(input.id); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
     const q = { ...input, status: input.status === 'draft' ? 'draft' : 'pending', id: input.id || makeId('q'), createdAt: now(), updatedAt: now() } as Question;
@@ -77,7 +78,6 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
       store.remove('questions', qid);
       if (store.get('study', qid)) store.remove('study', qid);
       for (const review of store.all<any>('reviews')) if (review.questionId === qid) store.remove('reviews', review.id);
-      for (const bank of store.all<QuestionBank>('question_banks')) if (bank.questionIds.includes(qid)) store.put('question_banks', bank.id, { ...bank, questionIds: bank.questionIds.filter(id => id !== qid), updatedAt: nextStamp(bank.updatedAt) });
       return { ok: true, deleted: qid };
     });
   });

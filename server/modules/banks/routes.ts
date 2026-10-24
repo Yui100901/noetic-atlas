@@ -1,14 +1,8 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { z } from 'zod';
-import { paginate, paginationFields } from '../../core/pagination.js';
-import type { Question, QuestionBank } from '../../../shared/models/types.js';
-import { Store, makeId, nextStamp, now } from '../../core/store.js';
-import { bulkQuestionImportSchema, fail, id, parse, questionBankSchema, questionSchema } from '../../core/validation.js';
-import type { StoredPaper } from '../practice/service.js';
+import type { FastifyInstance } from 'fastify';
+import { Store, makeId, now } from '../../core/store.js';
+import { bulkQuestionImportSchema, fail, parse, questionSchema } from '../../core/validation.js';
 import { validateAssetReferences } from '../assets/routes.js';
-import type { PaperDraft } from '../../../shared/practice/paper-drafts.js';
 
-const getId = (request: FastifyRequest) => parse(id, (request.params as { id: string }).id);
 export function assertNewQuestionId(qid?: string) {
   if (qid && ['new', 'review', 'import', 'import-template'].includes(qid)) fail(400, 'QUESTION_ID_RESERVED', `题号 ${qid} 为系统操作保留，请使用其他自定义题号或省略ID自动生成`);
 }
@@ -33,9 +27,8 @@ export function registerQuestionBankRoutes(app: FastifyInstance, store: Store) {
     questions: examples.map(example => ({ ...parse(questionSchema, example), status: 'pending' })),
   }));
   app.post('/api/questions/bulk-import', async (request, reply) => {
-    const { data, bankId } = parse(bulkQuestionImportSchema, request.body);
+    const { data } = parse(bulkQuestionImportSchema, request.body);
     const result = store.transaction(() => {
-      const bank = bankId ? store.require<QuestionBank>('question_banks', bankId) : undefined;
       const stamp = now();
       const entries = data.questions.map(input => {
         assertNewQuestionId(input.id);
@@ -48,48 +41,9 @@ export function registerQuestionBankRoutes(app: FastifyInstance, store: Store) {
       // The envelope checks explicitly supplied IDs. Check generated IDs too
       // before writing so every successful response is a complete atomic batch.
       if (new Set(entries.map(q => q.id)).size !== entries.length) fail(409, 'ID_EXISTS', '生成的题号冲突，请重试');
-      if (bank && bank.questionIds.length + entries.length > 50_000) fail(400, 'BANK_TOO_LARGE', '单个题库最多引用50000题');
       for (const q of entries) store.insert('questions', q.id, q);
-      if (bank) store.put('question_banks', bank.id, { ...bank, questionIds: [...bank.questionIds, ...entries.map(q => q.id)], updatedAt: nextStamp(bank.updatedAt) });
-      return { added: entries.length, items: entries.map(q => store.question(q.id)), bankId: bankId || null };
+      return { added: entries.length, items: entries.map(q => store.question(q.id)) };
     });
     return reply.code(201).send(result);
-  });
-  app.get('/api/question-banks', async request => { const query = parse(z.object({ ...paginationFields, search: z.string().max(1000).optional() }).strict(), request.query); return paginate(query, store.all<QuestionBank>('question_banks').filter(bank => !query.search || `${bank.name} ${bank.description}`.toLowerCase().includes(query.search.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))); });
-  app.get('/api/question-banks/:id', async request => store.require<QuestionBank>('question_banks', getId(request)));
-  app.post('/api/question-banks', async (request, reply) => {
-    const input = parse(questionBankSchema, request.body);
-    for (const qid of input.questionIds) store.require<Question>('questions', qid);
-    const bank: QuestionBank = { ...input, id: input.id || makeId('bank'), createdAt: now(), updatedAt: now() };
-    store.insert('question_banks', bank.id, bank);
-    return reply.code(201).send(bank);
-  });
-  app.put('/api/question-banks/:id', async request => {
-    const bankId = getId(request); const previous = store.require<QuestionBank>('question_banks', bankId);
-    const input = parse(questionBankSchema, request.body);
-    if (input.id && input.id !== bankId) fail(400, 'ID_IMMUTABLE', '题库ID不能在编辑时更换');
-    if (input.updatedAt && input.updatedAt !== previous.updatedAt) fail(409, 'BANK_VERSION_CONFLICT', '题库成员或说明已改变，请刷新后再编辑');
-    for (const qid of input.questionIds) store.require<Question>('questions', qid);
-    const bank: QuestionBank = { ...input, id: bankId, createdAt: previous.createdAt || now(), updatedAt: nextStamp(previous.updatedAt) };
-    store.put('question_banks', bankId, bank); return bank;
-  });
-  app.delete('/api/question-banks/:id', async request => {
-    const bankId = getId(request); store.require<QuestionBank>('question_banks', bankId);
-    return store.transaction(() => {
-      store.remove('question_banks', bankId);
-      // Saved papers own snapshots. Retain their questions and scores while
-      // removing a selection rule that can no longer be used for rebuilding.
-      for (const paper of store.all<StoredPaper>('papers')) if (paper.filters?.bankId === bankId) {
-        const { bankId: _bankId, ...filters } = paper.filters;
-        store.put('papers', paper.id, { ...paper, filters, updatedAt: nextStamp(paper.updatedAt) });
-      }
-      let detachedDrafts=0;
-      for (const draft of store.all<PaperDraft>('paper_drafts')) {
-        if(draft.state.filters.bankId!==bankId&&draft.state.random.bankId!==bankId)continue;
-        const state={...draft.state,filters:{...draft.state.filters,...(draft.state.filters.bankId===bankId?{bankId:''}:{})},random:{...draft.state.random,...(draft.state.random.bankId===bankId?{bankId:''}:{})}};
-        store.put('paper_drafts',draft.id,{...draft,state,updatedAt:nextStamp(draft.updatedAt)});detachedDrafts++;
-      }
-      return { ok: true, deleted: bankId, detachedDrafts };
-    });
   });
 }

@@ -35,6 +35,6 @@ export function learningSeed(options: { includeNonPublic?: boolean } = {}): Seed
       { id: 'fixture-topic', name: '测试主题', color: '#123456', description: '', domainId: 'fixture-computer', kind: 'topic' },
       { id: 'fixture-method', name: '测试方式', color: '#654321', description: '', domainId: null, kind: 'method' },
     ],
-    questions, questionBanks: [{ id: 'fixture-bank', name: '测试引用集合', description: '', questionIds: questions.map(q => q.id) }], documents: [], papers: [],
+    questions, questionBanks: [], documents: [], papers: [],
   };
 }

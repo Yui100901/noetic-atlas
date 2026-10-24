@@ -85,14 +85,14 @@ test('500-question share parts keep distinct deterministic banks, complete wordl
   const store=new Store(':memory:');
   try {
     for(const part of parts){const plan=planShareImport(store,part);importShare(store,part,plan.preview.fingerprint);}
-    assert.equal(store.all('questions').length,600);assert.equal(store.all('papers').length,6);assert.equal(store.all('question_banks').length,2);
-    for(const paper of store.all<any>('papers')){
+    assert.equal(store.all('questions').length,600);assert.equal(store.all('papers').length,8);assert.equal(store.all('question_banks').length,0);
+    for(const paper of store.all<any>('papers').filter(p=>!p.legacyBankId)){
       assert.equal(paper.snapshot.length,100);assert.equal(paper.archived,true);assert.equal(paper.scoring.enabled,false);
       assert.deepEqual(paper.snapshot.map((q:any)=>q.id),paper.questionIds);
       assert.ok(paper.questionIds.every((id:string)=>Boolean(store.get('questions',id))));
     }
     for(const part of parts){const plan=planShareImport(store,part);assert.equal(plan.preview.counts.questions.added,0);importShare(store,part,plan.preview.fingerprint);}
-    assert.equal(store.all('question_banks').length,2);assert.equal(store.all('papers').length,6);assert.ok(store.all<any>('questions').every(q=>q.status==='pending'));
+    assert.equal(store.all('question_banks').length,0);assert.equal(store.all('papers').length,8);assert.ok(store.all<any>('questions').every(q=>q.status==='pending'));
   } finally {store.db.close();}
 });
 
@@ -109,7 +109,7 @@ test('omitted taxonomy defaults are normalized before import compatibility check
     assert.equal(first.counts.questions.added,2);
     assert.doesNotThrow(()=>assertImportCompatible(store,[validatePack(raw)]));
     const second=importData(store,{...pack,papers:wordlistPapers(pack)});
-    assert.equal(second.counts.questions.added,0);assert.equal(second.counts.questions.skipped,2);assert.equal(store.all('papers').length,1);
+    assert.equal(second.counts.questions.added,0);assert.equal(second.counts.questions.skipped,2);assert.equal(store.all('papers').length,2);
   }finally{store.db.close();}
 });
 

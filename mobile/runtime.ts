@@ -12,9 +12,10 @@ export interface DurableStorage { load(): Promise<Uint8Array | undefined>; save(
  */
 export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storage: DurableStorage) {
   const initial = await storage.load(); configureSQLite(sql, initial); configureSeed(seed);
-  const app = await buildApp({ databasePath: ':memory:', seedPath: SEED_PATH, staticRoot: '/not-a-web-server', native: true }) as unknown as LocalApp;
+  let startupMigrated = false;
+  const app = await buildApp({ databasePath: ':memory:', seedPath: SEED_PATH, staticRoot: '/not-a-web-server', native: true, onDataMigrated:()=>{startupMigrated=true;} }) as unknown as LocalApp;
   const database = currentDatabase();
-  if (!initial) {
+  if (!initial || startupMigrated) {
     try { await storage.save(database.export()); }
     catch (error) { await app.close(); throw error; }
   }
@@ -25,10 +26,10 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       if (closed) throw new Error('本地数据库已关闭');
       if (options.signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
       const method=(options.method||'GET').toUpperCase();
-      // Configuration preview is a pure read action carried by POST to avoid
-      // putting the file in a URL. It must also work with read-only storage.
-      const configurationPreview=method==='POST'&&new URL(url,'https://localhost').pathname==='/api/settings/import/preview';
-      const write = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!configurationPreview;
+      // These queries carry JSON through POST rather than a long URL. They
+      // must also work with read-only storage and never trigger a full save.
+      const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata'].includes(new URL(url,'https://localhost').pathname);
+      const write = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!readOnlyPost;
       const before = write ? database.export() : undefined;
       const response = await app.inject(url, options);
       if (write) {

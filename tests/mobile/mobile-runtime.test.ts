@@ -19,8 +19,8 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   const sql = await initSqlJs({ locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm') });
   const fullSeed = learningSeed({ includeNonPublic: true });
   const publishedCount = fullSeed.questions.filter((q: any) => q.status === 'published').length;
-  let durable: Uint8Array | undefined; let failSave = false;
-  const storage = { async load() { return durable?.slice(); }, async save(bytes: Uint8Array) { if (failSave) throw new Error('simulated disk full'); durable = bytes.slice(); } };
+  let durable: Uint8Array | undefined; let failSave = false; let saveCount = 0;
+  const storage = { async load() { return durable?.slice(); }, async save(bytes: Uint8Array) { if (failSave) throw new Error('simulated disk full'); durable = bytes.slice(); saveCount++; } };
   let runtime = await createLocalRuntime(sql, fullSeed, storage);
   t.after(async () => { if (runtime) await runtime.close(); });
   async function call(url: string, method = 'GET', body?: unknown, status = 200): Promise<any> {
@@ -35,7 +35,13 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   assert.equal(rejectedOrigin.status, 403);
   const objective = fullSeed.questions.find((q: any) => q.type === 'single_choice');
   const subjective = fullSeed.questions.find((q: any) => q.type === 'short_answer');
-  const bank = await call('/api/question-banks', 'POST', { name: '手机离线自定义题库', description: '以引用组织题目，不复制题目', questionIds: [objective.id] }, 201);
+  const savesBeforeMetadata=saveCount;failSave=true;
+  const metadata=await call('/api/questions/metadata','POST',{ids:[subjective.id,'MOBILE-ABSENT-QUESTION',objective.id]});
+  assert.deepEqual(metadata.items.map((question:any)=>question.id),[subjective.id,objective.id]);
+  assert.deepEqual(metadata.missingIds,['MOBILE-ABSENT-QUESTION']);
+  assert.equal(saveCount,savesBeforeMetadata,'question metadata is a pure read even when durable storage is unavailable');
+  failSave=false;
+  const questionSet = await call('/api/papers', 'POST', { title: '手机离线自定义题集', description: '统一学习、练习与考试', mode: 'manual', questionIds: [objective.id], scoring: { enabled: false } }, 201);
   const template = await call('/api/questions/import-template');
   assert.equal(template.format, 'learning-new-questions'); assert.equal(template.schemaVersion, 1);
   assert.deepEqual(new Set(template.questions.map((q: any) => q.type)), new Set(['short_answer', 'true_false', 'single_choice', 'multiple_choice', 'fill_blank', 'essay', 'group']));
@@ -69,23 +75,31 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
     { ...questionInput, id: 'MOBILE-BULK-TWO', title: '离线批量新增二' },
   ] };
   const reservedBulk = structuredClone(bulkData); reservedBulk.questions[0].id = 'MOBILE-RESERVED-ROLLBACK'; reservedBulk.questions[1].id = 'review';
-  assert.equal((await call('/api/questions/bulk-import', 'POST', { data: reservedBulk, confirmed: true, bankId: bank.id }, 400)).error.code, 'QUESTION_ID_RESERVED');
+  assert.equal((await call('/api/questions/bulk-import', 'POST', { data: reservedBulk, confirmed: true }, 400)).error.code, 'QUESTION_ID_RESERVED');
   assert.equal((await call('/api/questions?search=MOBILE-RESERVED-ROLLBACK&status=all')).total, 0);
-  const bulk = await call('/api/questions/bulk-import', 'POST', { data: bulkData, confirmed: true, bankId: bank.id }, 201);
+  const bulk = await call('/api/questions/bulk-import', 'POST', { data: bulkData, confirmed: true }, 201);
   assert.equal(bulk.added, 2); assert.ok(bulk.items.every((q: any) => q.status === 'pending'));
-  assert.equal((await call(`/api/questions?bankId=${bank.id}`)).total, 1, 'pending members cannot enter ordinary learning or random practice');
-  assert.equal((await call(`/api/questions?bankId=${bank.id}&status=pending`)).total, 2);
+  assert.equal((await call(`/api/questions?paperId=${questionSet.id}`)).total, 1, 'pending imports do not silently join a published question set');
+  assert.equal((await call('/api/questions?search=MOBILE-BULK&status=pending')).total, 2);
   const collision = structuredClone(bulkData); collision.questions[0].id = 'MOBILE-BULK-ROLLBACK';
-  await call('/api/questions/bulk-import', 'POST', { data: collision, confirmed: true, bankId: bank.id }, 409);
+  await call('/api/questions/bulk-import', 'POST', { data: collision, confirmed: true }, 409);
   assert.equal((await call('/api/questions?search=MOBILE-BULK-ROLLBACK&status=all')).total, 0, 'bulk ID conflicts must roll back every item');
   const bulkBackup = await call('/api/export');
-  assert.ok(bulkBackup.questionBanks.some((entry: any) => entry.id === bank.id && entry.questionIds.includes('MOBILE-BULK-ONE')));
+  assert.deepEqual(bulkBackup.questionBanks, [], 'new backups have no second question collection model');
+  assert.ok(bulkBackup.papers.some((entry: any) => entry.id === questionSet.id && entry.questionIds.includes(objective.id)));
   assert.equal(bulkBackup.questions.find((q: any) => q.id === 'MOBILE-BULK-ONE').status, 'pending');
   await call('/api/questions/review', 'POST', { ids: bulk.items.map((q: any) => q.id), action: 'approve', confirmed: true, expectedUpdatedAt: Object.fromEntries(bulk.items.map((q: any) => [q.id, q.updatedAt])) });
-  const bankPreview = await call('/api/papers/preview', 'POST', { title: '手机题库内随机组卷', mode: 'random', count: 3, filters: { bankId: bank.id }, scoring: { enabled: false } });
-  assert.deepEqual(new Set(bankPreview.questionIds), new Set([objective.id, 'MOBILE-BULK-ONE', 'MOBILE-BULK-TWO']));
+  await call(`/api/papers/${questionSet.id}`, 'PUT', { title: questionSet.title, mode: 'manual', questionIds: [objective.id, ...bulk.items.map((q: any) => q.id)], scoring: { enabled: false } });
+  assert.equal((await call(`/api/questions?paperId=${questionSet.id}`)).total, 3, 'approved questions join only after explicit set membership update');
+  const setPreview = await call('/api/papers/preview', 'POST', { title: '手机题集内随机选题', mode: 'random', count: 3, filters: { paperId: questionSet.id }, scoring: { enabled: false } });
+  assert.deepEqual(new Set(setPreview.questionIds), new Set([objective.id, 'MOBILE-BULK-ONE', 'MOBILE-BULK-TWO']));
+  const bulkPractice = await call('/api/quick-practice', 'POST', { questionId: 'MOBILE-BULK-ONE' }, 201);
+  await call(`/api/attempts/${bulkPractice.id}/submit`, 'POST', { answers: { 'MOBILE-BULK-ONE': { value: '先保存历史快照' } } });
+  assert.equal((await call('/api/questions/MOBILE-BULK-ONE', 'DELETE', undefined, 409)).error.code, 'QUESTION_IN_PAPER');
+  await call(`/api/papers/${questionSet.id}`, 'PUT', { title: questionSet.title, mode: 'manual', questionIds: [objective.id], scoring: { enabled: false } });
   await call('/api/questions/MOBILE-BULK-ONE', 'DELETE'); await call('/api/questions/MOBILE-BULK-TWO', 'DELETE');
-  assert.deepEqual((await call(`/api/question-banks/${bank.id}`)).questionIds, [objective.id], 'deletion cleans collection references');
+  assert.deepEqual((await call(`/api/papers/${questionSet.id}`)).questionIds, [objective.id]);
+  assert.equal((await call(`/api/attempts/${bulkPractice.id}`)).questions[0].title, '离线批量新增一', 'removing original questions preserves submitted attempt content');
   await call(`/api/tags/${tag.id}`, 'DELETE'); await call(`/api/categories/${category.id}`, 'DELETE'); await call(`/api/domains/${domain.id}`, 'DELETE');
   assert.equal((await call('/api/bootstrap')).stats.totalQuestions, publishedCount);
   const paper = await call('/api/papers', 'POST', { title: '手机离线计分验证', mode: 'manual', questionIds: [objective.id, subjective.id], scoring: { enabled: true, totalPoints: 7.5, questionPoints: { [objective.id]: 2.5, [subjective.id]: 5 } } }, 201);
@@ -120,16 +134,16 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   const desktop = new DatabaseSync(backupPath);
   assert.equal(desktop.prepare('PRAGMA integrity_check').get()!.integrity_check, 'ok');
   assert.equal(desktop.prepare('SELECT count(*) AS count FROM questions').get()!.count, fullSeed.questions.length);
-  assert.equal(desktop.prepare('SELECT count(*) AS count FROM question_banks').get()!.count, (fullSeed.questionBanks?.length || 0) + 1);
+  assert.equal(desktop.prepare('SELECT count(*) AS count FROM question_banks').get()!.count, 0, 'desktop backups do not retain obsolete bank collections');
   const desktopTag = { id: 'desktop-roundtrip', name: '桌面SQLite写入', description: '', color: '#334455' };
   desktop.prepare('INSERT INTO tags(id,data) VALUES (?,?)').run(desktopTag.id, JSON.stringify(desktopTag)); desktop.close();
   await runtime.close(); durable = new Uint8Array(await readFile(backupPath));
   runtime = await createLocalRuntime(sql, fullSeed, storage);
   assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
   assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
-  assert.deepEqual((await call(`/api/question-banks/${bank.id}`)).questionIds, [objective.id]);
-  await call(`/api/question-banks/${bank.id}`, 'DELETE');
-  assert.equal((await call(`/api/questions/${objective.id}`)).id, objective.id, 'deleting a question bank leaves the canonical question intact');
+  assert.deepEqual((await call(`/api/papers/${questionSet.id}`)).questionIds, [objective.id]);
+  await call(`/api/papers/${questionSet.id}?permanent=true`, 'DELETE');
+  assert.equal((await call(`/api/questions/${objective.id}`)).id, objective.id, 'deleting a question set leaves the canonical question intact');
   assert.ok((await call('/api/taxonomy')).tags.some((tag: any) => tag.id === desktopTag.id));
   assert.equal((await call('/api/bootstrap')).stats.totalQuestions, publishedCount);
   // Simulate an installed v1.0 phone database, which predates question_banks.
@@ -140,7 +154,42 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   const oldDatabase = new DatabaseSync(upgradePath); oldDatabase.exec('DROP TABLE question_banks'); oldDatabase.close();
   await runtime.close(); durable = new Uint8Array(await readFile(upgradePath));
   runtime = await createLocalRuntime(sql, fullSeed, storage);
-  assert.deepEqual(await call('/api/question-banks'), []);
+  await call('/api/question-banks', 'GET', undefined, 404);
+  assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
+  assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
+  assert.equal((await call('/api/bootstrap')).stats.totalQuestions, publishedCount);
+  // An installed legacy collection is converted before the first read and
+  // committed to the same durable file. A failed startup commit must preserve
+  // the old bytes, so retrying the upgrade neither duplicates nor loses it.
+  const legacyPath = resolve(folder, 'legacy-collection-upgrade.sqlite');
+  await writeFile(legacyPath, new Uint8Array(await (await runtime.fetch('/api/backup.sqlite')).arrayBuffer()));
+  const legacyDb = new DatabaseSync(legacyPath);
+  const legacyBank = { id: 'MOBILE-LEGACY-SET', name: '旧版离线集合', description: '升级后成为题集', questionIds: [subjective.id, objective.id], createdAt: '2026-10-20T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z' };
+  legacyDb.prepare('INSERT INTO question_banks(id,data) VALUES (?,?)').run(legacyBank.id, JSON.stringify(legacyBank)); legacyDb.close();
+  await runtime.close(); durable = new Uint8Array(await readFile(legacyPath));
+  const oldBytes = durable.slice(); failSave = true;
+  await assert.rejects(createLocalRuntime(sql, fullSeed, storage), /simulated disk full/);
+  assert.deepEqual(durable, oldBytes, 'failed migration persistence leaves recoverable legacy bytes unchanged');
+  failSave = false; const savesBeforeMigration = saveCount;
+  runtime = await createLocalRuntime(sql, fullSeed, storage);
+  assert.equal(saveCount, savesBeforeMigration + 1, 'startup migration commits without needing an unrelated mutation');
+  const legacySet = await call(`/api/papers/${legacyBank.id}`);
+  assert.equal(legacySet.title, legacyBank.name); assert.equal(legacySet.id, legacyBank.id);
+  assert.deepEqual(legacySet.questionIds, legacyBank.questionIds, 'legacy order is preserved');
+  assert.equal(legacySet.scoring.enabled, false); assert.equal(legacySet.createdAt, legacyBank.createdAt);
+  const durableDb = new sql.Database(durable);
+  assert.equal(durableDb.exec('SELECT count(*) AS count FROM question_banks')[0].values[0][0], 0);
+  assert.equal(durableDb.exec(`SELECT count(*) AS count FROM papers WHERE id = '${legacyBank.id}'`)[0].values[0][0], 1);
+  durableDb.close();
+  await call('/api/question-banks', 'GET', undefined, 404);
+  assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
+  assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
+  assert.ok((await call('/api/taxonomy')).tags.some((entry: any) => entry.id === desktopTag.id));
+  await runtime.close(); const savesBeforeReopen = saveCount;
+  runtime = await createLocalRuntime(sql, fullSeed, storage);
+  assert.equal(saveCount, savesBeforeReopen, 'a second startup needs no migration rewrite');
+  assert.equal((await call('/api/papers?archived=true')).filter((entry: any) => entry.id === legacyBank.id).length, 1);
+  assert.deepEqual((await call(`/api/papers/${legacyBank.id}`)).questionIds, legacyBank.questionIds);
   assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
   assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
   assert.equal((await call('/api/bootstrap')).stats.totalQuestions, publishedCount);
@@ -195,4 +244,68 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   const nativeWord=await call('/api/questions','POST',{id:'NATIVE-LEX',title:'CAFÉ',type:'short_answer',stemMarkdown:'Recall this word.',answerMarkdown:'A place serving drinks.',categoryIds:[englishCategory.id],tagIds:[]},201);
   const lexical=await call('/api/vocabulary?word='+encodeURIComponent('cafe\u0301'));
   assert.equal(lexical.matches[0].id,nativeWord.id,'WASM SQLite lexical metadata query uses the same Unicode head normalization');assert.equal(lexical.matches[0].status,'pending');
+  // Exercise the production JSON judging expression in sql.js: grouped IDs,
+  // array-valued blanks, absent answers and scored subjective answers all take
+  // different paths. The same original question must retain separate outcomes
+  // in its paper and quick-practice contexts.
+  const wrongQuick = await call('/api/quick-practice', 'POST', { questionId: group.id }, 201);
+  await call(`/api/attempts/${wrongQuick.id}/submit`, 'POST', { answers: { [`${group.id}::sum`]: { value: ['5'] }, [`${group.id}::discuss`]: { value: '未计分主观作答不应被记错' } } });
+  await call(`/api/study/${group.id}`, 'PUT', { favorite: true, nextReviewAt: '2020-01-01T00:00:00.000Z' });
+  await call(`/api/papers/${groupPaper.id}?permanent=true`, 'DELETE');
+  await call(`/api/papers/${draftPaper.id}?permanent=true`, 'DELETE');
+  const groupScope = `source=paper&paperId=${groupPaper.id}`;
+  const draftScope = `source=paper&paperId=${draftPaper.id}`;
+  const savesBeforeLearning = saveCount, bytesBeforeLearning = durable!.slice(); failSave = true;
+  try {
+    const paperLearning = await call(`/api/learning/summary?${groupScope}`);
+    assert.equal(paperLearning.deleted, true); assert.equal(paperLearning.title, groupPaper.title);
+    assert.deepEqual(paperLearning.counts, { drafts: 0, submitted: 1, wrong: 1, due: 3, favorite: 3 });
+    const wrongPaper = await call(`/api/learning/questions?${groupScope}&kind=wrong&page=1&pageSize=10`);
+    assert.equal(wrongPaper.total, 1); assert.equal(wrongPaper.items[0].question.id, `${group.id}::discuss`);
+    assert.equal(wrongPaper.items[0].attemptId, groupAttempt.id); assert.equal(wrongPaper.items[0].wrongCount, 1);
+    assert.equal(wrongPaper.items[0].answerState, 'incorrect', 'the WASM expression reads the grouped leaf score and its own maximum');
+    const quickLearning = await call('/api/learning/summary?source=quick');
+    assert.equal(quickLearning.counts.wrong, 2, 'ungraded quick essay and paper-only subjective error do not enter quick wrong questions');
+    const quickWrongPage = await call('/api/learning/questions?source=quick&kind=wrong&page=1&pageSize=10');
+    assert.equal(quickWrongPage.total, 2);
+    const quickWrong = quickWrongPage.items;
+    assert.deepEqual(new Set(quickWrong.map((item: any) => item.question.id)), new Set([`${group.id}::sum`, `${group.id}::mutate`]));
+    assert.equal(quickWrong.find((item: any) => item.question.partId === 'sum').answerState, 'incorrect');
+    assert.equal(quickWrong.find((item: any) => item.question.partId === 'mutate').answerState, 'unanswered');
+    assert.ok(quickWrong.every((item: any) => item.attemptId === wrongQuick.id && item.wrongCount === 1));
+    for (const kind of ['due', 'favorite']) {
+      const associated = await call(`/api/learning/questions?${groupScope}&kind=${kind}&page=1&pageSize=10`);
+      assert.equal(associated.total, 3); assert.equal(associated.items.length, 3);
+      assert.ok(associated.items.every((item: any) => item.question.sourceQuestionId === group.id));
+    }
+    const history = await call(`/api/learning/attempts?${groupScope}&status=submitted&page=1&pageSize=10`);
+    assert.equal(history.total, 1); assert.equal(history.items[0].id, groupAttempt.id); assert.equal(history.items[0].totalScore, 10);
+    assert.equal(history.items[0].questionCount, 3); assert.equal(history.items[0].answeredCount, 3);
+    assert.ok(!('questions' in history.items[0]) && !('answers' in history.items[0]), 'history lists carry no question material or answer bodies');
+    const draftHistory = await call(`/api/learning/attempts?${draftScope}&status=in_progress&page=1&pageSize=10`);
+    assert.equal(draftHistory.total, 3); assert.equal(draftHistory.items.length, 3);
+    assert.ok(draftHistory.items.every((item: any) => !('questions' in item) && !('answers' in item)));
+    const emptyDraftPage = await call(`/api/learning/attempts?${draftScope}&status=in_progress&page=2&pageSize=10`);
+    assert.equal(emptyDraftPage.total, 3); assert.deepEqual(emptyDraftPage.items, []);
+    assert.equal((await call(`/api/learning/summary?${draftScope}`)).counts.drafts, 3);
+    assert.equal((await call(`/api/attempts/${draftIds[1]}`)).answers[essay.id].value, '继续保存原草稿', 'deleting the source set preserves an accessible draft');
+    const deletedContexts = await call('/api/learning/contexts?page=1&pageSize=10');
+    assert.equal(deletedContexts.total, 2); assert.ok(deletedContexts.items.every((item: any) => item.deleted));
+    assert.deepEqual(new Set(deletedContexts.items.map((item: any) => item.paperId)), new Set([groupPaper.id, draftPaper.id]));
+    const emptyContextPage = await call('/api/learning/contexts?page=2&pageSize=10');
+    assert.equal(emptyContextPage.total, 2); assert.deepEqual(emptyContextPage.items, []);
+    assert.equal(saveCount, savesBeforeLearning, 'all context-learning GETs remain readable with unavailable storage');
+    assert.deepEqual(durable, bytesBeforeLearning, 'learning reads do not rewrite durable SQLite bytes');
+  } finally { failSave = false; }
+  await call(`/api/questions/${group.id}`, 'DELETE');
+  const savesBeforeSnapshotRead = saveCount; failSave = true;
+  try {
+    const frozen = await call('/api/learning/questions?source=quick&kind=wrong&page=1&pageSize=10');
+    const frozenSum = frozen.items.find((item: any) => item.question.id === `${group.id}::sum`);
+    assert.equal(frozenSum.question.groupStemMarkdown, '共享材料：const values = [1, 2, 3]。');
+    assert.deepEqual(frozenSum.question.blanks[0].answers, ['6']);
+    assert.equal(frozenSum.question.explanationMarkdown, '1 + 2 + 3 = 6。', 'wrong-question content survives deletion of both source set and original question');
+    assert.equal((await call(`/api/learning/questions?${groupScope}&kind=wrong`)).items[0].question.id, `${group.id}::discuss`);
+    assert.equal(saveCount, savesBeforeSnapshotRead);
+  } finally { failSave = false; }
 });

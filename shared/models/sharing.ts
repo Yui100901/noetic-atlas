@@ -1,7 +1,7 @@
 import type { AssetRecord } from '../assets/assets.js';
 import type { Domain, Category, Tag, Question, Paper, QuestionBank } from './types.js';
 
-export type ShareKind = 'questions' | 'paper' | 'bank';
+export type ShareKind = 'questions' | 'paper';
 export interface ShareSelection { kind: ShareKind; id?: string; ids?: string[]; filters?: Record<string, unknown> }
 export interface SharedPaper extends Paper { snapshot: Question[] }
 /** Public content only: no drafts, attempts, notes, credentials or settings. */

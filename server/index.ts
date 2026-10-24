@@ -5,6 +5,7 @@ import { resolve, join } from 'node:path';
 import { Store, now } from './core/store.js';
 import { importData } from './modules/transfer/migration.js';
 import { registerExportRoutes } from './modules/transfer/exports.js';
+import { migrateLegacyBanks } from './modules/banks/legacy-banks.js';
 import { registerQuestionBankRoutes } from './modules/banks/routes.js';
 import { ensureSettings, getSettings, registerSettingsRoutes } from './modules/settings/routes.js';
 import { registerAssetRoutes, validateAllAssetReferences } from './modules/assets/routes.js';
@@ -20,9 +21,10 @@ import { registerQuestionRoutes } from './modules/questions/routes.js';
 import { registerTaxonomyRoutes } from './modules/taxonomy/routes.js';
 import { registerStudyRoutes } from './modules/study/routes.js';
 import { registerPracticeRoutes } from './modules/practice/routes.js';
+import { registerContextLearningRoutes } from './modules/practice/learning.js';
 import { registerTransferRoutes } from './modules/transfer/routes.js';
 
-export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean }
+export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void }
 export async function buildApp(options: AppOptions = {}) {
   const dbPath = options.databasePath || process.env.DATABASE_PATH || resolve('data/noetic-atlas.sqlite');
   // Normal installations start empty. A seed is an explicit test/operator input,
@@ -38,7 +40,8 @@ export async function buildApp(options: AppOptions = {}) {
       importData(store, JSON.parse(readFileSync(seedPath, 'utf8')));
       store.database.run(store.database.query.insertInto('metadata').values({key:'seed_initialized',value:now()}).onConflict(c=>c.column('key').doUpdateSet({value:now()})));
     }
-    store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); validateAllAssetReferences(store); });
+    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); validateAllAssetReferences(store); return migrated; });
+    if (migrated) options.onDataMigrated?.();
     store.database.projections.refreshAll();
   } catch (error) { store.db.close(); throw error; }
 
@@ -68,6 +71,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerExportRoutes(app, store);
 
   registerPracticeRoutes(app, store);
+  registerContextLearningRoutes(app, store);
 
   registerTransferRoutes(app, store);
 

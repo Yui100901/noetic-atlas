@@ -18,8 +18,8 @@ function fixture(store:Store){
   store.put('questions',id,q);
   if(index%2)store.put('study',id,{questionId:id,favorite:index%3===0,mastery:2,notes:`笔记 ${id}`,nextReviewAt:index%4===1?'2020-01-01T00:00:00.000Z':'2099-01-01T00:00:00.000Z',lastReviewedAt:null,wrongCount:index%3});
  });
- store.put('question_banks','mixed',{id:'mixed',name:'混合集合',description:'',questionIds:ids.filter((_,index)=>index%2===0)});
- store.put('question_banks','empty',{id:'empty',name:'空集合',description:'',questionIds:[]});
+ store.put('papers','mixed',{id:'mixed',name:'混合集合',description:'',questionIds:ids.filter((_,index)=>index%2===0)});
+ store.put('papers','empty',{id:'empty',name:'空集合',description:'',questionIds:[]});
 }
 
 /** Deliberately retain the former JS semantics as an independent oracle. */
@@ -27,7 +27,7 @@ function reference(store:Store,query:Record<string,any>){
  const rows=store.all('questions'),categories=store.all('categories'),states=new Map(store.all('study').map(s=>[s.questionId,s]));
  const allowed=new Set<string>();if(query.categoryId){allowed.add(query.categoryId);let changed=true;while(changed){changed=false;for(const c of categories)if(allowed.has(c.parentId)&&!allowed.has(c.id)){allowed.add(c.id);changed=true;}}}
  const domainCategories=new Set(categories.filter(c=>c.domainId===query.domainId).map(c=>c.id));
- const bank=query.bankId?new Set(store.require('question_banks',query.bankId).questionIds):null;
+ const bank=query.paperId?new Set(store.require('papers',query.paperId).questionIds):null;
  const tags=Array.isArray(query.tagIds)?query.tagIds:String(query.tagIds||'').split(',').filter(Boolean);
  const truthy=(x:unknown)=>[true,'true','1'].includes(x as any);
  const search=String(query.search||'').toLowerCase().trim();
@@ -56,7 +56,7 @@ function reference(store:Store,query:Record<string,any>){
 
 test('paged and complete question queries preserve former semantics across filters, Unicode search and natural ties',t=>{
  const store=new Store(':memory:');t.after(()=>store.db.close());fixture(store);
- const queries:Record<string,any>[]=[{},...['all','published','pending','draft','archived'].map(status=>({status})),...['general','personal','all'].map(collection=>({collection})),...['root','child','grandchild','chemical'].map(categoryId=>({categoryId})),{domainId:'chemistry'},{domainId:'computing'},{bankId:'mixed'},{bankId:'empty'},{type:'single_choice'},{types:['short_answer','true_false']},{difficulty:'2'},{depth:3},{frequency:0},{frequency:'3'},{frequencyMin:0},{difficultyMin:2,difficultyMax:3},{favorite:true},{wrong:'1'},{due:'true'},{favorite:true,wrong:true,due:true},{tagIds:'concept,application'},{tagIds:['concept','other'],tagMode:'any'},...['cAFÉ','ωσ','РУССКИЙ','İ','i\u0307','οσ','中文','Q0','实现','%','_','missing','  应用  '].map(search=>({search}))];
+ const queries:Record<string,any>[]=[{},...['all','published','pending','draft','archived'].map(status=>({status})),...['general','personal','all'].map(collection=>({collection})),...['root','child','grandchild','chemical'].map(categoryId=>({categoryId})),{domainId:'chemistry'},{domainId:'computing'},{paperId:'mixed'},{paperId:'empty'},{type:'single_choice'},{types:['short_answer','true_false']},{difficulty:'2'},{depth:3},{frequency:0},{frequency:'3'},{frequencyMin:0},{difficultyMin:2,difficultyMax:3},{favorite:true},{wrong:'1'},{due:'true'},{favorite:true,wrong:true,due:true},{tagIds:'concept,application'},{tagIds:['concept','other'],tagMode:'any'},...['cAFÉ','ωσ','РУССКИЙ','İ','i\u0307','οσ','中文','Q0','实现','%','_','missing','  应用  '].map(search=>({search}))];
  for(const collection of ['general','personal'])for(const tagMode of ['all','any'])for(const categoryId of ['root','chemical'])queries.push({status:'all',collection,tagMode,categoryId,tagIds:['concept','application'],difficultyMin:1,frequencyMin:0});
  for(const query of queries){
   const expected=reference(store,query).map(q=>q.id);
@@ -112,11 +112,11 @@ test('search, taxonomy and bank values remain bound literals including SQL synta
  store.put('tags',unsafe,{id:unsafe,name:'字面标签',kind:'custom',domainId:null,color:'#5264db',description:''});
  store.put('categories',unsafe,{id:unsafe,name:'字面分类',domainId:'computing',parentId:null,description:'',sortOrder:0});
  store.put('questions',id,{...store.require('questions','Q2'),id,title:`Literal ${unsafe}`,categoryIds:[unsafe],tagIds:[unsafe]});
- store.put('question_banks',unsafe,{id:unsafe,name:'字面题库',description:'',questionIds:[id]});
+ store.put('papers',unsafe,{id:unsafe,name:'字面题库',description:'',questionIds:[id]});
  const observed:{sql:string;parameters:readonly unknown[]}[]=[];
  const original=store.database.all.bind(store.database);
  store.database.all=((builder:any)=>{const compiled=builder.compile();observed.push(compiled);return original(builder);}) as typeof store.database.all;
- for(const filter of [{search:unsafe},{tagIds:[unsafe]},{categoryId:unsafe},{bankId:unsafe}]){
+ for(const filter of [{search:unsafe},{tagIds:[unsafe]},{categoryId:unsafe},{paperId:unsafe}]){
   const result=store.questionPage({...filter,pageSize:100});assert.deepEqual(result.items.map(q=>q.id),[id]);assert.equal(result.total,1);
  }
  assert.equal(store.questionCount({status:'all'}),25);
@@ -137,7 +137,7 @@ test('count uses a covering status index and page execution returns only bounded
  const result=store.questionPage({status:'all',page:2,pageSize:3});
  assert.equal(result.total,24);assert.equal(result.items.length,3);
  assert.equal(returned.flat().filter(row=>typeof row.data==='string').length,3);
- assert.deepEqual(store.questionPage({bankId:'empty',page:7,pageSize:3}),{items:[],total:0,page:7,pageSize:3});
+ assert.deepEqual(store.questionPage({paperId:'empty',page:7,pageSize:3}),{items:[],total:0,page:7,pageSize:3});
  const outOfRange=store.questionPage({status:'all',page:100,pageSize:3});assert.equal(outOfRange.total,24);assert.deepEqual(outOfRange.items,[]);
 });
 
@@ -159,4 +159,25 @@ test('derived selection and search refresh after body or metadata edits and a re
  assert.deepEqual(store.questionPage({search:'OnlyAfterStem',collection:'general'}).items.map(q=>q.id),[id]);
  assert.equal(store.questionCount({search:'TemporaryTransactionStem'}),0);
  store.remove('questions',id);assert.equal(store.questionCount({search:'OnlyAfterStem'}),0);
+});
+
+test('batch metadata keeps input order and all review states using one bound ID set without decoding question bodies',t=>{
+ const store=new Store(':memory:');t.after(()=>store.db.close());fixture(store);
+ const unsafe="x' OR 1=1; DROP TABLE questions; --", q=store.require('questions','Q2');
+ store.put('questions',unsafe,{...q,id:unsafe,title:'literal-only'});
+ // Refresh disposable metadata before observing this read-only lookup.
+ store.questionCount({status:'all'});
+ const observed:{sql:string;parameters:readonly unknown[];data:unknown[]}[]=[],original=store.database.all.bind(store.database);
+ store.database.all=((builder:any)=>{const compiled=builder.compile(),rows=original(builder);observed.push({...compiled,data:rows});return rows;}) as typeof store.database.all;
+ store.question=()=>{throw new Error('must not query each source body');};
+ store.all=()=>{throw new Error('must not decode full question table');};
+ const ids=['A-3','missing-first','Q10',unsafe,'Q2','missing-last'],result=store.questionMetadataByIds(ids);
+ assert.deepEqual(result.items.map(item=>item.id),['A-3','Q10',unsafe,'Q2']);
+ assert.deepEqual(result.items.map(item=>item.status),['archived','pending','published','published']);
+ assert.deepEqual(result.missingIds,['missing-first','missing-last']);
+ assert.ok(result.items.every(item=>Object.keys(item).sort().join(',')==='id,status,title,type'));
+ const queries=observed.filter(query=>query.sql.includes('from "question_read_model"'));
+ assert.equal(queries.length,1);assert.ok(queries[0]!.parameters.some(value=>typeof value==='string'&&value.includes(unsafe)));
+ assert.ok(observed.every(query=>!query.sql.includes(unsafe)&&!query.sql.includes('from "questions"')));
+ assert.ok(!JSON.stringify(observed.flatMap(query=>query.data)).includes('answerMarkdown'));
 });

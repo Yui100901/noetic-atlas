@@ -1,0 +1,4 @@
+.selection-basket > .pagination { flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.selection-basket > .pagination > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.selection-basket > .pagination .page-size-label { flex-wrap: wrap; }
+.selection-basket > .notice { margin-bottom: 15px; }

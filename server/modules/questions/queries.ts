@@ -5,7 +5,7 @@ import { QuestionOrder } from '../../database/question-order.js';
 
 const enabled = (input:unknown) => input === true || input === 'true' || input === '1';
 const emptyStudy = (id:string):StudyState => ({questionId:id,favorite:false,mastery:null,notes:'',nextReviewAt:null,lastReviewedAt:null,wrongCount:0});
-export interface QuestionSelection { categories?:string[]; domainCategories?:string[]; bankQuestions?:string[]; tags:string[] }
+export interface QuestionSelection { categories?:string[]; domainCategories?:string[]; paperQuestions?:string[]; tags:string[] }
 export type QuestionMetadata = Pick<Question,'id'|'title'|'type'|'status'|'collection'|'difficulty'|'depth'|'frequency'|'categoryIds'|'tagIds'>;
 
 /** Question selection uses a typed query builder; JSON/search dialect details
@@ -32,7 +32,7 @@ export class QuestionQueries {
       // were false. Explicit null, unlike undefined, is numerically zero.
       result=result.where(eb=>eb.or([expr.missing('q.data',field),eb(eb.fn.coalesce(expr.field<number>('q.data',field),eb.val(0)),operator,Number(query[input]))]));
     }
-    if(selection.bankQuestions)result=result.where(expr.idInJson('q.id',selection.bankQuestions));
+    if(selection.paperQuestions)result=result.where(expr.idInJson('q.id',selection.paperQuestions));
     for(const categories of [selection.categories,selection.domainCategories])if(categories)result=result.where(expr.arrayAny('q.data','categoryIds',categories));
     if(selection.tags.length)result=result.where(query.tagMode==='any'?expr.arrayAny('q.data','tagIds',selection.tags):expr.arrayAll('q.data','tagIds',selection.tags));
     const search=String(query.search||'').toLowerCase().trim();
@@ -52,6 +52,15 @@ export class QuestionQueries {
   metadata(query:Record<string,any>,selection:QuestionSelection):QuestionMetadata[] {
     this.database.projections.ensure(['questions']);
     return this.database.all(this.matches(query,selection).clearSelect().select('q.data')).map(row=>JSON.parse(row.data) as QuestionMetadata);
+  }
+  metadataByIds(ids:string[]):{items:Pick<Question,'id'|'title'|'type'|'status'>[];missingIds:string[]} {
+    // ID membership is one bound JSON value, so large sets do not hit SQL
+    // parameter limits or decode the original Markdown/answers/study records.
+    const rows=this.metadata({status:'all'},{paperQuestions:ids,tags:[]});
+    const records=new Map(rows.map(({id,title,type,status})=>[id,{id,title,type,status}]));
+    const items:Pick<Question,'id'|'title'|'type'|'status'>[]=[],missingIds:string[]=[];
+    for(const id of ids){const record=records.get(id);if(record)items.push(record);else missingIds.push(id);}
+    return {items,missingIds};
   }
   count(query:Record<string,any>,selection:QuestionSelection):number {
     this.database.projections.ensure(['questions']);

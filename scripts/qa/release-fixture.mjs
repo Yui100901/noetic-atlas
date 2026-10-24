@@ -58,7 +58,7 @@ export async function createReviewedReleaseQuestion(api) {
 
 export async function completeReleasePaper(api, question) {
   const paper = await api('/api/papers', 'POST', {
-    title: '发布验收临时练习卷', mode: 'manual', questionIds: [question.id],
+    title: '发布验收临时题集', mode: 'manual', questionIds: [question.id],
     scoring: { enabled: true, totalPoints: 2, questionPoints: { [question.id]: 2 } },
   });
   const attempt = await api(`/api/papers/${encodeURIComponent(paper.id)}/attempts`, 'POST', { mode: 'practice' });

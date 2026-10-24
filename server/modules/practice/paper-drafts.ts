@@ -11,10 +11,10 @@ import { makeId, nextStamp, type Store } from '../../core/store.js';
 const ids = z.array(id).max(500).refine(value => new Set(value).size === value.length, '题号不可重复');
 const points = z.record(types, z.number().finite().min(0).max(10000));
 const reference = z.string().max(160);
-const draftFilters = z.object({search:z.string().max(1000).optional(),bankId:reference.optional(),domainId:reference.optional(),categoryId:reference.optional(),tagIds:ids.optional(),tagMode:z.enum(['all','any']).optional(),type:z.string().max(40).optional(),types:z.array(types).max(7).optional(),difficulty:z.string().max(10).optional(),depth:z.string().max(10).optional(),frequency:z.string().max(10).optional(),collection:z.string().max(20).optional(),status:z.string().max(20).optional(),favorite:z.boolean().optional(),wrong:z.boolean().optional(),due:z.boolean().optional(),difficultyMin:z.number().int().min(1).max(4).optional(),difficultyMax:z.number().int().min(1).max(4).optional(),frequencyMin:z.number().int().min(0).max(3).optional()}).strict();
+const draftFilters = z.object({search:z.string().max(1000).optional(),paperId:reference.optional(),domainId:reference.optional(),categoryId:reference.optional(),tagIds:ids.optional(),tagMode:z.enum(['all','any']).optional(),type:z.string().max(40).optional(),types:z.array(types).max(7).optional(),difficulty:z.string().max(10).optional(),depth:z.string().max(10).optional(),frequency:z.string().max(10).optional(),collection:z.string().max(20).optional(),status:z.string().max(20).optional(),favorite:z.boolean().optional(),wrong:z.boolean().optional(),due:z.boolean().optional(),difficultyMin:z.number().int().min(1).max(4).optional(),difficultyMax:z.number().int().min(1).max(4).optional(),frequencyMin:z.number().int().min(0).max(3).optional()}).strict();
 export const paperDraftStateSchema = z.object({
   title: z.string().max(200), description: z.string().max(4000), mode: z.enum(['manual','random']),
-  organization: z.enum(['domain','other']), domainId: z.string().max(160), questionIds: ids,
+  organization: z.enum(['domain','other']), domainId: z.string().max(160), questionIds: z.array(id).max(50_000).refine(value=>new Set(value).size===value.length,'题集题号不可重复'),
   filters: draftFilters, random: draftFilters,
   count: z.number().finite().min(0).max(500), enabled: z.boolean(), total: z.number().finite().min(0).max(10000),
   objectivePercent: z.number().finite().min(0).max(100), pointsByType: points,
@@ -31,7 +31,7 @@ export function validatePaperDraft(store: Store, state: PaperDraftState, options
   for (const filters of [state.filters, state.random]) {
     if (typeof filters.domainId === 'string' && filters.domainId) store.require('domains', filters.domainId);
     if (typeof filters.categoryId === 'string' && filters.categoryId) store.require('categories', filters.categoryId);
-    if (typeof filters.bankId === 'string' && filters.bankId) store.require('question_banks', filters.bankId);
+    if (typeof filters.paperId === 'string' && filters.paperId) store.require('papers', filters.paperId);
     if (Array.isArray(filters.tagIds)) for (const tag of filters.tagIds) { if (typeof tag !== 'string') fail(400,'INVALID_REFERENCE','标签引用格式无效'); store.require('tags',tag); }
   }
 }

@@ -14,21 +14,22 @@ export interface StoredAttempt extends Omit<Attempt, 'questions'> { questions: S
 export function examQuestion(q: StoredLeafQuestion, points?: number): ExamQuestion {
   return { id: q.id, sourceQuestionId: q.sourceQuestionId || q.id, title: q.title, type: q.type, stemMarkdown: q.stemMarkdown, options: q.options, difficulty: q.difficulty, depth: q.depth, frequency: q.frequency, collection: q.collection, points, blanks: q.blanks?.map(({ answers: _answers, ...b }) => b), groupId: q.groupId, groupTitle: q.groupTitle, groupStemMarkdown: q.groupStemMarkdown, partId: q.partId, partIndex: q.partIndex };
 }
-export function expandPaper(p: StoredPaper) {
-  validatePaperAnswers(p.snapshot);
+export function expandPaper(p: StoredPaper, maxAnswers = 1_500_000) {
+  validatePaperAnswers(p.snapshot, maxAnswers);
   const parentScoring = normalizeScoring(p.snapshot, p.scoring);
   const questions = flattenQuestions(p.snapshot);
-  const questionPoints = Object.assign({}, ...p.snapshot.map(q => distributeGroupPoints(q, parentScoring.questionPoints[q.id]!)));
+  const questionPoints:Record<string,number> = {};
+  for(const question of p.snapshot) Object.assign(questionPoints,distributeGroupPoints(question,parentScoring.questionPoints[question.id]!));
   const scoring = p.snapshot.some(q => q.type === 'group') ? normalizeScoring(questions, { enabled: parentScoring.enabled, totalPoints: parentScoring.totalPoints, questionPoints, objectivePercent: parentScoring.objectivePercent, pointsByType: parentScoring.pointsByType }) : parentScoring;
   return { questions, scoring };
 }
-export function paperView(p: StoredPaper, detail = false) {
+export function paperView(p: StoredPaper, detail: boolean | 'summary' = false) {
   const { snapshot, ...paper } = p;
   const scoring = normalizeScoring(snapshot, p.scoring);
   const organization = paper.organization || 'other', domainId = organization === 'domain' ? paper.domainId || null : null;
   if (!detail) return { ...paper, organization, domainId, scoring };
   const expanded = expandPaper(p);
-  return { ...paper, organization, domainId, scoring, answerCount: expanded.questions.length, questions: expanded.questions.map(q => examQuestion(q, expanded.scoring.questionPoints[q.id])) };
+  return { ...paper, organization, domainId, scoring, answerCount: expanded.questions.length, questions: expanded.questions.map(q => {const view=examQuestion(q, expanded.scoring.questionPoints[q.id]);return detail==='summary'?{...view,stemMarkdown:'',options:[],blanks:undefined,groupStemMarkdown:undefined}:view;}) };
 }
 export function attemptView(a: StoredAttempt): Attempt {
   const scoring = normalizeScoring(a.questions, a.scoring);
@@ -42,7 +43,7 @@ export function attemptView(a: StoredAttempt): Attempt {
 export function buildPaper(store: Store, input: { id?: string; title: string; description: string; mode: 'manual' | 'random'; organization?: 'domain' | 'other'; domainId?: string | null; questionIds?: string[]; filters?: PaperFilters | null; count?: number; scoring?: ScoringInput }, previous?: StoredPaper): StoredPaper {
   if (input.id === QUICK_PAPER_ID) fail(400, 'RESERVED_PAPER_ID', '随机单题标识不能用作试卷ID');
   const organization = input.organization || 'other', domainId = organization === 'domain' ? input.domainId || null : null;
-  if (organization === 'domain' && !domainId) fail(400, 'PAPER_DOMAIN_REQUIRED', '领域专项练习卷必须选择所属领域');
+  if (organization === 'domain' && !domainId) fail(400, 'PAPER_DOMAIN_REQUIRED', '领域专项题集必须选择所属领域');
   if (domainId) store.require('domains', domainId);
   const settings = getSettings(store);
   // Persist resolved defaults in every newly created snapshot. Subsequent
@@ -73,11 +74,11 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
     }
   }
   const snapshot = selected.map(q => { const { study: _study, ...clean } = q; return clean; });
-  validatePaperAnswers(snapshot);
+  validatePaperAnswers(snapshot,input.mode==='manual'?1_500_000:500);
   const scoring = normalizeScoring(snapshot, scoringInput);
-  return { id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, mode: input.mode, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
+  return { ...(previous?.legacyBankId ? {legacyBankId:previous.legacyBankId}:{}), id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, mode: input.mode, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
 }
-export function createAttempt(store: Store, paper: StoredPaper, options: { mode?: 'practice' | 'exam'; durationMinutes?: number } = {}): StoredAttempt {
+export function createAttempt(store: Store, paper: StoredPaper, options: { mode?: 'practice' | 'exam'; durationMinutes?: number; count?: number; selection?: 'ordered' | 'random' } = {}): StoredAttempt {
   const practiceMode = options.mode || 'practice';
   if (practiceMode === 'exam') {
     syncExams(store);
@@ -86,7 +87,21 @@ export function createAttempt(store: Store, paper: StoredPaper, options: { mode?
   }
   const durationMinutes = practiceMode === 'exam' ? options.durationMinutes ?? (getSettings(store) as any).examDurationMinutes ?? 120 : null;
   if (durationMinutes != null && (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 1440)) fail(400, 'INVALID_EXAM_DURATION', '考试时长需为 1–1440 分钟的整数');
-  const { questions, scoring } = expandPaper(paper), stamp = draftStamp(store, 'paper', paper.id), startedAt = now();
+  const allCount = flattenQuestions(paper.snapshot).length;
+  if (!paper.snapshot.length) fail(400, 'EMPTY_PAPER', '题集尚无题目，请先添加题目');
+  if (options.count === undefined && allCount > 500) fail(422, 'QUESTION_SET_SESSION_LIMIT', '大型题集请先选择本次练习题量，每次最多500个作答项', { available: allCount, limit: 500 });
+  if (options.count !== undefined && (!Number.isInteger(options.count) || options.count < 1 || options.count > 500 || options.count > paper.snapshot.length)) fail(400, 'INVALID_SESSION_COUNT', '本次题量须为1至500且不超过题集题数的整数');
+  let sessionPaper = paper;
+  if (options.count !== undefined) {
+    const pool = [...paper.snapshot];
+    if (options.selection === 'random') for (let i=pool.length-1;i>0;i--) { const j=randomInt(0,i+1); [pool[i],pool[j]]=[pool[j]!,pool[i]!]; }
+    const snapshot = pool.slice(0, options.count);
+    validatePaperAnswers(snapshot);
+    const original = normalizeScoring(paper.snapshot, paper.scoring);
+    const scoring = normalizeScoring(snapshot, { enabled: original.enabled, questionPoints: Object.fromEntries(snapshot.map(q=>[q.id,original.questionPoints[q.id]!])), objectivePercent: original.objectivePercent, pointsByType: original.pointsByType });
+    sessionPaper = {...paper, snapshot, questionIds:snapshot.map(q=>q.id), questionCount:snapshot.length, scoring};
+  }
+  const { questions, scoring } = expandPaper(sessionPaper, 500), stamp = draftStamp(store, 'paper', paper.id), startedAt = now();
   const a: StoredAttempt = { practiceMode, durationMinutes, deadlineAt: durationMinutes == null ? null : new Date(Date.parse(startedAt) + durationMinutes * 60000).toISOString(), elapsedSeconds: 0, autoSubmitted: false, id: makeId('attempt'), source: 'paper', paperId: paper.id, paperTitle: paper.title, paperVersion: paper.version, status: 'in_progress', questions: structuredClone(questions), scoring: structuredClone(scoring), answers: {}, objectiveScore: 0, objectiveMax: scoring.objectivePoints, subjectiveScore: 0, subjectiveMax: scoring.subjectivePoints, startedAt, updatedAt: stamp, submittedAt: null };
   store.transaction(() => { store.insert('attempts', a.id, a); trimDrafts(store, a); }); return a;
 }

@@ -82,7 +82,6 @@ try {
     else if (url.pathname === '/api/exams/sync') { data = { attempt: null }; latency = 350; }
     else if (url.pathname === '/api/questions') data = { items: [{ ...question, study: { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 } }], total: 1, page: 1, pageSize: 20 };
     else if (url.pathname === '/api/questions/' + question.id) data = { ...question, study: { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 } };
-    else if (url.pathname === '/api/question-banks') data = [{ id: 'qa-bank', name: '测试集合', description: '', questionIds: [question.id] }];
     else if (url.pathname === '/api/ai/runs') data = [];
     else if (url.pathname === '/api/paper-drafts') data = [];
     else if (url.pathname === '/api/study/' + question.id && request.method() === 'PUT') {
@@ -107,9 +106,10 @@ try {
   checks.push('页面请求仍等待考试校验通过，保持考试锁边界');
   assert.equal(requests.filter(item => item.path === '/api/question-banks').length, 0);
   await page.getByRole('button', { name: /^筛选/ }).click();
-  await page.getByRole('option', { name: '测试集合', exact: true }).waitFor({ state: 'attached' });
-  assert.equal(requests.filter(item => item.path === '/api/question-banks').length, 1);
-  checks.push('收起筛选不拉集合，展开后正常获取集合选项');
+  await page.getByRole('option', { name: '所有题型', exact: true }).waitFor({ state: 'attached' });
+  assert.equal(await page.getByRole('link', { name: '题库集合', exact: true }).count(), 0);
+  assert.equal(requests.filter(item => item.path === '/api/question-banks').length, 0);
+  checks.push('筛选可展开，不再查询或显示独立题库集合');
   await page.getByRole('link', { name: question.title, exact: true }).click();
   await page.locator('.ai-request-note').waitFor();
   assert.equal(requests.filter(item => item.path === '/api/bootstrap').length, 1);
@@ -123,10 +123,10 @@ try {
   checks.push('修改学习记录仍主动刷新 bootstrap，无跨页长期缓存');
   await page.evaluate(() => { window.location.hash = '#/papers/new/manual'; });
   await page.getByRole('button', { name: question.title, exact: true }).waitFor();
-  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(button => button.textContent === '保存组卷草稿')?.disabled);
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(button => button.textContent === '保存组题草稿')?.disabled);
   assert.equal(requests.filter(item => item.path === '/api/paper-drafts').length, 1);
-  assert.equal(requests.filter(item => item.path === '/api/question-banks').length, 1);
-  checks.push('手动组卷草稿在StrictMode只初始化一次，收起筛选不额外查询集合');
+  assert.equal(requests.filter(item => item.path === '/api/question-banks').length, 0);
+  checks.push('手动组题草稿在StrictMode只初始化一次，不查询已移除的集合接口');
   const authoringUrl = page.url();
   await page.getByRole('button', { name: question.title, exact: true }).click();
   await page.locator('.question-inline-preview').waitFor();

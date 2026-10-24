@@ -9,6 +9,7 @@ import * as ai from '../modules/ai/schema.js';
 import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/paper-drafts.js';
 import { paginationFields } from '../core/pagination.js';
 import { vocabularyQuerySchema } from '../modules/questions/vocabulary.js';
+import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuestionsQuerySchema, learningContextsQuerySchema } from '../modules/practice/learning.js';
 
 interface RouteEntry { method: string; url: string; schema?: FastifySchema }
 type JsonSchema = Record<string, any>;
@@ -29,11 +30,16 @@ const aiPublicSettingsSchema=z.object({...aiPublicFields,hasKey:z.boolean()});
 const aiRunOutput: JsonSchema = {type:'object',required:['id','kind','status','createdAt','model','questionIds','warnings','result'],properties:{id:{type:'string'},kind:{enum:['explain','grade','import','review','paper_plan']},status:{const:'completed'},createdAt:{type:'string',format:'date-time'},model:{type:'string'},warnings:{type:'array',items:{type:'string'}},questionIds:{type:'array',items:{type:'string'}},attemptId:{type:'string'},createdPaperId:{type:'string'},appliedAt:{type:'string',format:'date-time'},result:{oneOf:[toJson(ai.explanationSchema),toJson(ai.gradeResultSchema),toJson(ai.importResultSchema),toJson(ai.reviewResultSchema.safeExtend({approvedIds:z.array(id)})),toJson(ai.aiPaperPlanOutputSchema.safeExtend({requestedCount:z.number().int(),candidateCount:z.number().int(),candidates:z.array(z.object({id,title:z.string(),type:z.string()}))}))]}}};
 const paperOutput: JsonSchema = {type:'object',properties:{...toJson(validation.paperInputSchema).properties,id:{type:'string'},questionCount:{type:'integer'},answerCount:{type:'integer'},version:{type:'integer'},archived:{type:'boolean'},createdAt:{type:'string',format:'date-time'},updatedAt:{type:'string',format:'date-time'},scoring:toJson(validation.storedScoringSchema),questions:{type:'array',items:{...object,description:'ExamQuestion：题干、选项、难度与分值；交卷前不含参考答案'}}}};
 const attemptOutput: JsonSchema = {type:'object',properties:{id:{type:'string'},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},source:{enum:['paper','quick']},status:{enum:['in_progress','submitted']},practiceMode:{enum:['practice','exam']},durationMinutes:{type:'integer'},deadlineAt:{type:['string','null'],format:'date-time'},startedAt:{type:'string',format:'date-time'},submittedAt:{type:['string','null'],format:'date-time'},updatedAt:{type:'string',format:'date-time'},elapsedSeconds:{type:'integer',minimum:0},autoSubmitted:{type:'boolean'},answers:{type:'object',additionalProperties:toJson(validation.answerSchema)},questions:{type:'array',items:object},scoring:toJson(validation.storedScoringSchema),objectiveScore:{type:'number'},objectiveMax:{type:'number'},subjectiveScore:{type:'number'},subjectiveMax:{type:'number'},totalScore:{type:['number','null']},pendingSubjectiveCount:{type:'integer'},gradingStatus:{enum:['pending','partial','complete','not_applicable']}}};
-const shareSelection=z.object({kind:z.enum(['questions','paper','bank']),id:id.optional(),ids:z.array(id).min(1).max(50000).optional(),filters:z.record(z.string(),z.unknown()).optional()}).strict();
+const shareSelection=z.object({kind:z.enum(['questions','paper']),id:id.optional(),ids:z.array(id).min(1).max(50000).optional(),filters:z.record(z.string(),z.unknown()).optional()}).strict();
+const learningSummaryOutput:JsonSchema={type:'object',properties:{source:{enum:['paper','quick']},paperId:{type:'string'},title:{type:'string'},deleted:{type:'boolean'},archived:{type:'boolean'},counts:{type:'object',properties:Object.fromEntries(['drafts','submitted','wrong','due','favorite'].map(key=>[key,{type:'integer',minimum:0}]))},suggestions:{type:'array',items:{type:'string'}}}};
+const learningHistoryOutput:JsonSchema={type:'object',additionalProperties:false,properties:{id:{type:'string'},source:{enum:['paper','quick']},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},status:{enum:['in_progress','submitted']},practiceMode:{enum:['practice','exam']},startedAt:{type:'string'},updatedAt:{type:'string'},submittedAt:{type:['string','null']},referenceViewedAt:{type:['string','null']},elapsedSeconds:{type:'integer'},durationMinutes:{type:['integer','null']},deadlineAt:{type:['string','null']},autoSubmitted:{type:'boolean'},questionCount:{type:'integer'},answeredCount:{type:'integer'},scoringEnabled:{type:'boolean'},totalPoints:{type:'number'},objectiveScore:{type:'number'},objectiveMax:{type:'number'},subjectiveScore:{type:'number'},subjectiveMax:{type:'number'},totalScore:{type:['number','null']},pendingSubjectiveCount:{type:'integer'},gradingStatus:{enum:['not_applicable','pending','partial','complete']}}};
+const learningQuestionOutput:JsonSchema={type:'object',properties:{question:toJson(validation.snapshotQuestionSchema),attemptId:{type:'string'},answerState:{enum:['incorrect','unanswered']},wrongCount:{type:'integer'},lastPracticedAt:{type:'string'},study:object}};
+const learningPage=(item:JsonSchema):JsonSchema=>({type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}});
 const pathBodies: Record<string,z.ZodType> = {
   '/api/questions': validation.questionSchema, '/api/domains': validation.domainSchema, '/api/categories': validation.categorySchema,
-  '/api/tags': validation.tagSchema, '/api/documents': validation.documentSchema, '/api/question-banks': validation.questionBankSchema,
+  '/api/tags': validation.tagSchema, '/api/documents': validation.documentSchema,
   '/api/papers': validation.paperInputSchema, '/api/papers/preview': validation.paperInputSchema,
+  '/api/questions/metadata': validation.questionMetadataInputSchema,
   '/api/questions/bulk-import': validation.bulkQuestionImportSchema, '/api/questions/review': validation.questionReviewSchema,
   '/api/ai/settings': ai.aiSettingsSchema, '/api/ai/paper-plan': ai.aiPaperPlanInputSchema,
   '/api/ai/import': z.object({text:z.string().min(1).max(400000),sourceName:z.string().optional(),categoryIds:z.array(id).default([]),tagIds:z.array(id).default([]),count:z.number().int().min(1).max(50).default(20)}),
@@ -45,11 +51,12 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
   '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional()}).optional()}),
 };
-const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','question-banks':'题库集合',papers:'练习卷',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
+const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料',papers:'题集',learning:'题集学习记录',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
   if (!['POST','PUT','PATCH'].includes(method)) return undefined;
   if (/^\/api\/(?:exams\/sync|attempts\/:id\/(?:sync|reveal))$/.test(url)) return undefined;
-  if (url==='/api/papers/:id/attempts')return toJson(z.object({mode:z.enum(['practice','exam']).optional(),durationMinutes:z.number().int().min(1).max(1440).optional()}).strict());
+  if (url==='/api/papers/:id/attempts')return toJson(z.object({mode:z.enum(['practice','exam']).optional(),durationMinutes:z.number().int().min(1).max(1440).optional(),count:z.number().int().min(1).max(500).optional(),selection:z.enum(['ordered','random']).optional()}).strict());
+  if (url==='/api/papers/:id/restore')return toJson(z.object({confirmed:z.literal(true)}).strict());
   if (url==='/api/paper-drafts'&&method==='POST')return toJson(z.object({context:z.string().min(1).max(160),state:paperDraftStateSchema}).strict());
   if (url==='/api/paper-drafts/:id'&&method==='PUT')return toJson(z.object({expectedUpdatedAt:z.string().datetime({offset:true}),state:paperDraftStateSchema}).strict());
   if (/\/ai\/runs\/:id\/paper$/.test(url)) return toJson(ai.aiPaperPlanApplySchema);
@@ -65,25 +72,33 @@ function bodyFor(method:string,url:string): JsonSchema|undefined {
  * supply input shapes; the transform does not add a second runtime validator. */
 function documentationSchema(entry:RouteEntry):FastifySchema {
   const {method,url}=entry; const parts=url.split('/').filter(Boolean); const area=parts[1]||'api';
-  const label=summaries[area]||area; const list=method==='GET'&&!url.includes('/:')&&['questions','domains','categories','tags','documents','question-banks','papers','attempts','study','reviews','assets'].includes(area);
+  const label=summaries[area]||area; const list=method==='GET'&&!url.includes('/:')&&['questions','domains','categories','tags','documents','papers','attempts','study','reviews','assets'].includes(area);
   const schema:FastifySchema={...entry.schema,tags:[label],summary:`${method} · ${label}${parts.slice(2).join('/')?` / ${parts.slice(2).join('/')}`:''}`,description:'由当前已注册接口在启动时自动生成。输入结构来自共用校验器；ID引用、版本冲突、计分和内容规则由服务继续校验。写操作仅限同源请求；此本地服务默认不提供多用户鉴权。',operationId:`${method.toLowerCase()}_${url.replace(/[^a-zA-Z0-9]+/g,'_')}`,response:{200:list?paged(object):object,400:errorSchema,404:errorSchema,409:errorSchema,422:errorSchema,502:errorSchema}};
   const parameters=[...url.matchAll(/:([A-Za-z0-9_]+)/g)].map(match=>match[1]!);
   if(parameters.length)schema.params={type:'object',properties:Object.fromEntries(parameters.map(name=>[name,{type:'string'}])),required:parameters};
   if(list)schema.querystring=toJson(z.object({...paginationFields}));
+  if(url==='/api/papers/:id')schema.querystring=toJson(z.object({summary:z.enum(['true','false']).optional()}).strict());
+  const learningQueries:Record<string,z.ZodType>={'/api/learning/summary':learningSummaryQuerySchema,'/api/learning/attempts':learningAttemptsQuerySchema,'/api/learning/questions':learningQuestionsQuerySchema,'/api/learning/contexts':learningContextsQuerySchema};
+  if(learningQueries[url])schema.querystring=toJson(learningQueries[url]!);
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
   if(url==='/api/documents')schema.querystring=toJson(z.object({...paginationFields,search:z.string().max(1000).optional(),collection:z.enum(['general','personal','all']).optional(),kind:z.string().optional(),domainId:id.optional(),categoryId:id.optional(),tagIds:z.string().optional(),format:z.enum(['markdown','pdf']).optional()}));
-  if(url==='/api/question-banks')schema.querystring=toJson(z.object({...paginationFields,search:z.string().max(1000).optional()}));
-  if(url==='/api/questions')schema.querystring=toJson(z.object({page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(200).default(30),search:z.string().max(1000).optional(),domainId:id.optional(),categoryId:id.optional(),bankId:id.optional(),tagIds:z.string().optional(),tagMode:z.enum(['all','any']).optional(),type:validation.types.optional(),difficulty:z.coerce.number().int().min(1).max(4).optional(),depth:z.coerce.number().int().min(1).max(4).optional(),frequency:z.coerce.number().int().min(0).max(3).optional(),collection:z.enum(['general','personal','all']).optional(),status:z.enum(['published','pending','draft','archived','all']).optional(),favorite:z.enum(['true','false','1','0']).optional(),due:z.enum(['true','false','1','0']).optional(),wrong:z.enum(['true','false','1','0']).optional()}));
+  if(url==='/api/questions')schema.querystring=toJson(z.object({page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(200).default(30),search:z.string().max(1000).optional(),domainId:id.optional(),categoryId:id.optional(),paperId:id.optional(),tagIds:z.string().optional(),tagMode:z.enum(['all','any']).optional(),type:validation.types.optional(),difficulty:z.coerce.number().int().min(1).max(4).optional(),depth:z.coerce.number().int().min(1).max(4).optional(),frequency:z.coerce.number().int().min(0).max(3).optional(),collection:z.enum(['general','personal','all']).optional(),status:z.enum(['published','pending','draft','archived','all']).optional(),favorite:z.enum(['true','false','1','0']).optional(),due:z.enum(['true','false','1','0']).optional(),wrong:z.enum(['true','false','1','0']).optional()}));
   if(['/api/domains','/api/categories','/api/tags'].includes(url))schema.querystring=toJson(z.object({...paginationFields,search:z.string().max(1000).optional(),domainId:id.optional(),parentId:id.optional(),kind:z.string().max(40).optional()}));
   if(url==='/api/reviews')schema.querystring=toJson(z.object({...paginationFields,questionId:id.optional()}));
   if(url==='/api/paper-drafts')schema.querystring=toJson(z.object({context:z.string().min(1).max(160).optional()}));
   if(url==='/api/attempts')schema.querystring=toJson(z.object({...paginationFields,paperId:id.optional(),source:z.enum(['paper','quick']).optional(),status:z.enum(['in_progress','submitted']).optional()}));
   if(url==='/api/ai/runs')schema.querystring=toJson(z.object({...paginationFields,kind:z.enum(['explain','grade','import','review','paper_plan']).optional(),questionId:id.optional(),attemptId:id.optional()}));
-  const outputs:Record<string,JsonSchema>={questions:toJson(validation.questionSchema),documents:toJson(validation.documentSchema),'question-banks':toJson(validation.questionBankSchema),domains:toJson(validation.domainSchema),categories:toJson(validation.categorySchema),tags:toJson(validation.tagSchema),papers:paperOutput,attempts:attemptOutput,'paper-drafts':toJson(paperDraftSchema)};
+  const outputs:Record<string,JsonSchema>={questions:toJson(validation.questionSchema),documents:toJson(validation.documentSchema),domains:toJson(validation.domainSchema),categories:toJson(validation.categorySchema),tags:toJson(validation.tagSchema),papers:paperOutput,attempts:attemptOutput,'paper-drafts':toJson(paperDraftSchema)};
   let success:JsonSchema=outputs[area]||object;
+  if(url==='/api/learning/summary')success=learningSummaryOutput;
+  if(url==='/api/learning/attempts')success=learningPage(learningHistoryOutput);
+  if(url==='/api/learning/questions')success=learningPage(learningQuestionOutput);
+  if(url==='/api/learning/contexts')success=learningPage(learningSummaryOutput);
   if(list)success=paged(success);
   if(url==='/api/questions'&&method==='GET')success=(paged(outputs.questions!) as any).anyOf[1];
+  if(url==='/api/questions/metadata')success=toJson(z.object({items:z.array(z.object({id,title:z.string(),type:validation.types,status:z.enum(['published','pending','draft','archived'])})),missingIds:z.array(id)}));
+  if(url==='/api/papers/:id/questions/:questionId')success=toJson(validation.snapshotQuestionSchema);
   if(url==='/api/ai/runs')success=paged(aiRunOutput);
   if(/^\/api\/ai\/runs\/:id$/.test(url)||/^\/api\/ai\/(?:explain|grade|import|review|paper-plan)$/.test(url))success=aiRunOutput;
   if(url==='/api/attempts/:id/ai-review')success=aiRunOutput;
@@ -114,6 +129,11 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
     schema.description+=' 独立配置迁移只处理常规偏好与可选 AI 非敏感设置，不含题目、笔记或 API 密钥。先 POST import/preview，再携带 fingerprint 与 confirmed:true 导入；若预览将清理历史/草稿，还须 confirmedRetention:true。配置或作答记录变化后须重新预览。更换服务端点会清除旧密钥，同端点保留本机密钥。';
     if(schema.body) (schema.body as JsonSchema).examples=[url.endsWith('/preview')?{data:configurationExample}:{data:configurationExample,fingerprint:'0'.repeat(64),confirmed:true}];
   }
+  if(url.startsWith('/api/learning/'))schema.description+=' 学习记录按题集或随机练习来源隔离。已删除题集只要还有历史仍可查看；错题仅依据该来源保留的已提交作答，按交卷时间取最新已判结果，未判主观题不记错也不覆盖上次已判结果。收藏和复习日期绑定存活原题，共享笔记；建议是本地规则，不调用AI。分页历史不返回题目或答案正文。';
+  if(url==='/api/questions/metadata')schema.description+=' 只读批量查询题目元数据，最多50000个唯一题号；按输入顺序返回 id/title/type/status，含待审核与归档题。不存在的题号列入 missingIds，不查询题干、答案、笔记。';
+  if(url==='/api/papers/:id/restore')schema.description+=' 恢复前确认所有成员原题已审核发布且题集非空。首次恢复且未经编辑的旧集合无分题集按原顺序重新读取已审核题目，保持无分数并产生新版本；其他题集保留原快照、版本和分值。恢复均不改写历史作答。';
+  if(url==='/api/papers/:id/questions/:questionId')schema.description+=' 返回这份题集保存的单题快照与解析，含组合题公共材料；不从当前题库替换历史内容。';
+  if(url==='/api/papers/:id'&&method==='GET')schema.description+=' summary=true 仅返回答题导航所需信息，省略题干、选项与材料正文，适用于大型题集浏览。';
   if(url.includes('/export')||url.endsWith('/content')){schema.description+=' 文件导出可能按格式返回Markdown、PDF或二进制；JSON导出返回完整封包。';}
   return schema;
 }

@@ -31,7 +31,7 @@ export async function nativeFetch(url: string, options: RequestInit = {}) { retu
 export async function nativeDownload(url: string, filename?: string) {
   const response = await nativeFetch(url);
   if (!response.ok) { const value = await response.json(); throw new Error(value.error?.message || '导出失败'); }
-  const defaultName = url.includes('backup.sqlite') ? '认知星图-学习数据库.sqlite' : url.includes('/papers/') ? '认知星图-练习卷.md' : '认知星图-完整备份.json';
+  const defaultName = url.includes('backup.sqlite') ? '认知星图-学习数据库.sqlite' : url.includes('/papers/') ? '认知星图-题集.md' : '认知星图-完整备份.json';
   const bytes = new Uint8Array(await response.arrayBuffer());
   await saveGeneratedFile(filename || defaultName, bytes, url.includes('backup.sqlite') ? 'application/vnd.sqlite3' : response.headers.get('Content-Type') || 'application/octet-stream');
 }

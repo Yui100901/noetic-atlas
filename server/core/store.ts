@@ -107,16 +107,17 @@ export class Store {
   study(id: string): StudyState { return this.get<StudyState>('study', id) ?? { questionId: id, favorite: false, mastery: null, notes: '', nextReviewAt: null, lastReviewedAt: null, wrongCount: 0 }; }
   question(id: string): Question { const q = this.require<Question>('questions', id); return { ...q, study: this.study(id) }; }
   private questionSelection(query:Record<string,any>):QuestionSelection {
-    const bankQuestions=query.bankId?this.require<QuestionBank>('question_banks',query.bankId).questionIds:undefined;
+    const paperQuestions=query.paperId?this.require<Paper>('papers',query.paperId).questionIds:undefined;
     const categories=query.categoryId?[...this.categoryDescendants(query.categoryId)]:undefined;
     if (query.domainId) this.require('domains', query.domainId);
     const domainCategories=query.domainId?this.all<Category>('categories').filter(c=>c.domainId===query.domainId).map(c=>c.id):undefined;
     const tags: string[] = Array.isArray(query.tagIds) ? query.tagIds : String(query.tagIds || '').split(',').filter(Boolean);
     for (const t of tags) this.require('tags', t);
-    return {bankQuestions,categories,domainCategories,tags};
+    return {paperQuestions,categories,domainCategories,tags};
   }
   questions(query:Record<string,any>={}):Question[]{return this.questionQueries.all(query,this.questionSelection(query));}
   questionPage(query:Record<string,any>={}):QuestionPage{return this.questionQueries.page(query,this.questionSelection(query));}
   questionCount(query:Record<string,any>={}):number{return this.questionQueries.count(query,this.questionSelection(query));}
   questionMetadata(query:Record<string,any>={}){return this.questionQueries.metadata(query,this.questionSelection(query));}
+  questionMetadataByIds(ids:string[]){return this.questionQueries.metadataByIds(ids);}
 }

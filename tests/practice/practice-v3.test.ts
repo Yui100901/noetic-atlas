@@ -118,7 +118,7 @@ test('material groups obey 500 answer slots in manual creation, exact random pla
   const app = await buildApp({ databasePath: ':memory:', seedPath: 'not-present-v3', staticRoot: 'not-present-v3' }); t.after(() => app.close());
   json(await app.inject({ method: 'POST', url: '/api/import', payload: { data: { ...seed([...wide, ...narrow, ...plain]), papers: [] }, mode: 'merge' } }));
   const invalid = await app.inject({ method: 'POST', url: '/api/papers', payload: { title: '超出叶子上限', mode: 'manual', questionIds: wide.map(q => q.id), scoring: { enabled: false } } });
-  assert.equal(invalid.statusCode, 400); assert.equal(invalid.json().error.code, 'INVALID_PAPER_PARTS');
+  const large=json(invalid,201);assert.equal(large.answerCount,510);assert.equal((await app.inject({method:'POST',url:`/api/papers/${large.id}/attempts`})).statusCode,422);
   const boundary = json(await app.inject({ method: 'POST', url: '/api/papers', payload: { title: '恰好500项', mode: 'manual', questionIds: [...wide.slice(0, 16), ...plain].map(q => q.id), scoring: { enabled: false } } }), 201); assert.equal(boundary.answerCount, 500);
   const answers = Object.fromEntries(boundary.questions.map((q: any) => [q.id, { value: 'true' }]));
   const a = json(await app.inject({ method: 'POST', url: `/api/papers/${boundary.id}/attempts` }), 201); assert.equal(json(await app.inject({ method: 'POST', url: `/api/attempts/${a.id}/submit`, payload: { answers } })).status, 'submitted');
@@ -128,7 +128,7 @@ test('material groups obey 500 answer slots in manual creation, exact random pla
     assert.throws(() => planScoredQuestions(wide, { enabled: true, totalPoints: 17, pointsByType: { group: 1 } }, count), /精确总分/);
   }
   const data: any = seed([...wide, ...narrow, ...plain]); data.papers = [{ id: 'BAD', title: '非法迁移', description: '', mode: 'manual', questionIds: wide.map(q => q.id), snapshot: wide }];
-  const empty = new Store(':memory:'); try { assert.throws(() => importData(empty, data), /作答项超过500/); assert.equal(empty.all('questions').length, 0); } finally { empty.db.close(); }
+  const empty = new Store(':memory:'); try { assert.doesNotThrow(() => importData(empty, data)); assert.equal(empty.require<any>('papers','BAD').questionCount,wide.length); } finally { empty.db.close(); }
 });
 
 test('fractional weighted mixed groups and every new type match an independent exhaustive optimum', () => {

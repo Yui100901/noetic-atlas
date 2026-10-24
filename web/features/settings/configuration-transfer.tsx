@@ -8,7 +8,7 @@ import { saveGeneratedFile } from '@platform';
 import './configuration-transfer.css';
 
 const labels: Record<string, string> = {
-  maxDraftsPerPaper:'每卷草稿上限', maxQuickDrafts:'随机自测草稿上限', maxPaperDrafts:'组卷草稿上限',
+  maxDraftsPerPaper:'每卷草稿上限', maxQuickDrafts:'随机自测草稿上限', maxPaperDrafts:'组题草稿上限',
   examDurationMinutes:'默认考试时长（分钟）', maxHistoryPerPaper:'每卷历史上限', maxQuickHistory:'随机自测历史上限',
   randomQuestionCount:'默认随机题量', scoringEnabledByDefault:'默认计分', randomTotalPoints:'默认总分',
   objectivePercent:'客观题比例（%）', pointsByType:'题型分值', reviewIntervalsDays:'复习间隔（天）',
@@ -70,7 +70,7 @@ export function ConfigurationTransfer() {
       setError((reason as Error).message);
     } finally { setBusy(false); }
   };
-  return <section className="card configuration-transfer" aria-label="配置迁移"><div className="configuration-heading"><div><h2>配置迁移</h2><p className="muted">只迁移偏好和默认规则，无需复制题库。API密钥不会进入配置文件。</p></div><div className="bank-actions"><button className="button" disabled={busy} onClick={() => void exportConfiguration()}><Download size={16} />导出配置</button><button className="button" disabled={busy} onClick={() => { if (inputRef.current) inputRef.current.value = ''; inputRef.current?.click(); }}><Upload size={16} />导入配置文件</button></div></div>
+  return <section className="card configuration-transfer" aria-label="配置迁移"><div className="configuration-heading"><div><h2>配置迁移</h2><p className="muted">只迁移偏好和默认规则，无需复制题库。API密钥不会进入配置文件。</p></div><div className="action-row"><button className="button" disabled={busy} onClick={() => void exportConfiguration()}><Download size={16} />导出配置</button><button className="button" disabled={busy} onClick={() => { if (inputRef.current) inputRef.current.value = ''; inputRef.current?.click(); }}><Upload size={16} />导入配置文件</button></div></div>
     <label className="check-row"><input type="checkbox" disabled={busy} checked={includeAi} onChange={event => setIncludeAi(event.target.checked)} />导出时包含AI端点、模型和请求参数</label>
     <p className="muted">配置导入可以覆盖本机自定义设置；题目和笔记保留。导入前会展示差异，超限记录清理需另行确认。AI接口改变时会清除目标设备旧密钥。</p>
     <input ref={inputRef} type="file" className="sr-only" aria-label="选择配置JSON文件" accept=".json,application/json" disabled={busy} onChange={event => void load(event.target.files?.[0])} />
@@ -79,7 +79,7 @@ export function ConfigurationTransfer() {
     {data !== null && !preview && !busy && <button className="button" onClick={() => void inspectAgain()}>重新预览配置</button>}
     {preview && <div className="configuration-preview"><h3>配置导入预览：{filename}</h3><Changes title="常规配置差异" changes={preview.systemChanges} /><Changes title="AI配置差异" changes={preview.aiChanges} />
       <p>{preview.aiKey.message}</p>{preview.warnings.length > 0 && <ul>{preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
-      {preview.retention.total > 0 ? <div className="notice warning"><div><p>此配置将清理{preview.retention.drafts}份作答草稿、{preview.retention.history}份已交历史、{preview.retention.authoring}份组卷草稿，共{preview.retention.total}份记录。可先导出完整备份。</p><label className="check-row"><input type="checkbox" checked={confirmedRetention} disabled={busy} onChange={event => setConfirmedRetention(event.target.checked)} />我确认应用配置并清理上述超限记录</label></div></div> : <p className="muted">不会清理现有草稿与练习历史。</p>}
+      {preview.retention.total > 0 ? <div className="notice warning"><div><p>此配置将清理{preview.retention.drafts}份作答草稿、{preview.retention.history}份已交历史、{preview.retention.authoring}份组题草稿，共{preview.retention.total}份记录。可先导出完整备份。</p><label className="check-row"><input type="checkbox" checked={confirmedRetention} disabled={busy} onChange={event => setConfirmedRetention(event.target.checked)} />我确认应用配置并清理上述超限记录</label></div></div> : <p className="muted">不会清理现有草稿与练习历史。</p>}
       <div className="form-actions"><button className="button" disabled={busy} onClick={() => { setData(null); setPreview(null); setError(''); }}>取消导入</button><button className="button primary" disabled={busy || preview.retention.total > 0 && !confirmedRetention} onClick={() => void apply()}>确认应用配置</button></div>
     </div>}
   </section>;

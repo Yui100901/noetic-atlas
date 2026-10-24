@@ -29,14 +29,14 @@ export interface PendingQuestionExport { format: 'learning-pending-questions'; s
 export interface NewQuestionImport { format: 'learning-new-questions'; schemaVersion: 1; questions: QuestionInput[] }
 export interface QuestionBank { id: string; name: string; description: string; questionIds: string[]; createdAt?: string; updatedAt?: string }
 export interface DocumentRecord { id: string; title: string; kind: string; bodyMarkdown: string; collection: Collection; categoryIds: string[]; tagIds: string[]; sourcePath: string | null; updatedAt?: string; format?: 'markdown' | 'pdf'; assetId?: string | null; fileName?: string | null; domainIds?: string[]; author?: string; publisher?: string; publishedYear?: string; description?: string }
-export interface PaperFilters { tagIds?: string[]; tagMode?: 'all' | 'any'; categoryId?: string; domainId?: string; bankId?: string; types?: QuestionType[]; difficultyMin?: number; difficultyMax?: number; frequencyMin?: number; collection?: Collection | 'all' }
+export interface PaperFilters { tagIds?: string[]; tagMode?: 'all' | 'any'; categoryId?: string; domainId?: string; paperId?: string; types?: QuestionType[]; difficultyMin?: number; difficultyMax?: number; frequencyMin?: number; collection?: Collection | 'all' }
 export interface ScoringInput { enabled: boolean; totalPoints?: number; questionPoints?: Record<string, number>; objectivePercent?: number; pointsByType?: Partial<Record<QuestionType, number>> }
 export interface PaperScoring {
   enabled: boolean; scheme: 'legacy' | 'custom' | 'none'; totalPoints: number;
   questionPoints: Record<string, number>; objectivePercent: number; actualObjectivePercent: number;
   objectivePoints: number; subjectivePoints: number; pointsByType: Record<QuestionType, number>;
 }
-export interface Paper { organization?: 'domain' | 'other'; domainId?: string | null; id: string; title: string; description: string; mode: 'manual' | 'random'; questionIds: string[]; questionCount: number; filters: PaperFilters | null; archived: boolean; version: number; createdAt: string; updatedAt: string; scoring?: PaperScoring }
+export interface Paper { legacyBankId?: string; organization?: 'domain' | 'other'; domainId?: string | null; id: string; title: string; description: string; mode: 'manual' | 'random'; questionIds: string[]; questionCount: number; filters: PaperFilters | null; archived: boolean; version: number; createdAt: string; updatedAt: string; scoring?: PaperScoring }
 export interface ExamQuestion { id: string; title: string; type: QuestionType; stemMarkdown: string; options: Option[]; difficulty: number; depth: number; frequency: number; collection: Collection; sourceQuestionId: string; points?: number; blanks?: Omit<BlankSpec, 'answers'>[]; groupId?: string; groupTitle?: string; groupStemMarkdown?: string; partId?: string; partIndex?: number }
 export interface PaperDetail extends Paper { questions: ExamQuestion[]; answerCount?: number }
 export interface AttemptAnswer { value: string | string[]; selfScore?: number | null; mastery?: number | null }

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { Category, Domain, Question, QuestionBank, Tag } from '../../../shared/models/types.js';
+import type { Category, Domain, Question, Tag } from '../../../shared/models/types.js';
 import type { SharePackage, SharePreview, ShareSelection } from '../../../shared/models/sharing.js';
 import { type AssetRecord } from '../../../shared/assets/assets.js';
 import { Store, makeId, now, type Table } from '../../core/store.js';
@@ -13,8 +13,9 @@ import { normalizeScoring } from '../practice/scoring.js';
 import { validatePaperAnswers } from '../questions/structure.js';
 import { paperExportDocument } from '../transfer/exports.js';
 import { getSettings } from '../settings/routes.js';
+import { legacyBankPaper } from '../banks/legacy-banks.js';
 
-const selectionSchema = z.object({ kind: z.enum(['questions', 'paper', 'bank']), id: id.optional(), ids: z.array(id).min(1).max(50000).optional(), filters: z.record(z.string(), z.unknown()).optional() }).strict();
+const selectionSchema = z.object({ kind: z.enum(['questions', 'paper']), id: id.optional(), ids: z.array(id).min(1).max(50000).optional(), filters: z.record(z.string(), z.unknown()).optional() }).strict();
 const flag=z.union([z.boolean(),z.enum(['true','false','1','0'])]);
 const shareFiltersSchema=filtersSchema.safeExtend({search:z.string().max(1000).optional(),type:types.optional(),difficulty:z.coerce.number().int().min(1).max(4).optional(),depth:z.coerce.number().int().min(1).max(4).optional(),frequency:z.coerce.number().int().min(0).max(3).optional(),status:z.enum(['published','pending','draft','archived','all']).optional(),favorite:flag.optional(),wrong:flag.optional(),due:flag.optional()}).strict();
 function shareFilters(raw:Record<string,unknown>={}) {
@@ -23,8 +24,8 @@ function shareFilters(raw:Record<string,unknown>={}) {
   return parse(shareFiltersSchema,input);
 }
 const shareQuestion = questionSchema.safeExtend({ id });
-const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), mode: z.enum(['manual','random']), questionIds: z.array(id).min(1).max(500), questionCount: z.number().int().min(1).max(500), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).min(1).max(500), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
-const packageSchema = z.object({ format: z.literal('learning-share'), schemaVersion: z.literal(1), exportedAt: z.string().datetime({offset:true}), title: z.string().min(1).max(300), domains: z.array(domainSchema.extend({id})).max(10000), categories: z.array(categorySchema.extend({id})).max(50000), tags: z.array(tagSchema.extend({id})).max(50000), assets: z.array(assetRecordSchema).max(10000), questions: z.array(shareQuestion).min(1).max(50000), papers: z.array(paperSchema).max(100), questionBanks: z.array(questionBankSchema.safeExtend({id})).max(100) }).strict();
+const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), mode: z.enum(['manual','random']), legacyBankId: id.optional(), questionIds: z.array(id).max(50000), questionCount: z.number().int().min(0).max(50000), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).max(50000), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
+const packageSchema = z.object({ format: z.literal('learning-share'), schemaVersion: z.literal(1), exportedAt: z.string().datetime({offset:true}), title: z.string().min(1).max(300), domains: z.array(domainSchema.extend({id})).max(10000), categories: z.array(categorySchema.extend({id})).max(50000), tags: z.array(tagSchema.extend({id})).max(50000), assets: z.array(assetRecordSchema).max(10000), questions: z.array(shareQuestion).max(50000), papers: z.array(paperSchema).max(100), questionBanks: z.array(questionBankSchema.safeExtend({id})).max(100).default([]) }).strict();
 const cleanQuestion = (question: Question): Question => { const { study: _study, ...record } = question; return { ...record, sourceDocument: null, sourceAnchor: null }; };
 function canonical(value: unknown): string { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([a],[b]) => a.localeCompare(b)).map(([key,entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(',')}}`; return JSON.stringify(value); }
 function fingerprint(store: Store) { return createHash('sha256').update(canonical(['domains','categories','tags','assets','questions','papers','question_banks'].map(table => store.all(table as Table)))).digest('hex'); }
@@ -121,30 +122,43 @@ function questionImportTargets(existing:Question[],incoming:Question[]) {
 function assertUnique(entries: Array<{id:string}>, table: string) { if (new Set(entries.map(entry => entry.id)).size !== entries.length) fail(400, 'DUPLICATE_SHARE_ID', `分享包含重复ID：${table}`); }
 
 export function exportShare(store: Store, selection: ShareSelection): SharePackage {
-  let questions: Question[] = []; let papers: StoredPaper[] = []; let banks: QuestionBank[] = []; let title = '分享题目';
+  let questions: Question[] = []; let papers: StoredPaper[] = []; let title = '分享题目';
   if (selection.kind === 'paper') {
-    const paper = store.require<StoredPaper>('papers', selection.id || fail(400, 'SHARE_SELECTION_REQUIRED', '请选择练习卷'));
+    const paper = store.require<StoredPaper>('papers', selection.id || fail(400, 'SHARE_SELECTION_REQUIRED', '请选择题集'));
     papers = [{ ...paper, filters: null, snapshot: paper.snapshot.map(cleanQuestion) }]; questions = paper.snapshot.map(cleanQuestion); title = paper.title;
-  } else if (selection.kind === 'bank') {
-    const bank = store.require<QuestionBank>('question_banks', selection.id || fail(400, 'SHARE_SELECTION_REQUIRED', '请选择题库集合')); banks = [bank]; questions = bank.questionIds.map(qid => cleanQuestion(store.require<Question>('questions', qid))); title = bank.name;
   } else {
     questions = selection.ids?.length ? selection.ids.map(qid => cleanQuestion(store.require<Question>('questions', qid))) : store.questions(shareFilters(selection.filters)).map(cleanQuestion);
     title = questions.length === 1 ? questions[0]!.title : `分享题目（${questions.length}道）`;
   }
-  if (!questions.length) fail(422, 'EMPTY_SHARE', '当前范围没有可分享的题目');
+  if (!questions.length && !papers.length) fail(422, 'EMPTY_SHARE', '当前范围没有可分享的题目');
   assertUnique(questions, 'questions');
   const categories = new Map(store.all<Category>('categories').map(category => [category.id, category])); const categoryIds = new Set(questions.flatMap(question => question.categoryIds));
   for (const cid of categoryIds) { let parent = categories.get(cid)?.parentId; const seen = new Set([cid]); while (parent) { if (seen.has(parent)) fail(400,'CATEGORY_CYCLE','分类不能形成环'); seen.add(parent); categoryIds.add(parent); parent = categories.get(parent)?.parentId; } }
   const tagIds = new Set(questions.flatMap(question => question.tagIds)); const tags = [...tagIds].map(tid => store.require<Tag>('tags', tid));
   const chosenCategories = [...categoryIds].map(cid => store.require<Category>('categories', cid)); const domainIds = new Set([...chosenCategories.map(category => category.domainId), ...tags.flatMap(tag => tag.domainId ? [tag.domainId] : []), ...papers.flatMap(paper => paper.domainId ? [paper.domainId] : [])]);
   const assets = [...collectAssetReferences({ questions, papers })].map(aid => store.require<AssetRecord>('assets', aid));
-  return { format:'learning-share', schemaVersion:1, exportedAt:now(), title, domains:[...domainIds].map(did => store.require<Domain>('domains', did)), categories:chosenCategories, tags, assets, questions, papers, questionBanks:banks };
+  return { format:'learning-share', schemaVersion:1, exportedAt:now(), title, domains:[...domainIds].map(did => store.require<Domain>('domains', did)), categories:chosenCategories, tags, assets, questions, papers, questionBanks:[] };
 }
 
 /** Build the whole graph before writing. ID collisions never overwrite local data. */
 export function planShareImport(store: Store, raw: unknown) {
   const data = parse(packageSchema, raw) as SharePackage;
   for (const [key, entries] of Object.entries({domains:data.domains,categories:data.categories,tags:data.tags,assets:data.assets,questions:data.questions,papers:data.papers,question_banks:data.questionBanks})) assertUnique(entries, key);
+  const sourceQuestions = new Map(data.questions.map(question => [question.id, question]));
+  // Older share files may contain reference collections. Fold them into the
+  // same paper graph before ID remapping; never emit or stage a second kind.
+  const occupiedPaperIds = new Set(data.papers.map(paper => paper.id));
+  for (const bank of data.questionBanks) {
+    let paperId = bank.id;
+    if (occupiedPaperIds.has(paperId) || ['new', 'preview', QUICK_PAPER_ID].includes(paperId)) {
+      const base = `legacy-bank-${createHash('sha256').update(bank.id).digest('hex').slice(0, 24)}`;
+      paperId = base; let suffix = 1;
+      while (occupiedPaperIds.has(paperId)) paperId = `${base}-${suffix++}`;
+    }
+    occupiedPaperIds.add(paperId);
+    data.papers.push(legacyBankPaper(bank, bank.questionIds.map(qid => sourceQuestions.get(qid) || fail(400, 'INCOMPLETE_SHARE', `分享包缺少题目：${qid}`)), paperId));
+  }
+  data.questionBanks = [];
   const counts: SharePreview['counts'] = {}; const records: Array<{ table:Table; value:any }> = []; const maps = new Map<Table, Map<string,string>>();
   // Vocabulary packs contain thousands of entries. Index each table once;
   // rescanning and reparsing every existing question for every incoming word
@@ -209,11 +223,10 @@ export function planShareImport(store: Store, raw: unknown) {
     const question=data.questions[i]!,transformed=mapQuestionLinks(transformedQuestions[i],qid=>questionRoute(ref('questions',qid)));
     assign('questions',question,parse(shareQuestion,transformed),questionTargets.get(question.id));
   }
-  for (const bank of data.questionBanks) assign('question_banks',bank,{...bank,questionIds:bank.questionIds.map(qid=>ref('questions',qid)),createdAt:now(),updatedAt:now()});
   for (const paper of data.papers) {
-    if (paper.id === QUICK_PAPER_ID) fail(400,'RESERVED_PAPER_ID','分享练习卷ID无效');
-    if (paper.questionIds.length !== paper.snapshot.length || paper.snapshot.some((question,index)=>question.id !== paper.questionIds[index]) || paper.questionCount !== paper.questionIds.length) fail(400,'INVALID_SNAPSHOT','分享卷面快照与题号不一致');
-    for (const question of paper.snapshot) if (semantic(question,'questions') !== semantic(data.questions.find(value=>value.id === question.id) || fail(400,'INCOMPLETE_SHARE','卷面快照题目未包含在分享包中'),'questions')) fail(400,'INVALID_SNAPSHOT','卷面快照和分享题目内容不一致');
+    if (paper.id === QUICK_PAPER_ID) fail(400,'RESERVED_PAPER_ID','分享题集ID无效');
+    if (paper.questionIds.length !== paper.snapshot.length || paper.snapshot.some((question,index)=>question.id !== paper.questionIds[index]) || paper.questionCount !== paper.questionIds.length) fail(400,'INVALID_SNAPSHOT','分享题集快照快照与题号不一致');
+    for (const question of paper.snapshot) if (semantic(question,'questions') !== semantic(sourceQuestions.get(question.id) || fail(400,'INCOMPLETE_SHARE','题集快照快照题目未包含在分享包中'),'questions')) fail(400,'INVALID_SNAPSHOT','题集快照快照和分享题目内容不一致');
     const snapshot = paper.snapshot.map(question=>{
       const target=ref('questions',question.id),resolved=staged.get('questions')?.get(target)||store.require<Question>('questions',target);
       // The source snapshot was checked above. Reuse the exact transformed
@@ -221,9 +234,9 @@ export function planShareImport(store: Store, raw: unknown) {
       return {...resolved,id:target};
     }) as Question[];
     const questionPoints = paper.scoring ? Object.fromEntries(Object.entries(paper.scoring.questionPoints).map(([qid,points])=>[ref('questions',qid),points])) : undefined;
-    const scoring = normalizeScoring(snapshot,paper.scoring ? {...paper.scoring,questionPoints} : undefined); validatePaperAnswers(snapshot);
+    const scoring = normalizeScoring(snapshot,paper.scoring ? {...paper.scoring,questionPoints} : undefined); validatePaperAnswers(snapshot, 1_500_000);
     const pendingQuestions = snapshot.some(question => store.get<Question>('questions',question.id)?.status !== 'published');
-    const domainId = paper.domainId ? ref('domains',paper.domainId) : null; if (paper.organization === 'domain' && !domainId) fail(400,'PAPER_DOMAIN_REQUIRED','领域专项练习卷缺少领域');if((paper.organization||'other')==='other'&&domainId)fail(400,'PAPER_DOMAIN_MISMATCH','其他练习卷不能指定领域');
+    const domainId = paper.domainId ? ref('domains',paper.domainId) : null; if (paper.organization === 'domain' && !domainId) fail(400,'PAPER_DOMAIN_REQUIRED','领域专项题集缺少领域');if((paper.organization||'other')==='other'&&domainId)fail(400,'PAPER_DOMAIN_MISMATCH','其他题集不能指定领域');
     assign('papers',paper,{...paper, snapshot, scoring,questionIds:snapshot.map(question=>question.id), mode:'manual',filters:null,archived:paper.archived||pendingQuestions,organization:paper.organization || 'other',domainId,createdAt:now(),updatedAt:now()});
   }
   // Validate against a read-only merged view. Preview has exactly the same
@@ -237,7 +250,7 @@ export function planShareImport(store: Store, raw: unknown) {
     if(record.table==='questions') merged.validateRefs(record.value);
     if(record.table==='questions'||record.table==='papers') validateAssetReferences(merged,record.value,getSettings(store));
   }
-  const preview:SharePreview = {title:data.title,counts,questions:data.questions.map(question=>({id:ref('questions',question.id),title:question.title,status:pendingQuestions.has(ref('questions',question.id))?'pending':'reused'})),warnings:['分享包不含学习记录、笔记、作答、系统配置或AI凭据。','新增题目统一进入待审核；复用已存在且内容相同的题目时保留本地审核状态。',...(data.papers.length ? ['含待审核题目的练习卷先归档，审核题目后从“恢复并调整”保存，即可练习；重复导入保留本地归档状态、卷面与分值。'] : []),...(detachedQuestionLinks?['未随本包附带的关联题详情链接已改为题号搜索，避免误指本地同ID题目；可从来源资料继续核对。']:[])],fingerprint:fingerprint(store)};
+  const preview:SharePreview = {title:data.title,counts,questions:data.questions.map(question=>({id:ref('questions',question.id),title:question.title,status:pendingQuestions.has(ref('questions',question.id))?'pending':'reused'})),warnings:['分享包不含学习记录、笔记、作答、系统配置或AI凭据。','新增题目统一进入待审核；复用已存在且内容相同的题目时保留本地审核状态。',...(data.papers.length ? ['含待审核题目的题集先归档，审核题目后从“恢复并调整”保存，即可练习；重复导入保留本地归档状态、题集快照与分值。'] : []),...(detachedQuestionLinks?['未随本包附带的关联题详情链接已改为题号搜索，避免误指本地同ID题目；可从来源资料继续核对。']:[])],fingerprint:fingerprint(store)};
   return {records,preview};
 }
 export function importShare(store:Store,raw:unknown,expectedFingerprint?:string) {
@@ -247,5 +260,5 @@ export function registerSharingRoutes(app:FastifyInstance,store:Store) {
   app.post('/api/sharing/export',async request=>exportShare(store,parse(selectionSchema,request.body)));
   app.post('/api/sharing/preview',async request=>planShareImport(store,parse(z.object({data:z.unknown()}).strict(),request.body).data).preview);
   app.post('/api/sharing/import',async request=>{const input=parse(z.object({data:z.unknown(),confirmed:z.literal(true),expectedFingerprint:z.string().length(64).optional()}).strict(),request.body); return importShare(store,input.data,input.expectedFingerprint);});
-  app.post('/api/sharing/export-document',async request=>{ const input=parse(selectionSchema,request.body); if(input.kind === 'paper') return paperExportDocument(store.require<StoredPaper>('papers',input.id || fail(400,'SHARE_SELECTION_REQUIRED','请选择练习卷')),'answers'); const data=exportShare(store,input); if(data.questions.length > 500) fail(422,'SHARE_PDF_LIMIT','PDF单次最多500道题，请缩小范围或使用JSON分享'); const snapshot=data.questions; const stamp=now(); return paperExportDocument({id:'share-export',title:data.title,description:'题目分享 · 含参考答案与解析',mode:'manual',questionIds:snapshot.map(question=>question.id),questionCount:snapshot.length,filters:null,archived:false,version:1,createdAt:stamp,updatedAt:stamp,snapshot,scoring:normalizeScoring(snapshot,{enabled:false})},'answers'); });
+  app.post('/api/sharing/export-document',async request=>{ const input=parse(selectionSchema,request.body); if(input.kind === 'paper') { const paper=store.require<StoredPaper>('papers',input.id || fail(400,'SHARE_SELECTION_REQUIRED','请选择题集')); if(paper.questionCount>500)fail(422,'SHARE_PDF_LIMIT','PDF单次最多500道题，请缩小范围或使用JSON分享'); return paperExportDocument(paper,'answers'); } const data=exportShare(store,input); if(data.questions.length > 500) fail(422,'SHARE_PDF_LIMIT','PDF单次最多500道题，请缩小范围或使用JSON分享'); const snapshot=data.questions; const stamp=now(); return paperExportDocument({id:'share-export',title:data.title,description:'题目分享 · 含参考答案与解析',mode:'manual',questionIds:snapshot.map(question=>question.id),questionCount:snapshot.length,filters:null,archived:false,version:1,createdAt:stamp,updatedAt:stamp,snapshot,scoring:normalizeScoring(snapshot,{enabled:false})},'answers'); });
 }

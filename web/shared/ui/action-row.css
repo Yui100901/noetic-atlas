@@ -1,0 +1,5 @@
+.action-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+@media(max-width:680px) {
+  .action-row { align-items:stretch; }
+  .action-row .button { justify-content:center; }
+}

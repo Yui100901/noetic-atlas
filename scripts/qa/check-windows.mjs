@@ -120,7 +120,7 @@ try {
   assert.equal((await noteSaved).status(), 200);
   await page.getByRole('status').filter({ hasText: '学习记录已保存' }).waitFor();
   await page.screenshot({ path: join(output, 'question-note.png'), fullPage: true });
-  checks.push('隔离临时库新增、审核、组卷提交计分、题库导航和笔记保存正常');
+  checks.push('隔离临时库新增、审核、组题提交计分、题库导航和笔记保存正常');
 
   // QA intercepts only the native save destination in the main process; the
   // production runtime's origin validation and download handling still execute.

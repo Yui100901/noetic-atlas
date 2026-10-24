@@ -1,14 +1,14 @@
 import type { PaperFilters } from '../../../shared/models/types';
 
 export interface Filters {
-  search: string; bankId: string; domainId: string; categoryId: string;
+  search: string; domainId: string; categoryId: string;
   tagIds: string[]; tagMode: string; type: string; difficulty: string;
   depth: string; frequency: string; collection: string; status: string;
   favorite: boolean; wrong: boolean; due: boolean;
 }
 
 export const emptyFilters: Filters = {
-  search: '', bankId: '', domainId: '', categoryId: '', tagIds: [],
+  search: '', domainId: '', categoryId: '', tagIds: [],
   tagMode: 'all', type: '', difficulty: '', depth: '', frequency: '',
   collection: '', status: '', favorite: false, wrong: false, due: false,
 };
@@ -24,7 +24,7 @@ export function normalizeQuestionFilters(value?: object): Filters {
 }
 
 const paperFilterKeys = [
-  'tagIds', 'tagMode', 'categoryId', 'domainId', 'bankId', 'types',
+  'tagIds', 'tagMode', 'categoryId', 'domainId', 'types',
   'difficultyMin', 'difficultyMax', 'frequencyMin', 'collection',
 ] as const satisfies readonly (keyof PaperFilters)[];
 

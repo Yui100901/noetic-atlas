@@ -7,7 +7,7 @@ const base=new URL(option('--url','http://127.0.0.1:4317'));
 if(!['127.0.0.1','localhost','[::1]'].includes(base.hostname))throw Error('Only an explicitly local API may be profiled');
 const output=resolve(option('--out','test-results/performance/http-after.json')),runs=Number(option('--runs','5'));
 if(!Number.isInteger(runs)||runs<1||runs>30)throw Error('runs must be 1–30');
-const paths=['/api/health','/api/bootstrap','/api/questions?pageSize=30','/api/questions?pageSize=30&domainId=chemistry','/api/questions?pageSize=30&search=transaction','/api/question-banks?page=1&pageSize=20','/api/papers?page=1&pageSize=20','/api/papers?archived=true&page=1&pageSize=20','/api/documents?page=1&pageSize=20','/api/exams/active','/api/vocabulary?word=learn',...args.includes('--assets')?['/api/assets?page=1&pageSize=20']:[]];
+const paths=['/api/health','/api/bootstrap','/api/questions?pageSize=30','/api/questions?pageSize=30&domainId=chemistry','/api/questions?pageSize=30&search=transaction','/api/papers?page=1&pageSize=20','/api/papers?archived=true&page=1&pageSize=20','/api/documents?page=1&pageSize=20','/api/exams/active','/api/vocabulary?word=learn',...args.includes('--assets')?['/api/assets?page=1&pageSize=20']:[]];
 const results=[];
 for(const path of paths){
   const ms=[];let bytes=0;

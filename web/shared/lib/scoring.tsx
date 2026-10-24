@@ -27,7 +27,7 @@ export function attemptGrading(attempt: Attempt) {
 export function ScoringBreakdown({ scoring, questionCount, compact = false }: { scoring: PaperScoring; questionCount: number; compact?: boolean }) {
   if (!scoring.enabled) return <div className="score-mode-note"><span className="badge">无分练习</span><span>{questionCount} 道题 · 客观题核对正误，所有题型可自测掌握度。</span></div>;
   return <div className={`scoring-breakdown ${compact ? 'scoring-compact' : ''}`}>
-    <div className="scoring-total"><span>{scoring.scheme === 'legacy' ? '旧版计分' : '试卷总分'}</span><strong>{pointText(scoring.totalPoints)}<small> 分</small></strong><span>{questionCount} 道题</span></div>
+    <div className="scoring-total"><span>{scoring.scheme === 'legacy' ? '旧版计分' : '题集总分'}</span><strong>{pointText(scoring.totalPoints)}<small> 分</small></strong><span>{questionCount} 道题</span></div>
     <div className="scoring-proportions"><div className="score-ratio-bar" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, scoring.actualObjectivePercent))}%` }} /></div><div className="score-ratio-labels"><span>客观 {pointText(scoring.objectivePoints)} 分 · {pointText(scoring.actualObjectivePercent)}%</span><span>主观 {pointText(scoring.subjectivePoints)} 分 · {pointText(100 - scoring.actualObjectivePercent)}%</span></div></div>
   </div>;
 }

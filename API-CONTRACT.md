@@ -11,7 +11,7 @@
 
 ## 分页与通用查询
 
-分页数据使用 `{items,total,page,pageSize}`，页码从 1 开始。资料、集合、试卷、作答历史、领域、分类、标签、资源与 AI 记录等列表传入 `page` 或 `pageSize` 时返回分页对象；不传分页参数时可供内部选择器获取完整数组。常用每页数量为 10、20、50、100。题目列表始终返回分页对象。
+分页数据使用 `{items,total,page,pageSize}`，页码从 1 开始。资料、题集、作答历史、领域、分类、标签、资源与 AI 记录等列表传入 `page` 或 `pageSize` 时返回分页对象；不传分页参数时可供内部选择器获取完整数组。常用每页数量为 10、20、50、100。题目列表始终返回分页对象。
 
 所有筛选条件取交集。分类筛选包含子类；题目标签支持 `tagMode=all|any`。对字段版本的乐观校验使用返回记录的 `updatedAt`；发生 409 后应刷新记录，保留未提交的编辑内容，再重新确认。
 
@@ -27,23 +27,23 @@
 
 领域 Domain 与多级 Category 表达知识归属。分类父子必须同领域，禁止循环。题目和资料可使用多个分类。Tag 的 `domainId:null` 表示全局标签；领域标签只用于匹配领域的内容。`kind` 为 `topic|method|custom`，method 表达概念、应用、对比、排错等全局学习方式。难度 D1–D4、深度 L1–L4、频次 F0–F3 使用独立结构化字段，不复制为普通标签。
 
-## 题目与题库集合
+## 题目
 
-- `GET /api/questions`：支持 search、page、pageSize、domainId、categoryId、bankId、tagIds、tagMode、type、difficulty、depth、frequency、collection、status、favorite、due、wrong。
+- `GET /api/questions`：支持 search、page、pageSize、domainId、categoryId、tagIds、tagMode、type、difficulty、depth、frequency、collection、status、favorite、due、wrong。
 - `GET /api/questions/:id`：题目、答案解析与本机学习状态。
 - `GET /api/vocabulary?word=...`：按NFKC及大小写规范化后的英语词头精确查找，返回`{word,matches:[{id,title,status}]}`。英文领域或题号经分享重映射后仍按实际领域及词头查询；缺词返回空数组，不自动新增或改变审核状态。多份词卡保留各自状态供选择。网页引用为`#/vocabulary/<词头>`，考试期间此接口同样受锁定。
 - `POST /api/questions`：新增题目。显式 draft 保存为草稿，其他状态统一进入 pending；新题不能直接发布。
 - `PUT /api/questions/:id`：修改题目，可携带 updatedAt 校验版本；未发布题不能借编辑直接变为 published。
-- `DELETE /api/questions/:id`：永久删除。源练习卷仍引用时返回 `QUESTION_IN_PAPER`；删除清理该题学习状态及复习事件，保留历史作答快照。
+- `DELETE /api/questions/:id`：永久删除。源题集仍引用时返回 `QUESTION_IN_PAPER`；删除清理该题学习状态及复习事件，保留历史作答快照。
+- `POST /api/questions/metadata`：严格接收 `{ids}`，1—50,000个不重复题号，返回 `{items,missingIds}`；按输入顺序提供 `id/title/type/status`，包含未发布状态，不读取正文或学习笔记。用于大型题集编辑与草稿恢复的只读批量核对。
 - `POST /api/questions/review`：`{ids,action:'approve'|'return_to_draft',confirmed:true,expectedUpdatedAt}`。最多 500 道 pending 题，版本 map 恰好覆盖选题，整批校验后原子处理。
 - `GET /api/questions/import-template`：新题 JSON 模板。
-- `POST /api/questions/bulk-import`：`{data:learning-new-questions封包,confirmed:true,bankId?}`。整批新增全部待审核，不覆盖已有 ID。
+- `POST /api/questions/bulk-import`：`{data:learning-new-questions封包,confirmed:true}`。整批新增全部待审核，不覆盖已有 ID。
 - `POST /api/questions/pending/export`：`{ids}`，导出带版本的待审核 JSON。
 - `POST /api/questions/pending/import`：`{data,confirmed:true}`，批量修订原有待审核题，不新建、不自动发布；保留 id、pending 状态及导出时 updatedAt。
-- `GET /api/question-banks`：集合列表，支持 search 与分页；`GET /api/question-banks/:id` 获取明细。
-- `POST /api/question-banks`、`PUT /api/question-banks/:id`、`DELETE /api/question-banks/:id`：管理引用集合。删除集合不删除题目；保存的练习卷持有独立快照。
+独立题库集合接口已移除，统一通过 `/api/papers` 管理题集。`QuestionBank` 与 `question_banks` 只作为旧数据库／旧 JSON 的迁移输入保留，不再是可创建的业务实体；迁移规则见下文。
 
-题型为 `true_false、single_choice、multiple_choice、fill_blank、short_answer、essay、group`。判断答案为 `true|false`，选择题答案引用选项 key；填空题的 blanks 按顺序保存可接受答案、大小写及首尾空白规则。group 含 2–30 道独立子题，共用主干材料，组卷按整组选择，作答时展开，每卷最多 500 个独立作答项。图片采用托管资源链接或已验证的栅格 data URI。
+题型为 `true_false、single_choice、multiple_choice、fill_blank、short_answer、essay、group`。判断答案为 `true|false`，选择题答案引用选项 key；填空题的 blanks 按顺序保存可接受答案、大小写及首尾空白规则。group 含 2–30 道独立子题，共用主干材料，组题按整组选择，作答时展开。题集可保存超过500个作答项，每次练习或考试最多500个独立作答项。图片采用托管资源链接或已验证的栅格 data URI。
 
 ## 资料与文件
 
@@ -54,28 +54,30 @@
 - `POST /api/assets`：`{filename,mimeType,dataBase64}`，验证字节、MIME、大小及图片尺寸，返回资源元信息。
 - `GET /api/assets`：资源列表及 referenced 状态，支持分页。
 - `GET /api/assets/:id`：元信息；`GET /api/assets/:id/data`：含 Base64 的完整资源；`GET /api/assets/:id/content`：准确二进制与 MIME。
-- `DELETE /api/assets/:id`：仅可删除无引用资源。保护题目、资料、笔记、练习卷和历史作答快照中的资源引用。
+- `DELETE /api/assets/:id`：仅可删除无引用资源。保护题目、资料、笔记、题集和历史作答快照中的资源引用。
 
 支持 UTF-8 Markdown、PDF、PNG、JPEG、GIF、WebP；不接受 SVG。图片不超过单边 16384 像素及总计 4000 万像素，文件大小另受配置限制。资源字节包含在 SQLite 中，完整迁移不依赖外部文件目录。
 
-## 组卷、草稿与计分
+## 题集、组题草稿与计分
 
-- `GET /api/papers`：支持 archived、organization=domain|other、domainId 和分页；`GET /api/papers/:id` 返回卷及不含答案的题目快照。
+- `GET /api/papers`：支持 archived、organization=domain|other、domainId 和分页；`GET /api/papers/:id` 返回题集及不含答案的题目快照，同时提供选题单位数 questionCount 与展开作答项数 answerCount。加 `?summary=true` 仅返回题目元数据，不传题干、选项和材料；需要完整内容时按题读取快照接口。
+- `GET /api/papers/:id/questions/:questionId`：读取题集内指定作答项的完整快照与答案，用于就地看题；不会替换为当前源题内容。考试期间仍受其他功能访问锁限制。
 - `POST /api/papers`、`PUT /api/papers/:id`：手动卷使用 questionIds；随机卷使用 filters、count 或 scoring。领域专项需 `organization:'domain',domainId`，其他卷使用 other。修改创建新版本，不修改已开始作答的快照。
-- `POST /api/papers/preview`：同一组卷结构，返回预览但不保存；随机卷正式生成时重新抽题。候选不足、无精确分值组合或展开后超限时拒绝，不静默放宽条件。
+- `POST /api/papers/preview`：同一组题结构，返回预览但不保存；随机卷正式生成时重新抽题。候选不足、无精确分值组合或展开后超限时拒绝，不静默放宽条件。
 - `DELETE /api/papers/:id`：归档；加 `?permanent=true` 永久删除源卷，保留作答快照。
-- `GET /api/paper-drafts?context=...`：最近组卷草稿数组，按 updatedAt 排序。
-- `POST /api/paper-drafts`：`{context,state:PaperDraftState}`，保存新的组卷草稿并按 context 裁剪最近 maxPaperDrafts 份。
+- `POST /api/papers/:id/restore`：显式 `{confirmed:true}` 恢复非空且全部成员已发布的归档题集。首次恢复未经编辑的旧集合无分题集时刷新已审核快照并产生新版本；其他恢复保留原快照、版本和分值。已有作答不受影响。
+- `GET /api/paper-drafts?context=...`：最近组题草稿数组，按 updatedAt 排序。
+- `POST /api/paper-drafts`：`{context,state:PaperDraftState}`，保存新的组题草稿并按 context 裁剪最近 maxPaperDrafts 份。
 - `PUT /api/paper-drafts/:id`：`{expectedUpdatedAt,state}`，继续原草稿时覆盖同一 ID，版本不符返回 `PAPER_DRAFT_VERSION_CONFLICT`。
-- `DELETE /api/paper-drafts/:id`：删除组卷草稿。
+- `DELETE /api/paper-drafts/:id`：删除组题草稿。
 
-PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随机规则、计分开关、逐题分值与总分等，不要求它已经满足正式成卷条件。组卷草稿与答题草稿分别管理，默认上限均为 3。
+PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随机规则、计分开关、逐题分值与总分等，不要求它已经满足正式成卷条件。组题草稿与答题草稿分别管理，默认上限均为 3。
 
 计分使用最多两位小数的分值。手动卷逐题分值之和必须等于总分。随机计分卷按总分、题型分值和目标客观占比寻找组合；目标比例不能保证完全命中，会显示实际组成。计分配置随卷及作答快照保存，后续默认值变化不重算历史成绩。无分练习仍核对客观题答案，但不产生数字成绩。
 
 ## 作答计时与考试模式
 
-- `POST /api/papers/:id/attempts`：可选 `{mode:'practice'|'exam',durationMinutes:1..1440}`，创建一次独立作答。普通练习默认顺计时；考试时长缺省取系统 examDurationMinutes，初始 120 分钟。
+- `POST /api/papers/:id/attempts`：可选 `{mode:'practice'|'exam',durationMinutes:1..1440,count?:1..500,selection?:'ordered'|'random'}`，创建一次独立作答。count 按父题／组合组选题，展开后仍不得超过500个作答项。大型题集必须显式指定本次题量，缺失返回 `QUESTION_SET_SESSION_LIMIT`；不能静默截取前500题。ordered 按题集顺序从头选题，random 不重复随机抽取，题集本身保持完整。普通练习默认顺计时；考试时长缺省取系统 examDurationMinutes，初始 120 分钟。
 - `GET /api/papers/:id/drafts`：该卷最近未交卷作答，受 maxDraftsPerPaper 限制；继续答题使用原 attempt ID。
 - `GET /api/attempts`：按 paperId、source=paper|quick、status=in_progress|submitted 与分页查询。
 - `GET /api/attempts/:id`：作答快照；未交卷隐藏答案、解析和填空标准答案。
@@ -90,15 +92,21 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 答题卡的状态由共用规则计算：提交前为未作答／已作答；提交后为未作答／正确／错误／未判定。主观题未评分为未判定，已评分是否达到满分用于状态提示；具体部分得分仍显示分值。
 
-## 学习记录与系统配置
+## 题集学习记录与系统配置
 
+- `GET /api/learning/summary?source=paper&paperId=ID`：当前题集的草稿、历史、错题、到期与收藏计数；随机／单题使用 `source=quick` 且不能携带 paperId。
+- `GET /api/learning/attempts`：同一上下文，必填 `status=in_progress|submitted`，支持 page、pageSize，返回不含题目和答案正文的分页历史摘要。
+- `GET /api/learning/questions`：同一上下文，必填 `kind=wrong|due|favorite`，支持分页，返回当次内容快照、关联作答及必要原题学习状态。
+- `GET /api/learning/contexts`：分页返回仍有作答记录、但源题集已永久删除的上下文，供题集页保留历史入口。
 - `GET /api/study`：学习状态和复习记录；`GET /api/reviews` 可按 questionId 与分页查询复习事件。
 - `PUT /api/study/:id`：`{favorite?,mastery?,notes?,nextReviewAt?}`；`POST /api/study/:id/review`：`{mastery:0..3}`。
 - `GET /api/settings`：SystemSettings；`PUT /api/settings`：`{settings,confirmedRetention?,expectedRetention?}`。
 
-配置包括答题草稿上限、随机自测草稿、组卷草稿 maxPaperDrafts、历史保留、考试分钟、组卷默认值、每种题型分值、复习间隔、自动保存等待、资料及图片大小。初始答题／组卷草稿各 3 份；提交历史 0 表示不限量；组卷默认 20 题、不计分；计分时默认 100 分、客观目标 60%；考试默认 120 分钟。
+前端不再设置全局学习记录导航：题集详情组织各自草稿、历史、错题与复习，随机与单题在随机练习页单独组织。旧 `/api/study`、`/api/reviews` 及作答数据表继续保留。上下文错题取该范围内每个叶题最新已判结果，后续正确则移出，未判不覆盖已判，未答客观题需巩固；不使用全局累计 wrongCount 作为当前错题。收藏与到期按相关存活原题的共享学习状态筛选。
 
-降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪作答或组卷记录不会删除题目的独立学习笔记与复习安排。
+配置包括答题草稿上限、随机自测草稿、组题草稿 maxPaperDrafts、历史保留、考试分钟、组题默认值、每种题型分值、复习间隔、自动保存等待、资料及图片大小。初始答题／组题草稿各 3 份；提交历史 0 表示不限量；组题默认 20 题、不计分；计分时默认 100 分、客观目标 60%；考试默认 120 分钟。
+
+降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪作答或组题记录不会删除题目的独立学习笔记与复习安排。
 
 ## AI 配置与任务
 
@@ -133,13 +141,13 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 
 浏览器取消通过 AbortSignal 断开请求，服务中止提供商读取，并在异步模型请求后、保存记录或自动发布前检查取消状态。Android 通过 `x-atlas-ai-progress` 对应的同进程订阅接收阶段更新，仍等待 JSON 和 SQLite 文件持久化后确认成功；当前原生 HTTP 通道缓冲完整响应，因此只显示真实阶段，不模拟逐字输出。取消后忽略原生请求的迟到结果，不继续保存或应用未完成结果。
 
-### 推荐组卷
+### 推荐组题
 
 1. `POST /api/ai/paper-plan`：`{prompt,count?,filters?}`。count 可选，范围 1–500；手动指定时优先于提示词数量。省略时从提示词识别题量，未写数量默认 20。领域、分类、标签、题型、难度等可直接写入 prompt，无需先选择筛选；手动 filters 为硬约束，与提示词识别条件取交集，不能被模型扩大。
 2. 候选范围不再设 300 题上限。先查询已发布题目的轻量元数据，从要求中识别范围并检索排序，按输入字节预算截取候选摘要，再分批推荐；小候选池且手动指定数量时可直接让选择阶段理解提示词。不把全库正文一次性发送给模型。仅发送候选题号、标题、题干摘要、类型、难度及相关分类标签等，不发送参考答案、解析、笔记、作答或图片。
-3. 返回 `AiRun<AiPaperPlanResult>`：title、description、items:[{questionId,reason}]、requestedCount、candidateCount、candidates，以及 retrieval:{availableCount,matchedCount,reviewedCount,batches,interpreted,summary}。availableCount 是手动范围内可用题量，matchedCount／candidateCount 是识别条件匹配量，reviewedCount 是实际送入模型比较的不重复候选量；batches 是选题批次，interpreted 表示是否先单独解析提示词。模型必须返回要求数量的不重复候选 ID，跨批次也不得重复。每卷最多 500 个展开作答项，组合题按子题数量占用额度。
+3. 返回 `AiRun<AiPaperPlanResult>`：title、description、items:[{questionId,reason}]、requestedCount、candidateCount、candidates，以及 retrieval:{availableCount,matchedCount,reviewedCount,batches,interpreted,summary}。availableCount 是手动范围内可用题量，matchedCount／candidateCount 是识别条件匹配量，reviewedCount 是实际送入模型比较的不重复候选量；batches 是选题批次，interpreted 表示是否先单独解析提示词。模型必须返回要求数量的不重复候选 ID，跨批次也不得重复。每次AI推荐最多500个展开作答项，组合题按子题数量占用额度。
 4. 用户可在预览中移除、添加本次实际比较过的候选题、修改顺序、题量和逐题分值。可用范围和匹配量不表示该范围内每题都已发给模型；补充选择只允许返回的 candidates。
-5. `POST /api/ai/runs/:id/paper`：`{confirmed:true,title,description?,questionIds,organization?,domainId?,scoring?}`。重新校验选题、发布状态、分析时版本与展开作答项上限，复用普通组卷业务，返回 201 `{paper,run}`。同一结果只创建一次，保存后通过普通练习卷编辑。
+5. `POST /api/ai/runs/:id/paper`：`{confirmed:true,title,description?,questionIds,organization?,domainId?,scoring?}`。重新校验选题、发布状态、分析时版本与展开作答项上限，复用普通组题业务，返回 201 `{paper,run}`。同一结果只创建一次，保存后通过普通题集编辑。
 
 相关错误：`AI_PAPER_INSUFFICIENT_QUESTIONS`、`AI_PAPER_COUNT_TOO_LARGE`、`AI_PAPER_FILTER_INVALID`、`AI_PAPER_TOO_MANY_PARTS`、`AI_PAPER_SELECTION_INVALID`、`AI_PAPER_CANDIDATE_MISMATCH`、`AI_PAPER_ALREADY_CREATED`、`AI_QUESTION_VERSION_CONFLICT`。数量不足、提示词条件不合法或题目变更时明确失败，不静默放宽范围；分批任务全部成功后才生成一条完整分析记录。
 
@@ -157,20 +165,22 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 - `POST /api/ai/review`：`{questionIds,autoApprove?,expectedUpdatedAt}`。每批 1–20 道 pending 题。返回 valid／needs_changes／uncertain、issues 和可选 suggestedChanges。仅本次明确启用 autoApprove 且模型无问题、无缺图等警告时，valid 项通过审核；发布前再次校验版本。
 - `POST /api/ai/runs/:id/correction`：`{confirmed:true,questionId}`，应用修订建议后仍为 pending，需要再次审核。
 
-图片需同时开启 supportsImages 与 sendImages，仅发送用户选中资料中的托管／合法内嵌栅格图片，最多 8 张、Base64 总量 8 MiB；不自动下载远程图片。未发送、缺失或超限图片写入警告，阻止自动发布。推荐组卷始终只使用文字摘要，不传图片。
+图片需同时开启 supportsImages 与 sendImages，仅发送用户选中资料中的托管／合法内嵌栅格图片，最多 8 张、Base64 总量 8 MiB；不自动下载远程图片。未发送、缺失或超限图片写入警告，阻止自动发布。推荐组题始终只使用文字摘要，不传图片。
 
-单次模型文字输入上限 600000 字节，完整答案上限 2 MiB；提供商 SSE 传输另有 32 MiB 字节上限，客户端进度流累计接收上限 16000000 字节。分批组卷按每次提供商请求执行超时和输出限制，不将整份大卷塞入一次响应。不透出提供商原始错误正文。常见错误为 `AI_DISABLED`、`AI_CANCELLED`、`AI_TIMEOUT`、`AI_PROVIDER_ERROR`、`AI_INVALID_JSON`、`AI_INVALID_OUTPUT`、`AI_OUTPUT_TRUNCATED`、`AI_SCORE_OUT_OF_RANGE` 和版本冲突。
+单次模型文字输入上限 600000 字节，完整答案上限 2 MiB；提供商 SSE 传输另有 32 MiB 字节上限，客户端进度流累计接收上限 16000000 字节。分批组题按每次提供商请求执行超时和输出限制，不将整份大卷塞入一次响应。不透出提供商原始错误正文。常见错误为 `AI_DISABLED`、`AI_CANCELLED`、`AI_TIMEOUT`、`AI_PROVIDER_ERROR`、`AI_INVALID_JSON`、`AI_INVALID_OUTPUT`、`AI_OUTPUT_TRUNCATED`、`AI_SCORE_OUT_OF_RANGE` 和版本冲突。
 
 ## 分享、导出与迁移
 
-- `POST /api/sharing/export`：按 ShareSelection 导出单题、集合或练习卷的自包含 learning-share JSON，包含领域、分类、标签、题目、必要图片及卷配置。
+- `POST /api/sharing/export`：按 ShareSelection 导出单题、筛选题目或题集的自包含 learning-share JSON，包含领域、分类、标签、题目、必要图片及卷配置。
 - `POST /api/sharing/preview`：预检分享包、冲突映射与 fingerprint；`POST /api/sharing/import`：确认后按预检 fingerprint 导入。自动补齐知识归类并处理 ID 冲突；不会因对方缺少分类而要求手工先建完整目录。
-- `POST /api/sharing/export-document`：同一选择返回 ExportDocument，由网页／Android 共用渲染器生成含答案的 PDF 或 Markdown；题目／集合单次最多 500 题。
+- `POST /api/sharing/export-document`：同一选择返回 ExportDocument，由网页／Android 共用渲染器生成含答案的 PDF 或 Markdown；普通题目选择单批最多500题，题集分享受封包大小和完整性校验。
 - `GET /api/papers/:id/export-document?mode=blank|answers`：空白卷或答案卷；`GET /api/attempts/:id/export-document?mode=blank|answers|completed`：已提交会话的快照卷。
 - `GET /api/papers/:id/export?answers=true|false`：Markdown 卷。网页下载转换托管图片为 data URI；PDF 中 PNG/JPEG 直嵌，GIF/WebP 使用首帧。
 - `GET /api/export`：完整 JSON；`POST /api/import`：`{data,mode:'merge'}`。迁移保留题目原审核状态，与新增题目导入区分；同 ID 内容不静默覆盖。
 - `GET /api/backup.sqlite`：可迁移 SQLite 下载副本，清除 AI 密钥，保留本机源库。JSON 备份／分享不包含 AI 凭据；附件较多时优先 SQLite。
 
-导入和读取旧记录时，仅清理已停用的专用复习元数据；题目、个人专项属性、笔记、成绩及作答时间保留。JSON和SQLite下载副本也采用相同清理规则，不改写正文中的普通词语或任意用户对象。
+旧数据库启动、可信 JSON 导入及旧分享包导入时，会把 questionBanks／question_banks 自动转为题集，保留名称、说明、顺序与完整题目快照；ID冲突使用迁移标记和新ID处理，重复导入不重复创建。含未发布题或空集合先归档。旧 bankId 筛选被清理，已有题目、笔记和作答历史不改写。
+
+导入和读取旧记录时，也会清理已停用的专用复习元数据；题目、个人专项属性、笔记、成绩及作答时间保留。JSON和SQLite下载副本也采用相同清理规则，不改写正文中的普通词语或任意用户对象。
 
 分享用于独立内容交付，完整迁移用于恢复工作空间。两者都由服务验证关系、图片字节和引用完整性；分享不携带个人笔记、作答和 AI 密钥。Android 的文件分享面板由用户选择应用及接收者，系统不自动向联系人发送文件。

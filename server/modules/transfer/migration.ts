@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Category, Question, QuestionBank, StudyState } from '../../../shared/models/types.js';
+import type { Category, Question } from '../../../shared/models/types.js';
 import { Store, makeId, now, tables, type Table } from '../../core/store.js';
 import { categorySchema, domainSchema, tagSchema, questionSchema, snapshotQuestionSchema, questionBankSchema, documentSchema, filtersSchema, answersSchema, storedScoringSchema, id, parse, fail, moneySchema } from '../../core/validation.js';
 import { QUICK_PAPER_ID, validateAttemptSnapshot, type StoredAttempt, type StoredPaper } from '../practice/service.js';
@@ -12,12 +12,13 @@ import { validateAllAssetReferences } from '../assets/routes.js';
 import { paperDraftSchema, validatePaperDraft } from '../practice/paper-drafts.js';
 import type { PaperDraftState } from '../../../shared/practice/paper-drafts.js';
 import { cleanLearningEnvelope } from '../../../shared/questions/learning-records.js';
+import { cleanLegacyBankFilters, legacyBankPaper, legacyBankPaperId, migrateLegacyBanks } from '../banks/legacy-banks.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
 const paperSchema = z.object({
-  id, title: z.string().min(1).max(300), description: z.string().max(500000).default(''), mode: z.enum(['manual', 'random']), questionIds: z.array(id).min(1).max(500).refine(a => new Set(a).size === a.length, '试卷题号不能重复'), filters: filtersSchema.nullable().default(null),
-  archived: z.boolean().default(false), version: z.number().int().min(1).default(1), createdAt: datetime.optional(), updatedAt: datetime.optional(), snapshot: z.array(snapshotQuestion).optional(), scoring: storedScoringSchema.optional(),
+  id, title: z.string().min(1).max(300), description: z.string().max(500000).default(''), mode: z.enum(['manual', 'random']), legacyBankId: id.optional(), questionIds: z.array(id).max(50000).refine(a => new Set(a).size === a.length, '题集题号不能重复'), filters: filtersSchema.nullable().default(null),
+  archived: z.boolean().default(false), version: z.number().int().min(1).default(1), createdAt: datetime.optional(), updatedAt: datetime.optional(), snapshot: z.array(snapshotQuestion).max(50000).optional(), scoring: storedScoringSchema.optional(),
   organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null),
 });
 const attemptSchema = z.object({
@@ -38,10 +39,15 @@ const envelopeSchema = z.object({
 const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table;
 
 export function exportData(store: Store) {
-  return { schemaVersion: 1, exportedAt: now(), ...Object.fromEntries(tables.map(table => [dataKey(table), store.all(table)])) };
+  const papers = store.all<StoredPaper>('papers');
+  for (const bank of store.all<any>('question_banks')) {
+    const target = legacyBankPaperId(store, bank.id);
+    if (!target.existing) papers.push(legacyBankPaper(bank, bank.questionIds.map((qid: string) => store.require<Question>('questions', qid)), target.id));
+  }
+  return { schemaVersion: 1, exportedAt: now(), ...Object.fromEntries(tables.map(table => [dataKey(table), table === 'question_banks' ? [] : table === 'papers' ? papers : store.all(table)])) };
 }
 export function importData(store: Store, raw: unknown) {
-  const data = parse(envelopeSchema, cleanLearningEnvelope(raw));
+  const data = parse(envelopeSchema, cleanLegacyBankFilters(cleanLearningEnvelope(raw)));
   for (const table of tables) {
     const records = data[dataKey(table)];
     const keys = records.map((r: any) => table === 'study' ? r.questionId : r.id).filter(Boolean);
@@ -74,31 +80,36 @@ export function importData(store: Store, raw: unknown) {
     insert('questions', data.questions.map(q => ({ ...q, createdAt: q.createdAt || now(), updatedAt: q.updatedAt || now() })));
     insert('documents', data.documents.map(d => ({ ...d, updatedAt: d.updatedAt || now() })));
     store.normalizeLegacyTags(); store.validateTaxonomyReferences();
-    // Banks are references, independent from categories and collection flags.
-    // Insert after source questions, then validate the merged graph atomically.
-    insert('question_banks', data.questionBanks.map(bank => ({ ...bank, createdAt: bank.createdAt || now(), updatedAt: bank.updatedAt || now() })));
-    for (const bank of [...data.questionBanks, ...store.all<QuestionBank>('question_banks')]) for (const qid of bank.questionIds) store.require('questions', qid);
     const papers: StoredPaper[] = [];
     for (const p of data.papers) {
-      if (p.id === QUICK_PAPER_ID) fail(400, 'RESERVED_PAPER_ID', '随机单题标识不能用作试卷ID');
-      if (p.organization === 'domain' && !p.domainId) fail(400, 'PAPER_DOMAIN_REQUIRED', '领域专项练习卷缺少领域');
-      if (p.organization === 'other' && p.domainId) fail(400, 'PAPER_DOMAIN_MISMATCH', '其他练习卷不能指定所属领域');
+      if (p.id === QUICK_PAPER_ID) fail(400, 'RESERVED_PAPER_ID', '随机单题标识不能用作题集ID');
+      if (p.organization === 'domain' && !p.domainId) fail(400, 'PAPER_DOMAIN_REQUIRED', '领域专项题集缺少领域');
+      if (p.organization === 'other' && p.domainId) fail(400, 'PAPER_DOMAIN_MISMATCH', '其他题集不能指定所属领域');
       if (p.domainId) store.require('domains', p.domainId);
       if (store.get('papers', p.id)) { papers.push(p as unknown as StoredPaper); continue; }
       if (p.filters) {
         if (p.filters.domainId) store.require('domains', p.filters.domainId);
         if (p.filters.categoryId) store.require('categories', p.filters.categoryId);
-        if (p.filters.bankId) store.require('question_banks', p.filters.bankId);
+        // Cross-set selection is only an authoring convenience; the snapshot
+        // remains authoritative if its source set is later removed.
+        if (p.filters.paperId && !store.get('papers', p.filters.paperId) && !data.papers.some(source => source.id === p.filters!.paperId)) fail(400, 'INVALID_REFERENCE', '题集筛选来源不存在');
         for (const t of p.filters.tagIds || []) store.require('tags', t);
       }
       const snapshot = p.snapshot || p.questionIds.map(qid => store.require<Question>('questions', qid));
-      if (snapshot.length !== p.questionIds.length || snapshot.some((q, i) => q.id !== p.questionIds[i])) fail(400, 'INVALID_SNAPSHOT', '试卷快照必须与题号及顺序一致');
-      validatePaperAnswers(snapshot as Question[]);
+      if (snapshot.length !== p.questionIds.length || snapshot.some((q, i) => q.id !== p.questionIds[i])) fail(400, 'INVALID_SNAPSHOT', '题集快照必须与题号及顺序一致');
+      validatePaperAnswers(snapshot as Question[], 1_500_000);
       for (const qid of p.questionIds) store.require('questions', qid);
       const scoring = normalizeScoring(snapshot as Question[], p.scoring as any);
       papers.push({ ...p, snapshot: snapshot as Question[], scoring, questionCount: snapshot.length, createdAt: p.createdAt || now(), updatedAt: p.updatedAt || now() });
     }
     insert('papers', papers);
+    for (const bank of data.questionBanks) {
+      for (const qid of bank.questionIds) store.require('questions', qid);
+      if (!store.get('question_banks', bank.id)) store.insert('question_banks', bank.id, bank);
+    }
+    const paperCountBefore = store.all('papers').length;
+    migrateLegacyBanks(store);
+    result.papers!.added += store.all('papers').length - paperCountBefore;
     for (const draft of data.paperDrafts) validatePaperDraft(store, draft.state as PaperDraftState, { allowUnpublished: true });
     insert('paper_drafts', data.paperDrafts);
     for (const state of data.study) store.require('questions', state.questionId);
@@ -109,9 +120,9 @@ export function importData(store: Store, raw: unknown) {
         const roots = new Set(a.questions.map(q => q.sourceQuestionId || q.id));
         if (roots.size !== 1) fail(400, 'INVALID_ATTEMPT_SOURCE', '随机单题会话只能包含一道来源题及其子题');
       } else {
-        if (a.paperId === QUICK_PAPER_ID || a.referenceViewedAt) fail(400, 'INVALID_ATTEMPT_SOURCE', '试卷会话不能使用随机单题标识或提前查看解析');
+        if (a.paperId === QUICK_PAPER_ID || a.referenceViewedAt) fail(400, 'INVALID_ATTEMPT_SOURCE', '题集会话不能使用随机单题标识或提前查看解析');
         const paper = store.get<StoredPaper>('papers', a.paperId);
-        if (paper && a.paperVersion > paper.version) fail(400, 'INVALID_ATTEMPT', '作答版本高于试卷版本');
+        if (paper && a.paperVersion > paper.version) fail(400, 'INVALID_ATTEMPT', '作答版本高于题集版本');
       }
       const questionIds = a.questions.map(q => q.id!);
       if (new Set(questionIds).size !== questionIds.length || Object.keys(a.answers).some(qid => !questionIds.includes(qid))) fail(400, 'INVALID_ATTEMPT', '作答题号不属于快照或重复');
@@ -120,7 +131,7 @@ export function importData(store: Store, raw: unknown) {
       // been deleted after a later paper version stopped referencing it.
       validateAttemptSnapshot(a as StoredAttempt);
       a.scoring = normalizeScoring(a.questions as Question[], a.scoring as any);
-      if (a.source === 'quick' && a.scoring.enabled) fail(400, 'INVALID_ATTEMPT_SOURCE', '随机单题会话不使用试卷计分');
+      if (a.source === 'quick' && a.scoring.enabled) fail(400, 'INVALID_ATTEMPT_SOURCE', '随机单题会话不使用题集计分');
       a.updatedAt = a.updatedAt || a.submittedAt || a.startedAt;
     }
     insert('attempts', data.attempts);

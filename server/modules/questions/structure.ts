@@ -6,9 +6,9 @@ export function flattenQuestions(questions: Question[]): StoredLeafQuestion[] {
 }
 /** Papers count material groups as one question, but every independent answer
  * still consumes the shared 500-answer payload/snapshot limit. */
-export function validatePaperAnswers(questions: Question[]) {
+export function validatePaperAnswers(questions: Question[], maxAnswers = 500) {
   const ids = flattenQuestions(questions).map(q => q.id);
-  if (new Set(ids).size !== ids.length || ids.length > 500) fail(400, 'INVALID_PAPER_PARTS', '展平后的子题题号冲突或作答项超过500项限制');
+  if (new Set(ids).size !== ids.length || ids.length > maxAnswers) fail(400, 'INVALID_PAPER_PARTS', `展平后的子题题号冲突或作答项超过${maxAnswers}项限制`);
 }
 /** Largest remainder allocation in integer cents; input order breaks ties. */
 export function distributeGroupPoints(q: Question, points: number): Record<string, number> {

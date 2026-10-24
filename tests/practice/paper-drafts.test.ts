@@ -43,15 +43,17 @@ test('authoring draft validation rejects unpublished or absent references and ma
   assert.deepEqual(json(await app.inject('/api/paper-drafts')),[]);
 });
 
-test('bank deletion detaches authoring filters without losing chosen questions and invalidates stale tabs',async t=>{
-  const app=await buildApp({databasePath:':memory:',seedPath:'missing-draft-bank-seed',staticRoot:'missing-draft-bank-static'});t.after(()=>app.close());
+test('authoring drafts reject removed bank filters and validate question-set references',async t=>{
+  const app=await buildApp({databasePath:':memory:',seedPath:'missing-draft-set-seed',staticRoot:'missing-draft-set-static'});t.after(()=>app.close());
   json(await app.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data:{schemaVersion:1,domains:[],categories:[],tags:[],questions:[{id:'Q1',title:'引用题目',type:'short_answer',stemMarkdown:'说明互斥。',status:'published'}],documents:[],papers:[]}}}));
-  json(await app.inject({method:'POST',url:'/api/question-banks',payload:{id:'bank-A',name:'临时集合',questionIds:['Q1']}}),201);
-  const state={...initial(),filters:{...initial().filters,bankId:'bank-A'},random:{...initial().random,bankId:'bank-A'}};
-  const original=json(await app.inject({method:'POST',url:'/api/paper-drafts',payload:{context:'new',state}}),201);
-  const deleted=json(await app.inject({method:'DELETE',url:'/api/question-banks/bank-A'}));assert.equal(deleted.detachedDrafts,1);
-  const current=json(await app.inject('/api/paper-drafts?context=new'))[0];assert.deepEqual(current.state.questionIds,['Q1']);assert.equal(current.state.overrides.Q1,7);assert.equal(current.state.filters.bankId,'');assert.equal(current.state.random.bankId,'');assert.ok(current.updatedAt>original.updatedAt);
-  assert.equal((await app.inject({method:'PUT',url:`/api/paper-drafts/${original.id}`,payload:{expectedUpdatedAt:original.updatedAt,state}})).statusCode,409);
+  const set=json(await app.inject({method:'POST',url:'/api/papers',payload:{title:'来源题集',mode:'manual',questionIds:['Q1'],scoring:{enabled:false}}}),201);
+  for(const field of ['filters','random']) {
+    const state={...initial(),[field]:{...initial()[field as 'filters'|'random'],bankId:'removed-bank'}};
+    assert.equal((await app.inject({method:'POST',url:'/api/paper-drafts',payload:{context:'new',state}})).statusCode,400);
+  }
+  const original=json(await app.inject({method:'POST',url:'/api/paper-drafts',payload:{context:'new',state:{...initial(),filters:{paperId:set.id}}}}),201);
+  assert.deepEqual(original.state.questionIds,['Q1']);assert.equal(original.state.overrides.Q1,7);
+  assert.equal((await app.inject({method:'POST',url:'/api/paper-drafts',payload:{context:'new',state:{...initial(),filters:{paperId:'absent-set'}}}})).statusCode,404);
 });
 
 test('complete migration preserves an authoring draft after its question is archived, rejects missing references atomically',async t=>{
@@ -64,7 +66,7 @@ test('complete migration preserves an authoring draft after its question is arch
   assert.equal((await source.inject({method:'PUT',url:`/api/paper-drafts/${draft.id}`,payload:{expectedUpdatedAt:continued.updatedAt,state:{...continued.state,questionIds:['Q1','Q2']}}})).statusCode,400);
   const backup=json(await source.inject('/api/export'));assert.equal(backup.paperDrafts.length,1);const target=await make();json(await target.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data:backup}}));assert.deepEqual(json(await target.inject('/api/paper-drafts')),backup.paperDrafts);assert.equal(json(await target.inject('/api/questions/Q1')).status,'archived');
   assert.equal((await target.inject({method:'DELETE',url:'/api/questions/Q1'})).statusCode,409);
-  const invalid=structuredClone(backup);invalid.paperDrafts[0].state.filters.bankId='missing-bank';const empty=await make();const rejected=await empty.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data:invalid}});assert.ok([400,404].includes(rejected.statusCode),rejected.body);assert.equal(json(await empty.inject('/api/questions?status=all')).total,0);assert.deepEqual(json(await empty.inject('/api/paper-drafts')),[]);
+  const invalid=structuredClone(backup);invalid.paperDrafts[0].state.filters.paperId='missing-set';const empty=await make();const rejected=await empty.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data:invalid}});assert.ok([400,404].includes(rejected.statusCode),rejected.body);assert.equal(json(await empty.inject('/api/questions?status=all')).total,0);assert.deepEqual(json(await empty.inject('/api/paper-drafts')),[]);
 });
 
 test('permanent paper deletion requires clearing its authoring drafts without dropping unrelated drafts',async t=>{

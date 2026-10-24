@@ -9,6 +9,6 @@ test('release data rejects private state objects, unreviewed questions and broke
   for(const key of ['settings','ai_settings','study','paperDrafts']) { const value=publicData();value[key]={token:'opaque-non-provider-token'};assert.throws(()=>validatePublicData(value)); }
   const privateQuestion=publicData();privateQuestion.questions[0].collection='personal';assert.throws(()=>validatePublicData(privateQuestion));
   const pending=publicData();pending.questions[0].status='pending';assert.throws(()=>validatePublicData(pending));
-  const dangling=publicData();dangling.questionBanks[0].questionIds.push('absent-source');assert.throws(()=>validatePublicData(dangling));
+  const dangling=publicData();dangling.questions[0].categoryIds.push('absent-source');assert.throws(()=>validatePublicData(dangling));
   const cycle=publicData();cycle.categories[0].parentId=cycle.categories[0].id;assert.throws(()=>validatePublicData(cycle));
 });

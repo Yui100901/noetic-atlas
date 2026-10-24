@@ -55,8 +55,8 @@ try{
   const review=page.getByRole('dialog',{name:'AI审核 2 道待审核题',exact:true});await review.getByRole('button',{name:'运行 AI 审核',exact:true}).click();await review.getByText('审核报告',{exact:true}).waitFor();assert.equal((await question('P1')).status,'published');assert.equal((await question('BAD1')).status,'pending');
   assert.ok(await review.getByText('已通过审核',{exact:true}).count());assert.ok(await review.getByText('通常整数算术中2+2=4，原答案错误。',{exact:true}).count());checks.push('批量AI审核正确题发布、错误题显示原因并保留待审核');await review.getByRole('button',{name:'关闭',exact:true}).click();
 
-  await page.goto(origin+'/#/ai');await page.getByLabel('AI组卷要求',{exact:true}).fill('推荐2道基础题。');await page.getByLabel('推荐题量（组合题整组计）',{exact:true}).fill('2');await page.getByRole('button',{name:'生成推荐组卷预览',exact:true}).click();await page.getByRole('button',{name:'确认创建练习卷',exact:true}).waitFor();
-  await page.getByRole('button',{name:'确认创建练习卷',exact:true}).click();await page.waitForURL(/#\/papers\//);checks.push('AI工作台推荐通过页面确认创建练习卷');
+  await page.goto(origin+'/#/ai');await page.getByLabel('AI组题要求',{exact:true}).fill('推荐2道基础题。');await page.getByLabel('推荐题量（组合题整组计）',{exact:true}).fill('2');await page.getByRole('button',{name:'生成推荐组题预览',exact:true}).click();await page.getByRole('button',{name:'确认创建题集',exact:true}).waitFor();
+  await page.getByRole('button',{name:'确认创建题集',exact:true}).click();await page.waitForURL(/#\/papers\//);checks.push('AI工作台推荐通过页面确认创建题集');
   await page.setViewportSize({width:390,height:844});await page.goto(origin+'/#/questions/S1');await page.locator('.question-body').waitFor();
   // A viewport change starts the sidebar's mobile transition; inspect the settled layout.
   await page.waitForFunction(()=>{const sidebar=document.querySelector('.sidebar');return sidebar&&sidebar.getBoundingClientRect().right<=1;});

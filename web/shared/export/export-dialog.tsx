@@ -10,7 +10,7 @@ import './export.css';
 const descriptions: Record<ExportMode, string> = { blank: '仅含题干、选项和答题区，不含参考答案与解析。', answers: '完整题目、参考答案与解析，适合打印复习。', completed: '本次提交的作答、参考答案、正误与判分；未评主观题标为待阅。' };
 export function ExportButton({ paperId, attemptId }: { paperId?: string; attemptId?: string }) {
   const [open, setOpen] = useState(false);
-  return <><button className="button" onClick={() => setOpen(true)}><Download size={16} />导出练习卷</button>{open && <ExportDialog paperId={paperId} attemptId={attemptId} onClose={() => setOpen(false)} />}</>;
+  return <><button className="button" onClick={() => setOpen(true)}><Download size={16} />导出题集</button>{open && <ExportDialog paperId={paperId} attemptId={attemptId} onClose={() => setOpen(false)} />}</>;
 }
 function ExportDialog({ paperId, attemptId, onClose }: { paperId?: string; attemptId?: string; onClose: () => void }) {
   const [mode, setMode] = useState<ExportMode>(attemptId ? 'completed' : 'blank'); const [format, setFormat] = useState<'md' | 'pdf'>('pdf');
@@ -25,8 +25,8 @@ function ExportDialog({ paperId, attemptId, onClose }: { paperId?: string; attem
     } catch (err) { setError((err as Error).message || '文件导出失败，请重试。'); }
     finally { setBusy(false); }
   };
-  return <Modal title="导出练习卷" onClose={() => { if (!busy) onClose(); }}><div className="export-dialog">
-    <p className="export-intro">{attemptId ? '以下三种模式均使用本次练习的历史快照，保留当时的题目与分值。' : '使用当前练习卷保存的题目快照。完成卷请从已交卷的练习记录中导出。'}</p>
+  return <Modal title="导出题集" onClose={() => { if (!busy) onClose(); }}><div className="export-dialog">
+    <p className="export-intro">{attemptId ? '以下三种模式均使用本次练习的历史快照，保留当时的题目与分值。' : '使用当前题集保存的题目快照。完成卷请从已交卷的练习记录中导出。'}</p>
     <fieldset disabled={busy} className="export-options"><legend>内容模式</legend>{modes.map(value => <label key={value} className={`export-option ${mode === value ? 'selected' : ''}`}><input type="radio" name="export-mode" value={value} checked={mode === value} onChange={() => setMode(value)} /><span><strong>{exportModeLabels[value]}</strong><small>{descriptions[value]}</small></span></label>)}</fieldset>
     <fieldset disabled={busy} className="export-format"><legend>文件格式</legend>{(['pdf', 'md'] as const).map(value => <label key={value} className={format === value ? 'selected' : ''}><input type="radio" name="export-format" value={value} checked={format === value} onChange={() => setFormat(value)} /><FileText size={17} /><span>{value === 'pdf' ? 'PDF 文档' : 'Markdown (.md)'}</span></label>)}</fieldset>
     <p className="export-note">{format === 'pdf' ? 'PDF 使用内置中文字体，在本机生成并自动分页。首次生成可能需要稍候。' : 'Markdown 为可编辑文本，便于迁移、修改或导入其他笔记工具。'}</p>

@@ -5,7 +5,13 @@
 .question-history-intro { margin: 10px 0 0; font-size: 12px; }
 .question-history-body { margin-top: 16px; }
 .question-history-body > p { line-height: 1.9; font-size: 12px; }
-.question-history-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 18px 0 12px; }
+.question-study-statistics { min-width: 0; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+.question-study-statistics h3 { font-size: 14px; line-height: 1.7; margin: 14px 0 12px; }
+.question-history-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 12px; }
+.question-history-stats .question-study-total { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; text-align: left; }
+.question-history-stats .question-study-total dd { margin: 0; }
+.question-study-last-answer, .question-study-counting-note { font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.question-study-refresh { width: 100%; justify-content: center; margin-top: 4px; }
 .question-history-stats > div { padding: 12px 10px; background: #f4f6f0; border-radius: 8px; text-align: center; }
 .question-history-stats dt { color: var(--muted); font-size: 11px; }
 .question-history-stats dd { margin: 7px 0 0; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -15,7 +21,7 @@
 .question-history-stat-partial dd { color: #996124; }
 .question-history-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12px; }
 .question-history-status p { margin: 0; }
-.question-history-status .text-button { display: flex; align-items: center; gap: 5px; }
+.question-history-status .button { display: flex; align-items: center; gap: 5px; }
 .question-history-retention { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .question-history-items { display: grid; gap: 10px; }
 .question-history-record { border: 1px solid var(--border); border-radius: 8px; min-width: 0; }

@@ -54,6 +54,23 @@ function counts(value: any) {
   return Object.fromEntries(['answered', 'correct', 'partial', 'incorrect', 'ungraded'].map(key => [key, value.summary[key]]));
 }
 
+test('detail-only history skips cumulative statistics while preserving answers and pagination', async t => {
+  const q = question('history-detail-only'), store = new Store(':memory:'); t.after(() => store.db.close());
+  store.put('questions', q.id, q);
+  const saved = buildPaper(store, { title: '只读取作答详情', description: '', mode: 'manual', questionIds: [q.id], scoring: { enabled: false } });
+  store.put('papers', saved.id, saved);
+  const attempt = createAttempt(store, saved); submitAttempt(store, attempt, { [q.id]: { value: 'true' } });
+  const app = Fastify(); registerQuestionHistoryRoutes(app, store); t.after(() => app.close());
+  const normal = await call(app as App, `/api/questions/${q.id}/history`);
+  const db = store.database, all = db.all.bind(db), observed: string[] = [];
+  db.all = ((query: any) => { observed.push(query.compile().sql); return all(query); }) as typeof db.all;
+  const details = await call(app as App, `/api/questions/${q.id}/history?summary=false&page=1&pageSize=10`);
+  const { summary: _summary, ...expected } = normal;
+  assert.deepEqual(details, expected);
+  assert.ok(!observed.some(query => query.includes('from "learning_results"')), 'detail pagination must not calculate cumulative statistics again');
+  assert.equal((await app.inject(`/api/questions/${q.id}/history?summary=other`)).statusCode, 400);
+});
+
 test('single-question statistics count only nonblank submitted answers, excluding drafts and omissions', async t => {
   const bool = question('history-presence-bool'), essay = question('history-presence-essay', 'essay');
   const multi = question('history-presence-multi', 'multiple_choice', { options: [{ key: 'A', text: '甲' }, { key: 'B', text: '乙' }], correctAnswers: ['A', 'B'] });

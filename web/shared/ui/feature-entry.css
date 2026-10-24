@@ -1,0 +1,51 @@
+/* Visible entry points for complete workflows; inline reference links stay quiet. */
+.button.feature-entry {
+  min-height: 44px;
+  padding: 10px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  border-color: #b9cdb3;
+  background: #f2f7ed;
+  color: #31573b;
+  white-space: normal;
+  text-align: center;
+}
+.button.feature-entry:hover {
+  border-color: #739c6b;
+  background: #e8f1df;
+}
+.button.feature-entry:focus-visible {
+  outline: 3px solid #89a977;
+  outline-offset: 3px;
+}
+.feature-entry > svg { flex-shrink: 0; }
+.header-actions .button,
+.learning-next .button {
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.header-actions .button.feature-entry { min-height: 44px; font-size: 13px; }
+.page-header .header-actions { max-width: 100%; }
+.learning-next > div:last-of-type { flex-wrap: wrap; gap: 10px; }
+.sidebar-note .button.feature-entry {
+  margin-top: 14px;
+  background: #dce8ca;
+  border-color: #dce8ca;
+  color: #294a37;
+}
+.ai-service-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ai-service-notice .ai-request-note { flex: 1 1 260px; margin: 0; }
+.ai-service-notice > .button { flex: 0 0 auto; }
+.paper-intro > .button.feature-entry { flex-shrink: 0; }
+@media (max-width: 600px) {
+  .button.feature-entry { font-size: 13px; min-height: 44px; }
+  .paper-intro > .button.feature-entry { align-self: stretch; }
+  .ai-service-notice > .button { width: 100%; }
+}

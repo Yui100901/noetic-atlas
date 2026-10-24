@@ -8,14 +8,27 @@
 .question-viewer-navigation { position: sticky; top: -28px; z-index: 3; background: var(--paper, #fffefa); padding: 12px 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
 .question-viewer-navigation > span { text-align: center; font-variant-numeric: tabular-nums; }
 .question-viewer { min-width: 0; }
-.question-viewer > * + * { margin-top: 20px; }
+.question-viewer-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 280px); align-items: start; gap: 22px; }
+.question-viewer-main, .question-viewer-aside { min-width: 0; }
+.question-viewer-main > * + * { margin-top: 20px; }
+.question-viewer-aside .card { padding: 20px 16px; }
+.question-viewer-aside .list-toolbar { flex-wrap: wrap; }
+.question-viewer-aside .mastery-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.question-viewer-notes h3 { display: flex; align-items: center; gap: 8px; }
+.question-viewer-notes > .field { margin-top: 18px; }
+.group-study-tools .question-viewer-layout { grid-template-columns: minmax(0, 1fr) minmax(220px, 240px); gap: 16px; }
 .question-viewer-reading { padding: 8px 0; }
 .question-viewer-title { font-size: 22px; line-height: 1.65; margin: 15px 0 20px; overflow-wrap: anywhere; }
 .question-viewer-study .list-toolbar { margin: 0 0 12px; }
 .question-viewer-study h3 { display: flex; gap: 8px; align-items: center; }
 .question-viewer-study > .field { margin: 18px 0 10px; }
 .question-viewer-study .mastery-buttons { max-width: 460px; }
+@media (max-width: 1050px) {
+  .group-study-tools .question-viewer-layout { grid-template-columns: 1fr; }
+  .group-study-tools .question-viewer-aside { grid-row: 1; }
+}
 @media (max-width: 700px) {
+  .question-viewer-layout { grid-template-columns: 1fr; gap: 18px; }
   .question-set-question-row { padding: 15px 12px; }
   .question-set-question-row .exam-heading { flex-wrap: wrap; }
   .question-set-question-row .exam-heading > .button { margin-left: 41px; }

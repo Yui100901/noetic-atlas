@@ -19,7 +19,6 @@ interface QuestionHistoryItem {
   points: number | null; score: number | null;
 }
 interface QuestionHistoryPage {
-  summary: { answered: number; correct: number; partial: number; incorrect: number; ungraded: number; lastAnsweredAt: string | null; unknown?: number };
   retention: { limit: number; available: number };
   items: QuestionHistoryItem[]; total: number; page: number; pageSize: number;
 }
@@ -29,6 +28,31 @@ interface QuestionHistoryProps {
 const verdictLabels: Record<Verdict, string> = { correct: '正确', partial: '部分正确', incorrect: '错误', ungraded: '未判' };
 const answerText = (value: string, question: LearningQuestionSnapshot) => question.type === 'true_false' ? value === 'true' ? '对 / 正确' : value === 'false' ? '错 / 错误' : value : value;
 
+interface QuestionStatisticsSummary {
+  answered: number; correct: number; partial: number; incorrect: number; ungraded: number;
+  lastAnsweredAt: string | null; unknown?: number;
+}
+
+/** Compact counters can load with the learning sidebar without fetching any
+ * historical question bodies or personal answers. Detail history stays lazy. */
+export function QuestionStatistics({ questionId, partId, aggregate = false }: Pick<QuestionHistoryProps, 'questionId' | 'partId' | 'aggregate'>) {
+  const resource = useResource<QuestionStatisticsSummary>(`/api/questions/${idPath(questionId)}/statistics?${qs({ partId })}`);
+  const summary = resource.data;
+  return <div className="question-study-statistics" data-question-id={questionId} data-part-id={partId ?? ''}>
+    <h3>{aggregate ? '整组累计作答 · 小题合计' : partId !== undefined ? '本小题累计作答' : '累计作答'}</h3>
+    {resource.loading ? <Loading text="正在读取作答统计…" /> : resource.error ? <ErrorNotice message={resource.error} retry={resource.refresh} /> : summary && <>
+      <dl className="question-history-stats" aria-label="实际作答统计">
+        <div className="question-study-total"><dt>实际作答</dt><dd>{summary.answered.toLocaleString()}<small> 次</small></dd></div>
+        {(['correct', 'partial', 'incorrect', 'ungraded'] as const).map(verdict => <div key={verdict} className={`question-history-stat-${verdict}`}><dt>{verdictLabels[verdict]}</dt><dd>{summary[verdict].toLocaleString()}</dd></div>)}
+      </dl>
+      <p className="muted question-study-last-answer">最近作答：{localDate(summary.lastAnsweredAt)}</p>
+      <p className="muted question-study-counting-note">{aggregate ? '各小题独立计次后合计。' : '跨题集与随机自测累计。'}仅计实际填写并提交的回答，漏答和草稿不计。</p>
+      {!!summary.unknown && <p className="notice info">另有 {summary.unknown} 条旧记录无法确认实际填写，未计入统计。</p>}
+      <button type="button" className="button question-study-refresh" onClick={resource.refresh}><RefreshCw size={14} />刷新统计</button>
+    </>}
+  </div>;
+}
+
 /** Keep each original question/part's paging and disclosure state independent. */
 export function QuestionHistory(props: QuestionHistoryProps) {
   return <QuestionHistoryContent key={`${props.questionId}:${props.partId ?? 'whole'}`} {...props} />;
@@ -37,21 +61,15 @@ export function QuestionHistory(props: QuestionHistoryProps) {
 function QuestionHistoryContent({ questionId, partId, aggregate = false, beforeOpenReview }: QuestionHistoryProps) {
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(1);
-  const resource = useResource<QuestionHistoryPage>(open ? `/api/questions/${idPath(questionId)}/history?${qs({ partId, page, pageSize: 10 })}` : null);
+  const resource = useResource<QuestionHistoryPage>(open ? `/api/questions/${idPath(questionId)}/history?${qs({ partId, page, pageSize: 10, summary: 'false' })}` : null);
   const data = resource.data;
-  const title = aggregate ? '整组作答统计与历史 · 小题合计' : partId !== undefined ? '本小题的作答统计与历史' : '本题的作答统计与历史';
-  return <section className="card question-history">
+  const title = aggregate ? '整组详细历史作答 · 小题合计' : partId !== undefined ? '本小题的详细历史作答' : '本题的详细历史作答';
+  return <section className="card question-history" data-question-id={questionId} data-part-id={partId ?? ''}>
     <button type="button" className="question-history-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}><span><History size={18} />{title}</span><ChevronDown size={17} className={open ? 'rotated' : ''} /></button>
-    {!open && <p className="muted question-history-intro">跨题集与随机自测，查看实际提交的作答次数和完整答案。</p>}
+    {!open && <p className="muted question-history-intro">展开查看当时的题目、完整回答、判定与来源。</p>}
     {open && <div className="question-history-body">
-      <p className="muted">{aggregate ? '每道小题分别计次，再合计展示。' : '仅统计本题实际填写并已提交的作答。'}漏答、未提交草稿、查看解析和掌握自评不计作答次数。</p>
       {resource.loading ? <Loading text="正在读取本题作答记录…" /> : resource.error ? <ErrorNotice message={resource.error} retry={resource.refresh} /> : data && <>
-        <dl className="question-history-stats" aria-label="实际作答统计">
-          <div><dt>实际作答</dt><dd>{data.summary.answered.toLocaleString()}<small> 次</small></dd></div>
-          {(['correct', 'incorrect', 'partial', 'ungraded'] as const).map(verdict => <div key={verdict} className={`question-history-stat-${verdict}`}><dt>{verdictLabels[verdict]}</dt><dd>{data.summary[verdict].toLocaleString()}</dd></div>)}
-        </dl>
-        <div className="question-history-status"><p className="muted">最近作答：{localDate(data.summary.lastAnsweredAt)}</p><button type="button" className="text-button" onClick={resource.refresh}><RefreshCw size={13} />刷新记录</button></div>
-        {!!data.summary.unknown && <p className="notice info">有 {data.summary.unknown} 条旧记录缺少实际填写信息，未纳入以上统计。</p>}
+        <div className="question-history-status"><span className="muted">当前保留 {data.total} 条完整作答</span><button type="button" className="button" onClick={resource.refresh}><RefreshCw size={14} />刷新历史</button></div>
         <p className="muted question-history-retention">{data.retention.limit === 0 ? '已关闭单题详细历史；累计统计继续保留，整卷记录按各自配置保留。' : `${aggregate ? '各小题分别' : '本题'}保留最近 ${data.retention.limit} 次实际填写并提交的完整作答，跨题集和随机自测合并计算。当前可查 ${data.retention.available} 条。`} 详细历史上限可在系统配置中调整；整卷历史默认不限量。清理详细记录不减少累计统计。</p>
         {!!data.items.length && <div className="question-history-items">{data.items.map(item => <QuestionHistoryRecord key={item.id} item={item} beforeOpenReview={beforeOpenReview} />)}</div>}
         {!data.items.length && <p className="question-history-empty">{data.retention.limit === 0 ? '当前未保留单题详细记录。' : '暂无可查看的已提交作答。完成一次实际作答并提交后，会显示在这里。'}</p>}

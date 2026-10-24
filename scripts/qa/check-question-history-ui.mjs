@@ -83,8 +83,13 @@ try {
   const api = async (path, method = 'GET', data) => { const response = await page.request.fetch(origin + path, { method, ...(data === undefined ? {} : { data }) }); assert.ok(response.ok(), path + ': ' + await response.text()); return response.json(); };
   let navigation = 0;
   const navigate = async path => { await page.goto(origin + '/?history-qa=' + ++navigation + '#/' + path); await page.locator('.page-header').waitFor(); };
-  const open = async (panel = page.locator('.question-history').first()) => { await panel.locator('.question-history-toggle').click(); await panel.locator('.question-history-stats').waitFor(); return panel; };
-  const stats = async panel => panel.locator('.question-history-stats > div').evaluateAll(nodes => Object.fromEntries(nodes.map(node => [node.querySelector('dt').textContent, Number(node.querySelector('dd').textContent.replace(/[^0-9]/g, ''))])));
+  const open = async (panel = page.locator('.question-history').first()) => { await panel.locator('.question-history-toggle').click(); await panel.locator('.question-history-retention').waitFor(); assert.equal(await panel.locator('.question-history-stats').count(), 0, 'detail history must not duplicate sidebar counters'); return panel; };
+  const stats = async panel => {
+    const questionId = await panel.getAttribute('data-question-id'), partId = await panel.getAttribute('data-part-id');
+    const sidebar = page.locator(`.question-study-statistics[data-question-id="${questionId}"][data-part-id="${partId}"]`);
+    await sidebar.locator('.question-history-stats').waitFor();
+    return sidebar.locator('.question-history-stats > div').evaluateAll(nodes => Object.fromEntries(nodes.map(node => [node.querySelector('dt').textContent, Number(node.querySelector('dd').textContent.replace(/[^0-9]/g, ''))])));
+  };
   const noOverflow = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '390px document overflow');
   const configure = async (changes, expectPruning = true) => {
     await navigate('settings');
@@ -108,11 +113,14 @@ try {
   const sources = await panel.locator('.question-history-record-info').allTextContents();
   for (const text of ['跨题集来源甲', '跨题集来源乙', '随机 / 单题自测']) assert.ok(sources.some(source => source.includes(text)));
   await navigate('questions/H-OMIT'); panel = await open(); assert.equal((await stats(panel)).实际作答, 0); assert.equal(await panel.locator('.question-history-record').count(), 0);
-  checks.push('默认折叠不请求；同题跨题集与随机自测合计，草稿、漏答和空白回答不计作答次数');
+  checks.push('统计独立展示在学习情况，主列历史默认折叠不请求；同题跨题集合计，草稿、漏答和空白回答不计次数');
 
   await navigate('questions/H-LONG'); panel = await open(); assert.equal((await stats(panel)).实际作答, 12); assert.equal(await panel.locator('.question-history-record').count(), 10); assert.match(await panel.innerText(), /最近 10 次/);
   const oldest = await api('/api/attempts/' + state.longIds[0]); assert.match(oldest.answers['H-LONG'].value, /第0次回答/);
   await panel.locator('.question-history-record > summary').first().click(); await panel.getByRole('link', { name: '打开整卷复盘 →', exact: true }).waitFor();
+  const positions = await page.evaluate(() => { const history = document.querySelector('.detail-main > .question-history').getBoundingClientRect(), statistics = document.querySelector('.detail-aside .question-study-statistics').getBoundingClientRect(); return { historyRight: history.right, statisticsLeft: statistics.left }; });
+  assert.ok(positions.statisticsLeft >= positions.historyRight, JSON.stringify(positions));
+  await page.locator('.detail-aside').getByText('学习情况', { exact: true }).waitFor();
   await page.screenshot({ path: resolve(output, 'default-ten-desktop.png'), fullPage: true });
   checks.push('单题默认只保留最近10份完整作答，累计12次；最早整卷仍可读取并提供整卷复盘入口');
 
@@ -126,6 +134,7 @@ try {
   await navigate('papers/' + state.groupPaperId); await page.getByRole('button', { name: '查看题目：甲题', exact: true }).click();
   const viewer = page.getByRole('dialog', { name: '题集内看题', exact: true }); partPanel = await open(viewer.locator('.question-history')); assert.equal((await stats(partPanel)).实际作答, 2);
   await noOverflow(); assert.ok(await viewer.evaluate(node => node.scrollWidth <= node.clientWidth + 1)); await page.screenshot({ path: resolve(output, 'snapshot-part-history-mobile.png'), fullPage: true });
+  await viewer.locator('.question-viewer-aside').scrollIntoViewIfNeeded(); await page.screenshot({ path: resolve(output, 'snapshot-learning-situation-mobile.png'), animations: 'disabled' });
   await viewer.getByRole('button', { name: '关闭', exact: true }).click();
   checks.push('组合题分别统计小题与整组合计，材料和完整答案保留；题集快照共用单题历史，390px无横向溢出');
 

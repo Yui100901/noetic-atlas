@@ -33,6 +33,7 @@
 - `GET /api/questions/:id`：题目、答案解析与本机学习状态。
 - `GET /api/questions/:id/statistics?partId=...`：实际填写并提交的累计次数，以及 correct、partial、incorrect、ungraded；草稿与整卷漏答不计。answered 为四类总和，unknown 为旧数据无法确认是否填写的数量，不计入作答次数。
 - `GET /api/questions/:id/history?partId=...&page=1&pageSize=10`：最近完整作答及 summary、retention，始终分页。包含当时题目、公共材料、答案解析、个人回答、判定、分值与来源；historyAvailable 表示整卷是否还在。组合题可按 partId 查询，省略时汇总各小题。
+- 详细历史可加 `summary=false`，省略 summary 且不执行累计统计查询；用于“学习情况”侧栏已单独读取 statistics 的页面。默认仍返回 summary。
 - `GET /api/vocabulary?word=...`：按NFKC及大小写规范化后的英语词头精确查找，返回`{word,matches:[{id,title,status}]}`。英文领域或题号经分享重映射后仍按实际领域及词头查询；缺词返回空数组，不自动新增或改变审核状态。多份词卡保留各自状态供选择。网页引用为`#/vocabulary/<词头>`，考试期间此接口同样受锁定。
 - `POST /api/questions`：新增题目。显式 draft 保存为草稿，其他状态统一进入 pending；新题不能直接发布。
 - `PUT /api/questions/:id`：修改题目，可携带 updatedAt 校验版本；未发布题不能借编辑直接变为 published。
@@ -91,6 +92,8 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 - `POST /api/quick-practice`：指定 questionId，或使用 filters 与 excludeQuestionId 随机单题自测；`POST /api/attempts/:id/reveal` 仅允许随机／单题会话提前查看解析。
 
 计时依据 startedAt、deadlineAt 与持久化时间戳，页面刷新或休眠不依赖 interval 累加。考试进行中网页路由固定在考试页面；API 也限制使用其他功能，交卷完成后解除。到期通过界面或后续请求同步自动交卷，仅使用到期前已经保存的答案；到期后的请求不能替换答案。考试过期交卷的 submittedAt 固定为 deadlineAt，并记录 autoSubmitted。
+
+作答页不挂载学习笔记编辑器，也不为展示学习控件额外请求原题内容或历史统计。笔记在题库和题集查阅组件中编辑；随机自测仍允许显式调用 reveal 查看参考解析，交卷后才展示阅卷与本次掌握自评。
 
 答题卡的状态由共用规则计算：提交前为未作答／已作答；提交后为未作答／正确／部分正确／错误／未判定。主观题满分、部分得分和零分分别对应三种判定，不计分题使用已确认的判定；未判题保留未判定。
 

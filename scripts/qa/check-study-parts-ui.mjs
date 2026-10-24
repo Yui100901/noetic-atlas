@@ -23,7 +23,7 @@ const server = spawn(process.execPath, ['--import', 'tsx', '--input-type=module'
 let stdout = '', stderr = '', browser, page;
 server.stdout.on('data', value => stdout += value); server.stderr.on('data', value => stderr += value);
 const output = 'test-results/study-parts-ui'; await mkdir(output, { recursive: true });
-const checks = [], errors = [], confirmations = [];
+const checks = [], errors = [], confirmations = [], questionReads = [];
 try {
   let state;
   for (let i = 0; i < 250; i++) {
@@ -36,6 +36,7 @@ try {
   browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined), headless: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); page.setDefaultTimeout(20000);
   page.on('pageerror', error => errors.push(error.message)); page.on('dialog', dialog => { confirmations.push(dialog.message()); void dialog.accept(); });
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/questions/GROUP-QA') questionReads.push(request.url()); });
   const api = async (path, method = 'GET', data) => { const r = await page.request.fetch(origin + path, { method, ...(data === undefined ? {} : { data }) }); assert.ok(r.ok(), await r.text()); return r.json(); };
   const current = () => api('/api/questions/GROUP-QA');
   const partState = (question, id) => question.partStudies.find(item => item.partId === id);
@@ -106,15 +107,23 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); assert.ok(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
   await page.screenshot({ path: output + '/part-reader-mobile.png', animations: 'disabled' });
   await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+  const beforeQuickReads = questionReads.length;
   await page.goto(origin + '/#/attempts/' + encodeURIComponent(state.quickId));
-  const quickTools = page.locator('.group-study-tools'); await notes(quickTools).waitFor();
-  await page.waitForFunction(() => document.querySelector('.group-study-tools textarea')?.value === '题集里更新的第一小题笔记');
-  await quickTools.getByLabel('选择小题学习记录', { exact: true }).selectOption('second');
-  await page.waitForFunction(() => document.querySelector('.group-study-tools textarea')?.value === '题库中第二小题的笔记');
-  await save(quickTools, '随机自测中第二小题的笔记');
-  q = await current(); assert.equal(partState(q, 'first').notes, '题集里更新的第一小题笔记'); assert.equal(partState(q, 'second').notes, '随机自测中第二小题的笔记'); assert.equal(q.study.notes, '旧整组笔记不复制到小题');
+  await page.locator('.exam-question').nth(1).waitFor(); await page.waitForLoadState('networkidle');
+  assert.equal(await page.locator('.group-study-tools').count(), 0); assert.equal(await notes(page).count(), 0);
+  for (const hint of ['题集里更新的第一小题笔记', '题库中第二小题的笔记', '旧整组笔记不复制到小题']) assert.ok(!(await page.locator('body').innerText()).includes(hint));
+  assert.equal(questionReads.length, beforeQuickReads, 'answering must not fetch the original with saved notes');
+  await page.getByRole('button', { name: '先看参考解析', exact: true }).click(); await page.getByText('本次已查看参考解析。你仍可完成作答并提交，建议按真实情况记录掌握程度。', { exact: true }).waitFor();
+  assert.equal(await notes(page).count(), 0); assert.equal(questionReads.length, beforeQuickReads);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await page.screenshot({ path: output + '/quick-parts-mobile.png', animations: 'disabled' });
-  checks.push('随机自测使用同一套小题学习控件，390px题集弹窗与自测页均无横向溢出');
+  await page.getByRole('button', { name: '交卷并查看解析', exact: true }).first().click(); await page.locator('.answer-state-text').nth(1).waitFor();
+  assert.equal(await notes(page).count(), 0);
+  await page.getByRole('link', { name: '查看原题与学习笔记', exact: true }).nth(1).click();
+  const restoredTools = page.locator('.group-study-tools'); await notes(restoredTools).waitFor();
+  await page.waitForFunction(() => document.querySelector('.group-study-tools textarea')?.value === '题库中第二小题的笔记');
+  await save(restoredTools, '复盘后在原题中更新的第二小题笔记');
+  q = await current(); assert.equal(partState(q, 'first').notes, '题集里更新的第一小题笔记'); assert.equal(partState(q, 'second').notes, '复盘后在原题中更新的第二小题笔记'); assert.equal(q.study.notes, '旧整组笔记不复制到小题');
+  checks.push('随机自测不读取或展示旧笔记及笔记编辑器；显式查看解析后仍无笔记，交卷从原题入口继续编辑对应小题，390px无溢出');
 
   assert.deepEqual(errors, []);
   const report = { passed: checks.length, checks, browserErrors: errors, isolated: true, databasePath: ':memory:' };

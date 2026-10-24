@@ -13,8 +13,8 @@ import { AiPaperPlanner } from './ai-paper-plan';
 import type { Paged } from '../../../shared/utils/pagination';
 import { Pagination } from '../../shared/ui/components';
 
-export function AiWorkspacePage() {
-  const [tab,setTab]=useState<'paper'|'import'|'history'>('paper');
+export function AiWorkspacePage({ initialTab = 'paper' }: { initialTab?: string }) {
+  const [tab,setTab]=useState<'paper'|'import'|'history'>(initialTab === 'import' || initialTab === 'history' ? initialTab : 'paper');
   return <><PageHeader eyebrow="AI LEARNING ASSISTANT" title="先理解，再整理；由你确认成果。" description="AI补充解析、评价主观回答、推荐组题、转换题库文件和审核题目，统一保留可复查的处理记录。" actions={<a className="button" href="#/settings?tab=ai">AI服务配置</a>}/><div className="notice info"><span>题目详情可生成AI解析或评价回答；已提交的题集支持逐题或批量AI评价；待审核页支持AI审核。</span></div><nav className="section-tabs ai-section-tabs"><button className={tab==='paper'?'selected':''} onClick={()=>setTab('paper')}>AI推荐组题</button><button className={tab==='import'?'selected':''} onClick={()=>setTab('import')}>文件 / 文本辅助导入</button><button className={tab==='history'?'selected':''} onClick={()=>setTab('history')}>AI处理记录</button></nav>{tab==='paper'?<AiPaperPlanner/>:tab==='import'?<AiImportWorkspace/>:<AiRunHistory/>}</>;
 }
 

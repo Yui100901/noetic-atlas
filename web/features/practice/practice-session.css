@@ -17,10 +17,6 @@
 .quick-filter-card .muted { margin-bottom: 0; }
 .quick-current-attempt > .page-header h1 { font-size: clamp(24px, 3vw, 34px); }
 .quick-answer-preview { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 18px 0; }
-.quick-study-tools { margin-top: 24px; }
-.quick-study-tools h2 { margin: 9px 0 0; font-size: 22px; }
-.quick-study-tools .form-actions { justify-content: space-between; }
-.quick-study-tools .self-score { flex-wrap: wrap; }
 .quick-drafts h2 { display: flex; align-items: center; gap: 10px; font-size: 20px; }
 .preview-answer { margin-top: 24px; padding: 20px; background: var(--green-soft); border-radius: 10px; }
 .history-groups { display: grid; gap: 20px; }
@@ -40,5 +36,4 @@
   .history-group > summary, .history-group-content { padding-left: 16px; padding-right: 16px; }
   .history-group-link { padding-left: 16px; padding-right: 16px; }
   .group-material { padding: 14px; }
-  .quick-study-tools .segmented { flex-wrap: wrap; }
 }

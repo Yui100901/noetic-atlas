@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, NotebookPen, Sparkles } from 'lucide-react';
+import { Check, NotebookPen, Settings2, Sparkles } from 'lucide-react';
 import type { Attempt, Question } from '../../../shared/models/types';
 import { isSubjectiveType } from '../../../shared/questions/question-utils';
 import { AI_GRADE_VERDICT_LABELS } from '../../../shared/ai/ai';
@@ -11,7 +11,7 @@ import './ai.css';
 
 export function AiServiceNotice() {
   const {bootstrap}=useApp();
-  return <p className="ai-request-note">{bootstrap.ai.available?'AI辅助已开启。运行时会将本次选中的内容发送到已配置模型。':'AI辅助尚未开启。'}<a href="#/settings?tab=ai"> 配置 AI 辅助 →</a>　模型输出可能出错，应用前请核对。</p>;
+  return <div className="ai-service-notice"><p className="ai-request-note">{bootstrap.ai.available?'AI辅助已开启。运行时会将本次选中的内容发送到已配置模型。':'AI辅助尚未开启。'}模型输出可能出错，应用前请核对。</p><a className="button feature-entry" href="#/settings?tab=ai"><Settings2 size={16} />配置 AI 辅助</a></div>;
 }
 export function AiRunHeading({run,title}:{run:AiRunView;title:string}) {
   return <><header><strong>{title}</strong><small>{run.model} · {localDate(run.createdAt)}</small></header>{run.warnings?.length>0&&<ul className="ai-warnings">{run.warnings.map((text,i)=><li key={i}>{text}</li>)}</ul>}</>;

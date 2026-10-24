@@ -8,7 +8,7 @@ import type { StoredLeafQuestion } from './structure.js';
 import { questionHistoryLimit, type QuestionHistoryRecord } from './history-store.js';
 import { learningQuestionKey } from '../practice/learning-state.js';
 
-export const questionHistoryQuerySchema=z.object({...paginationFields,page:paginationFields.page.default(1),pageSize:paginationFields.pageSize.default(10),partId:id.optional()}).strict();
+export const questionHistoryQuerySchema=z.object({...paginationFields,page:paginationFields.page.default(1),pageSize:paginationFields.pageSize.default(10),partId:id.optional(),summary:z.enum(['true','false']).default('true')}).strict();
 
 export function questionStatistics(store:Store,questionId:string,partId?:string) {
   const db=store.database,field=db.expressions.field.bind(db.expressions);
@@ -27,7 +27,7 @@ export function questionStatistics(store:Store,questionId:string,partId?:string)
   return summary;
 }
 
-export function questionHistory(store:Store,questionId:string,query:{partId?:string;page:number;pageSize:number}) {
+export function questionHistory(store:Store,questionId:string,query:{partId?:string;page:number;pageSize:number;summary?:'true'|'false'}) {
   const db=store.database,field=db.expressions.field.bind(db.expressions),limit=questionHistoryLimit(store);
   let selection=db.query.selectFrom('question_history as h').leftJoin('attempts as a',join=>join.onRef('a.id','=',field<string>('h.data','attemptId'))).leftJoin('learning_results as r',join=>join.onRef('r.id','=',field<string>('h.data','attemptId'))).where(field('h.data','questionId'),'=',questionId);
   if(query.partId!==undefined)selection=selection.where(field('h.data','partId'),'=',query.partId);
@@ -45,7 +45,7 @@ export function questionHistory(store:Store,questionId:string,query:{partId?:str
     if(!question||!answer)throw new Error('单题历史引用不完整，请从有效备份恢复');
     return {id:record.id,attemptId:record.attemptId,source:record.source,paperId:record.paperId,paperTitle:record.paperTitle,paperVersion:record.paperVersion,submittedAt:record.submittedAt,historyAvailable,question,answer,verdict:record.verdict,points:record.points,score:record.score,...(beforeReset?{beforeReset:true}:{})};
   });
-  return {summary:questionStatistics(store,questionId,query.partId),retention:{limit,available:total},items,total,page:query.page,pageSize:query.pageSize};
+  return {...(query.summary==='false'?{}:{summary:questionStatistics(store,questionId,query.partId)}),retention:{limit,available:total},items,total,page:query.page,pageSize:query.pageSize};
 }
 
 export function registerQuestionHistoryRoutes(app:FastifyInstance,store:Store) {

@@ -93,6 +93,33 @@ test('AI explanation creates reviewable run and explicitly appends notes without
   const conflict = await f.api(`/api/ai/runs/${run.id}/apply`, 'POST', { confirmed: true, appendNotes: true }, 409); assert.equal(conflict.error.code, 'AI_QUESTION_VERSION_CONFLICT');
 });
 
+test('combination AI explanations and grades append notes only to the selected part and exclude private part notes from material', async t => {
+  const f = await fixture(t); await f.enable();
+  const parts = ['first', 'second'].map(id => ({ id, title: id, type: 'short_answer' as const, stemMarkdown: `小题 ${id}`, answerMarkdown: `参考 ${id}`, explanationMarkdown: '', options: [], correctAnswers: [] }));
+  const group = question('GROUP', { type: 'group', stemMarkdown: '保留公共材料', parts });
+  f.store.put('questions', 'GROUP', group);
+  f.store.putStudy({ ...f.store.study('GROUP'), notes: '历史整组笔记' });
+  f.store.putStudy({ ...f.store.study('GROUP', 'first'), notes: 'PART_PRIVATE_CANARY' });
+  const random = buildPaper(f.store, { title: '随机组合题', mode: 'random', description: '', count: 1, filters: { types: ['group'] }, scoring: { enabled: false } });
+  assert.equal('partStudies' in random.snapshot[0]!, false); assert.ok(!JSON.stringify(random).includes('PART_PRIVATE_CANARY'));
+  f.store.put('questions', 'GROUP', { ...group, partStudies: [f.store.study('GROUP', 'first')] });
+  const explain = await f.api('/api/ai/explain', 'POST', { questionId: 'GROUP', partId: 'first' });
+  assert.ok(!JSON.stringify(f.requests.at(-1).input.untrustedMaterial).includes('PART_PRIVATE_CANARY'));
+  await f.api(`/api/ai/runs/${explain.id}/apply`, 'POST', { confirmed: true, appendNotes: true });
+  assert.match(f.store.study('GROUP', 'first').notes, /PART_PRIVATE_CANARY[\s\S]*AI 辅助解析/);
+  assert.equal(f.store.study('GROUP', 'second').notes, ''); assert.equal(f.store.study('GROUP').notes, '历史整组笔记');
+  const paper = buildPaper(f.store, { title: '组合题AI评价', mode: 'manual', description: '', questionIds: ['GROUP'], scoring: { enabled: false } }); f.store.put('papers', paper.id, paper);
+  const attempt = submitAttempt(f.store, createAttempt(f.store, paper), { 'GROUP::first': { value: '第一题作答' }, 'GROUP::second': { value: '第二题作答' } });
+  const grade = await f.api('/api/ai/grade', 'POST', { attemptId: attempt.id, questionIds: ['GROUP::second'] });
+  await f.api(`/api/ai/runs/${grade.id}/apply`, 'POST', { confirmed: true, appendNotes: true });
+  assert.match(f.store.study('GROUP', 'second').notes, /AI 作答评价[\s\S]*第二题作答/); assert.equal(f.store.study('GROUP').notes, '历史整组笔记');
+  const stale = await f.api('/api/ai/grade', 'POST', { attemptId: attempt.id, questionIds: ['GROUP::first'] });
+  const before = f.store.study('GROUP', 'first').notes;
+  f.store.put('questions', 'GROUP', { ...group, parts: parts.map(part => part.id === 'first' ? { ...part, type: 'essay' } : part) });
+  const rejection = await f.api(`/api/ai/runs/${stale.id}/apply`, 'POST', { confirmed: true, appendNotes: true }, 409);
+  assert.equal(rejection.error.code, 'AI_NOTE_PART_CHANGED'); assert.equal(f.store.study('GROUP', 'first').notes, before);
+});
+
 test('AI grades selected subjective items as suggestions, explicit apply uses actual maxima and preserves objective points', async t => {
   const f = await fixture(t); await f.enable(); const a = f.submitted();
   const run = await f.api('/api/ai/grade', 'POST', { attemptId: a.id }); assert.equal(run.result.items.length, 2);

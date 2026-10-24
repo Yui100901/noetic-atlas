@@ -13,6 +13,8 @@ import { flattenQuestions, type StoredLeafQuestion } from '../questions/structur
 import { normalizeScoring } from './scoring.js';
 import { QUICK_PAPER_ID, type StoredAttempt, type StoredPaper } from './service.js';
 import { learningQuestionKey, learningJudgment, type LearningJudgingItem } from './learning-state.js';
+import { learningMetadata, learningSnapshots } from './learning-results.js';
+import { loadLeafStudies } from '../study/state.js';
 
 const contextFields={source:z.enum(['paper','quick']),paperId:id.optional()};
 const pageFields={...paginationFields,page:paginationFields.page.default(1),pageSize:paginationFields.pageSize.default(20)};
@@ -48,53 +50,48 @@ function resolveContext(store:Store,input:LearningContext) {
   if(input.source==='quick')return {context:{source:'quick' as const},title:'随机练习',deleted:false,archived:false,headers:rows};
   const db=store.database,field=db.expressions.field.bind(db.expressions);
   const paper=db.one(db.query.selectFrom('papers').select('id').select([field<string>('data','title').as('title'),field<number>('data','archived').as('archived')]).where('id','=',input.paperId!));
-  if(!paper&&!rows.length)fail(404,'LEARNING_CONTEXT_NOT_FOUND','题集及其学习记录均不存在');
-  return {context:{source:'paper' as const,paperId:input.paperId!},title:paper?.title||rows[0]!.title||'已删除题集',deleted:!paper,archived:!!paper?.archived,headers:rows};
+  const evidence=!paper&&!rows.length?db.one(db.query.selectFrom('learning_results').select(field<string>('data','paperTitle').as('title')).where(field('data','source'),'=','paper').where(field('data','paperId'),'=',input.paperId!).where(db.expressions.arrayLength('data','items'),'>',0).orderBy(field('data','submittedAt'),'desc').limit(1)):undefined;
+  if(!paper&&!rows.length&&!evidence)fail(404,'LEARNING_CONTEXT_NOT_FOUND','题集及其学习记录均不存在');
+  return {context:{source:'paper' as const,paperId:input.paperId!},title:paper?.title||rows[0]?.title||evidence?.title||'已删除题集',deleted:!paper,archived:!!paper?.archived,headers:rows};
 }
 type ResolvedContext=ReturnType<typeof resolveContext>;
-interface Candidate {id:string;sourceId:string;attemptId?:string;lastPracticedAt?:string;wrongCount:number;answerState?:'incorrect'|'unanswered'}
+interface Candidate {id:string;sourceId:string;partId?:string;attemptId?:string;historyAvailable?:boolean;lastPracticedAt?:string;wrongCount:number;answerState?:'incorrect'|'unanswered'}
 // An ordinary question may legally contain "::" in its ID and match another
 // root's flattened leaf ID. Retain both the owning root and leaf identity.
 const candidateKey=(candidate:Pick<Candidate,'sourceId'|'id'>)=>learningQuestionKey(candidate.sourceId,candidate.id);
 function contextQuestions(store:Store,resolved:ResolvedContext) {
   const db=store.database,field=db.expressions.field.bind(db.expressions),context=resolved.context;
-  // Only this source's attempts are read, and only compact judging fields.
-  // Complete immutable content is fetched for the requested question page.
-  const rows=db.all(attemptRows(store,context).select('a.id').select([
-    field<string>('a.data','status').as('status'),field<string>('a.data','startedAt').as('startedAt'),field<string|null>('a.data','submittedAt').as('submittedAt'),field<string|null>('a.data','updatedAt').as('updatedAt'),db.expressions.attemptLearningItems('a.data').as('items'),
-  ])).sort((a,b)=>time(b.submittedAt||b.updatedAt||b.startedAt)-time(a.submittedAt||a.updatedAt||a.startedAt)||b.id.localeCompare(a.id));
+  const rows=learningMetadata(store,{source:context.source,paperId:context.source==='quick'?QUICK_PAPER_ID:context.paperId});
   const latest=new Map<string,Candidate>(),judged=new Map<string,{wrong:boolean;candidate:Candidate}>(),wrongCounts=new Map<string,number>();
-  for(const row of rows)for(const item of JSON.parse(row.items) as LearningJudgingItem[]) {
-    const candidate:Candidate={id:item.id,sourceId:item.sourceQuestionId||item.id,attemptId:row.id,lastPracticedAt:row.submittedAt||row.updatedAt||row.startedAt,wrongCount:0};
+  for(const row of rows)for(const item of row.items) {
+    const candidate:Candidate={id:item.id,sourceId:item.sourceQuestionId||item.id,...(item.partId?{partId:item.partId}:{}),attemptId:row.id,historyAvailable:row.historyAvailable,lastPracticedAt:row.submittedAt||row.updatedAt||row.startedAt,wrongCount:0};
     const key=candidateKey(candidate);
     if(!latest.has(key))latest.set(key,candidate);
     if(row.status!=='submitted')continue;
-    const judgment=learningJudgment(item);if(!judgment)continue;
-    if(judgment.wrong){candidate.answerState=judgment.answerState;wrongCounts.set(key,(wrongCounts.get(key)||0)+1);}
-    if(!judged.has(key))judged.set(key,{wrong:judgment.wrong,candidate});
+    if(!item.judgment)continue;
+    const wrong=item.judgment!=='correct';
+    if(wrong){candidate.answerState=item.judgment as 'incorrect'|'unanswered';wrongCounts.set(key,(wrongCounts.get(key)||0)+1);}
+    if(!judged.has(key))judged.set(key,{wrong,candidate});
   }
   // Unpracticed current members still participate in shared favorites/review.
   if(context.source==='paper'&&!resolved.deleted){
-    db.projections.ensure(['papers']);
-    const paper=db.one(db.query.selectFrom('paper_read_model').select(field<string>('data','snapshot').as('snapshot')).where('id','=',context.paperId!));
-    if(paper?.snapshot)for(const q of flattenQuestions(JSON.parse(paper.snapshot) as Question[])){
-      const candidate:Candidate={id:q.id,sourceId:q.sourceQuestionId||q.id,wrongCount:0},key=candidateKey(candidate);
+    const paper=db.one(db.query.selectFrom('papers').select(db.expressions.paperLearningLeaves('data').as('leaves')).where('id','=',context.paperId!));
+    if(paper?.leaves)for(const q of JSON.parse(paper.leaves) as Array<{id:string;sourceId:string;partId?:string}>){
+      const candidate:Candidate={id:q.id,sourceId:q.sourceId,...(q.partId?{partId:q.partId}:{}),wrongCount:0},key=candidateKey(candidate);
       if(!latest.has(key))latest.set(key,candidate);
     }
   }
-  const roots=[...new Set([...latest.values()].map(candidate=>candidate.sourceId))];
-  const stateRows=roots.length?db.all(db.query.selectFrom('study as s').innerJoin('questions as q','q.id','s.id').select('s.id').select([field<number>('s.data','favorite').as('favorite'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt')]).where(db.expressions.idInJson('s.id',roots))):[];
-  const states=new Map(stateRows.map(row=>[row.id,row]));
+  const states=loadLeafStudies(store,[...latest.values()]);
   const wrong=[...judged.values()].filter(value=>value.wrong).map(value=>({...value.candidate,wrongCount:wrongCounts.get(candidateKey(value.candidate))||0}));
   const recent=(a:Candidate,b:Candidate)=>time(b.lastPracticedAt)-time(a.lastPracticedAt)||a.id.localeCompare(b.id,undefined,{numeric:true});
   wrong.sort(recent);
   const favorite:Candidate[]=[],due:Candidate[]=[],stamp=Date.now();
   for(const candidate of latest.values()){
     candidate.wrongCount=wrongCounts.get(candidateKey(candidate))||0;
-    const state=states.get(candidate.sourceId);if(state?.favorite)favorite.push(candidate);
+    const state=states.get(candidateKey(candidate));if(state?.favorite)favorite.push(candidate);
     if(state?.nextReviewAt&&Number.isFinite(Date.parse(state.nextReviewAt))&&Date.parse(state.nextReviewAt)<=stamp)due.push(candidate);
   }
-  favorite.sort(recent);due.sort((a,b)=>time(states.get(a.sourceId)?.nextReviewAt)-time(states.get(b.sourceId)?.nextReviewAt)||recent(a,b));
+  favorite.sort(recent);due.sort((a,b)=>time(states.get(candidateKey(a))?.nextReviewAt)-time(states.get(candidateKey(b))?.nextReviewAt)||recent(a,b));
   return {wrong,due,favorite};
 }
 function summary(store:Store,resolved:ResolvedContext):ContextLearningSummary {
@@ -106,7 +103,7 @@ function summary(store:Store,resolved:ResolvedContext):ContextLearningSummary {
   if(counts.due)suggestions.push(`有${counts.due}道关联题已到预定复习时间，可完成复习后重新安排日期。`);
   if(!submitted)suggestions.push('完成一次练习后，可在这里查看本来源的作答历史和错题。');
   if(!drafts&&!counts.wrong&&!counts.due&&submitted)suggestions.push('当前保留历史中没有待巩固错题或到期复习，可继续练习或复习收藏题。');
-  suggestions.push('建议依据本来源保留的作答历史与原题共享的收藏、复习日期生成；未判主观题不记错，未调用AI。');
+  suggestions.push('错题与来源独立保留，清理整卷历史不影响；收藏共享原题，组合小题独立复习。未判主观题不记错，未调用AI。');
   return {...resolved.context,title:resolved.title,deleted:resolved.deleted,archived:resolved.archived,counts,suggestions};
 }
 function page<T>(items:T[],query:{page:number;pageSize:number}):Paged<T>{return {items:items.slice((query.page-1)*query.pageSize,query.page*query.pageSize),total:items.length,page:query.page,pageSize:query.pageSize};}
@@ -117,14 +114,15 @@ function historyItem(attempt:StoredAttempt):AttemptHistoryItem {
 }
 function hydrateQuestions(store:Store,resolved:ResolvedContext,candidates:Candidate[]):ContextLearningQuestion[] {
   if(!candidates.length)return [];
-  const db=store.database,attemptIds=[...new Set(candidates.flatMap(candidate=>candidate.attemptId?[candidate.attemptId]:[]))];
-  const attempts=attemptIds.length?db.all(db.query.selectFrom('attempts').select(['id','data']).where(db.expressions.idInJson('id',attemptIds))):[];
-  const snapshots=new Map(attempts.map(row=>[row.id,new Map((cleanLearningRecord('attempts',JSON.parse(row.data)) as StoredAttempt).questions.map(q=>[q.id,q]))]));
-  const paperQuestions=candidates.some(candidate=>!candidate.attemptId)?new Map(flattenQuestions(store.require<StoredPaper>('papers',resolved.context.paperId!).snapshot).map(q=>[q.id,q])):new Map<string,StoredLeafQuestion>();
-  const roots=[...new Set(candidates.map(candidate=>candidate.sourceId))];
-  const states=db.all(db.query.selectFrom('study as s').innerJoin('questions as q','q.id','s.id').select(['s.id','s.data']).where(db.expressions.idInJson('s.id',roots)));
-  const study=new Map(states.map(row=>[row.id,JSON.parse(row.data) as StudyState]));
-  return candidates.map(candidate=>({question:candidate.attemptId?snapshots.get(candidate.attemptId)!.get(candidate.id)!:paperQuestions.get(candidate.id)!,...(candidate.attemptId?{attemptId:candidate.attemptId}:{}),wrongCount:candidate.wrongCount,...(candidate.answerState?{answerState:candidate.answerState}:{}),...(candidate.lastPracticedAt?{lastPracticedAt:candidate.lastPracticedAt}:{}),...(study.has(candidate.sourceId)?{study:study.get(candidate.sourceId)!}:{})}));
+  const db=store.database;
+  const snapshots=learningSnapshots(store,candidates.flatMap(candidate=>candidate.attemptId?[{...candidate,attemptId:candidate.attemptId}]:[]));
+  const missing=candidates.filter(candidate=>!candidate.attemptId||!snapshots.get(candidate.attemptId)?.has(candidateKey(candidate)));
+  const paper=missing.length&&resolved.context.source==='paper'?db.one(db.query.selectFrom('papers').select(db.expressions.arrayRecordsByIds('data','snapshot',missing.map(item=>item.sourceId)).as('snapshot')).where('id','=',resolved.context.paperId!)):undefined;
+  const paperQuestions=paper?new Map(flattenQuestions(JSON.parse(paper.snapshot) as Question[]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q])):new Map<string,StoredLeafQuestion>();
+  const roots=[...new Set(missing.filter(candidate=>!paperQuestions.has(candidateKey(candidate))).map(candidate=>candidate.sourceId))];
+  const current=new Map((roots.length?db.all(db.query.selectFrom('questions').select('data').where(db.expressions.idInJson('id',roots))):[]).flatMap(row=>flattenQuestions([JSON.parse(row.data) as Question]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q] as const)));
+  const study=loadLeafStudies(store,candidates,{includeNotes:true});
+  return candidates.map(candidate=>{const key=candidateKey(candidate);return {question:(candidate.attemptId?snapshots.get(candidate.attemptId)?.get(key):undefined)||paperQuestions.get(key)||current.get(key)!,...(candidate.attemptId?{attemptId:candidate.attemptId,historyAvailable:candidate.historyAvailable}:{}),wrongCount:candidate.wrongCount,...(candidate.answerState?{answerState:candidate.answerState}:{}),...(candidate.lastPracticedAt?{lastPracticedAt:candidate.lastPracticedAt}:{}),...(study.has(key)?{study:study.get(key)!}:{})};});
 }
 export function registerContextLearningRoutes(app:FastifyInstance,store:Store) {
   app.get('/api/learning/summary',async request=>summary(store,resolveContext(store,parse(learningSummaryQuerySchema,request.query))));
@@ -141,6 +139,8 @@ export function registerContextLearningRoutes(app:FastifyInstance,store:Store) {
   app.get('/api/learning/contexts',async request=>{
     const query=parse(learningContextsQuerySchema,request.query),db=store.database,field=db.expressions.field.bind(db.expressions);
     const ids=db.all(db.query.selectFrom('attempts as a').leftJoin('papers as p',join=>join.on('p.id','=',field<string>('a.data','paperId'))).select(field<string>('a.data','paperId').as('paperId')).where('p.id','is',null).where(eb=>eb.or([eb(field<string>('a.data','source'),'=','paper'),eb(field('a.data','source'),'is',null)])).where(field('a.data','paperId'),'!=',QUICK_PAPER_ID).distinct()).sort((a,b)=>a.paperId.localeCompare(b.paperId,undefined,{numeric:true}));
-    const selected=page(ids,query);return {...selected,items:selected.items.map(row=>summary(store,resolveContext(store,{source:'paper',paperId:row.paperId})))};
+    const evidence=db.all(db.query.selectFrom('learning_results as r').leftJoin('papers as p',join=>join.on('p.id','=',field<string>('r.data','paperId'))).select(field<string>('r.data','paperId').as('paperId')).where('p.id','is',null).where(field('r.data','source'),'=','paper').where(db.expressions.arrayLength('r.data','items'),'>',0).distinct());
+    const combined=[...new Map([...ids,...evidence].map(row=>[row.paperId,row])).values()].sort((a,b)=>a.paperId.localeCompare(b.paperId,undefined,{numeric:true}));
+    const selected=page(combined,query);return {...selected,items:selected.items.map(row=>summary(store,resolveContext(store,{source:'paper',paperId:row.paperId})))};
   });
 }

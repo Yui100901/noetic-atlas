@@ -1,7 +1,7 @@
 import type { DatabaseConnection } from './connection.js';
 import { collectAssetReferences } from '../../shared/assets/asset-references.js';
 
-export const projectionSources=['questions','documents','papers','attempts','study','reviews'] as const;
+export const projectionSources=['questions','documents','papers','attempts','study','study_parts','reviews','learning_results'] as const;
 export type ProjectionSource=typeof projectionSources[number];
 const questionFields=['id','title','status','collection','type','difficulty','depth','frequency','categoryIds','tagIds'] as const;
 const searchFields=['id','title','stemMarkdown','answerMarkdown','explanationMarkdown'] as const;
@@ -34,10 +34,10 @@ export class RecordProjections {
         `);
       }
       const version=d.one(q.selectFrom('metadata').select('value').where('key','=','read_projection_version'))?.value;
-      if(version!=='2'||!complete) {
+      if(version!=='3'||!complete) {
         d.run(q.deleteFrom('question_read_model'));d.run(q.deleteFrom('paper_read_model'));d.run(q.deleteFrom('asset_references'));
         for(const table of projectionSources)d.run(q.insertInto('projection_pending').columns(['source_table','source_id']).expression(eb=>eb.selectFrom(table).select([eb.val(table).as('source_table'),'id as source_id']).where('id','is not',null)).onConflict(c=>c.columns(['source_table','source_id']).doNothing()));
-        d.run(q.insertInto('metadata').values({key:'read_projection_version',value:'2'}).onConflict(c=>c.column('key').doUpdateSet({value:'2'})));
+        d.run(q.insertInto('metadata').values({key:'read_projection_version',value:'3'}).onConflict(c=>c.column('key').doUpdateSet({value:'3'})));
       }
     });
   }
@@ -68,6 +68,7 @@ export class RecordProjections {
             for(const assetId of collectAssetReferences(record))refs.push({source_table:source,source_id:id,asset_id:assetId});
             if(source==='questions'){
               const metadata=Object.fromEntries(questionFields.filter(key=>Object.hasOwn(record,key)).map(key=>[key,record[key]]));
+              if (record.type === 'group') metadata.parts = (record.parts || []).map((part:any) => ({ id: part.id, type: part.type }));
               const row={id,data:JSON.stringify(metadata),search_text:searchFields.map(key=>String(record[key])).join(' ').toLowerCase(),title_key:String(record.title??'').normalize('NFKC').trim().toLowerCase()};
               d.run(q.insertInto('question_read_model').values(row).onConflict(c=>c.column('id').doUpdateSet({data:row.data,search_text:row.search_text,title_key:row.title_key})));
             }

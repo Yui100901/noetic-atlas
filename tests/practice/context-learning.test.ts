@@ -78,6 +78,7 @@ test('wrong items keep immutable grouped leaf material after originals change or
   const group={...parse(questionSchema,{id:'group',title:'公共材料',type:'group',stemMarkdown:'原有程序材料',parts:[{id:'a',title:'小题A',type:'true_false',stemMarkdown:'小题A题干',correctAnswers:['true']},{id:'b',title:'小题B',type:'true_false',stemMarkdown:'小题B题干',correctAnswers:['true']}],status:'published'}),id:'group'}as Question;
   paper(store,'group-set',[group]);const outside=question('outside');paper(store,'outside-set',[outside]);
   store.put('study','group',{questionId:'group',favorite:true,mastery:1,notes:'公共笔记',nextReviewAt:'2000-01-01T00:00:00Z',lastReviewedAt:null,wrongCount:99});
+  for(const part of group.parts!)store.putStudy({...store.study(group.id,part.id),mastery:1,nextReviewAt:'2000-01-01T00:00:00Z'});
   store.put('study','outside',{questionId:'outside',favorite:true,mastery:1,notes:'无关笔记',nextReviewAt:'2000-01-01T00:00:00Z',lastReviewedAt:null,wrongCount:99});
   attempt(store,'group-attempt','group-set',[group],{'group::a':{value:'false'},'group::b':{value:'true'}});
   store.put('questions','group',{...group,stemMarkdown:'后来修改的材料'});
@@ -171,6 +172,8 @@ test('quick learning distinguishes an ordinary ID from another root with the sam
     const result=await get(`/api/learning/questions?source=quick&kind=${kind}`);assert.equal(result.total,1);assert.equal(result.items[0].attemptId,'plain-wrong-2');assert.equal(result.items[0].wrongCount,2);
   }
   store.put('study',group.id,{...store.study(group.id),favorite:true,nextReviewAt:'2000-01-02T00:00:00Z'});
+  assert.equal((await get('/api/learning/summary?source=quick')).counts.due,1,'old group dates must not schedule every part');
+  for(const part of group.parts!)store.putStudy({...store.study(group.id,part.id),mastery:1,notes:'本小题笔记',nextReviewAt:'2000-01-02T00:00:00Z'});
   summary=await get('/api/learning/summary?source=quick');assert.equal(summary.counts.wrong,1);assert.equal(summary.counts.due,3);assert.equal(summary.counts.favorite,3);
   for(const kind of ['due','favorite']){
     const result=await get(`/api/learning/questions?source=quick&kind=${kind}`);assert.equal(result.total,3);
@@ -180,5 +183,5 @@ test('quick learning distinguishes an ordinary ID from another root with the sam
   attempt(store,'plain-correct','quick-practice',[plain],{'x::a':{value:'true'}},{source:'quick',day:5});
   assert.equal((await get('/api/learning/summary?source=quick')).counts.wrong,0);
   attempt(store,'group-wrong-again','quick-practice',[group],{'x::a':{value:'false'},'x::b':{value:'true'}},{source:'quick',day:6});
-  wrong=await get('/api/learning/questions?source=quick&kind=wrong');assert.equal(wrong.total,1);assert.equal(wrong.items[0].attemptId,'group-wrong-again');assert.equal(wrong.items[0].question.sourceQuestionId,'x');assert.equal(wrong.items[0].wrongCount,2);assert.equal(wrong.items[0].study.notes,'组合题笔记');
+  wrong=await get('/api/learning/questions?source=quick&kind=wrong');assert.equal(wrong.total,1);assert.equal(wrong.items[0].attemptId,'group-wrong-again');assert.equal(wrong.items[0].question.sourceQuestionId,'x');assert.equal(wrong.items[0].wrongCount,2);assert.equal(wrong.items[0].study.notes,'本小题笔记');
 });

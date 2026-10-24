@@ -13,6 +13,8 @@ export interface LearningOrigin {
   deleted?: boolean;
   archived?: boolean;
   attemptId?: string;
+  /** The compact source/error snapshot survives pruning the whole attempt. */
+  historyAvailable?: boolean;
   paperVersion?: number;
   startedAt?: string;
   submittedAt?: string | null;

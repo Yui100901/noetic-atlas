@@ -26,5 +26,5 @@ export interface LearningQuestionSnapshot extends Question {
 export interface ContextLearningQuestion {
   question: LearningQuestionSnapshot;
   answerState?: 'incorrect' | 'unanswered';
-  attemptId?: string; wrongCount: number; lastPracticedAt?: string; study?: StudyState;
+  attemptId?: string; historyAvailable?: boolean; wrongCount: number; lastPracticedAt?: string; study?: StudyState;
 }

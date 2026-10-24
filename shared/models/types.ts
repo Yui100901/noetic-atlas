@@ -11,7 +11,7 @@ export interface Tag { id: string; name: string; color: string; description: str
 export type QuestionStatus = 'published' | 'pending' | 'draft' | 'archived';
 export interface SourceRef { label: string; url: string }
 export interface Option { key: string; text: string }
-export interface StudyState { questionId: string; favorite: boolean; mastery: number | null; notes: string; nextReviewAt: string | null; lastReviewedAt: string | null; wrongCount: number }
+export interface StudyState { questionId: string; partId?: string; favorite: boolean; mastery: number | null; notes: string; nextReviewAt: string | null; lastReviewedAt: string | null; wrongCount: number }
 export interface Question {
   id: string; title: string; type: QuestionType; stemMarkdown: string;
   answerMarkdown: string; explanationMarkdown: string; options: Option[]; correctAnswers: string[];
@@ -20,9 +20,9 @@ export interface Question {
   collection: Collection; status: QuestionStatus;
   categoryIds: string[]; tagIds: string[]; sourceRefs: SourceRef[];
   sourceDocument: string | null; sourceAnchor: string | null;
-  createdAt?: string; updatedAt?: string; study?: StudyState;
+  createdAt?: string; updatedAt?: string; study?: StudyState; partStudies?: StudyState[];
 }
-export type QuestionInput = Omit<Question, 'id' | 'createdAt' | 'updatedAt' | 'study'> & { id?: string };
+export type QuestionInput = Omit<Question, 'id' | 'createdAt' | 'updatedAt' | 'study' | 'partStudies'> & { id?: string };
 export interface QuestionPage { items: Question[]; total: number; page: number; pageSize: number }
 export interface QuestionReviewInput { ids: string[]; action: 'approve' | 'return_to_draft'; confirmed: true; expectedUpdatedAt: Record<string, string> }
 export interface PendingQuestionExport { format: 'learning-pending-questions'; schemaVersion: 1; exportedAt: string; questions: Question[] }

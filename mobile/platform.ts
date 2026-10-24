@@ -28,6 +28,10 @@ function local() {
   return runtime;
 }
 export async function nativeFetch(url: string, options: RequestInit = {}) { return (await local()).fetch(url, options); }
+export async function nativePreviewSQLiteRestore(file: File) { return (await local()).previewRestore(new Uint8Array(await file.arrayBuffer()), file.name); }
+export async function nativeConfirmSQLiteRestore(token: string) { return (await local()).restore(token); }
+export async function nativeLatestRecoveryBackup() { return (await local()).latestRecoveryBackup(); }
+export async function nativeDownloadRecoveryBackup(id: string) { await saveGeneratedFile('认知星图-恢复前数据库.sqlite', await (await local()).recoveryBackupBytes(id), 'application/vnd.sqlite3'); }
 export async function nativeDownload(url: string, filename?: string) {
   const response = await nativeFetch(url);
   if (!response.ok) { const value = await response.json(); throw new Error(value.error?.message || '导出失败'); }

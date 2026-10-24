@@ -1,0 +1,9 @@
+.sqlite-restore-preview h3{overflow-wrap:anywhere}
+.sqlite-restore-preview table{width:100%;border-collapse:collapse;font-size:12px}
+.sqlite-restore-preview th,.sqlite-restore-preview td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--border)}
+.sqlite-restore-preview th:first-child{width:50%}
+.sqlite-restore-preview th:not(:first-child),.sqlite-restore-preview td:not(:first-child){width:25%;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sqlite-restore-confirm{display:flex;align-items:flex-start;gap:8px;margin:14px 0;font-size:12px}
+.sqlite-restore-confirm input{flex:0 0 auto;width:16px;height:16px;margin:3px 0 0}
+.sqlite-restore-preview details{margin-top:12px;font-size:12px}
+.sqlite-restore-preview details code{display:block;margin-top:8px}

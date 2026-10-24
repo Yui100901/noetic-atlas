@@ -56,6 +56,7 @@ test('global mistakes merge still-wrong contexts with complete provenance, froze
 
 test('global favorites and review include untouched library originals, current leaves and all memberships/retained latest attempts',async t=>{
   const {store,get}=await fixture(t),untouched=question('untouched'),g=group('group');store.put('questions',untouched.id,untouched);study(store,untouched.id);paper(store,'members',[g]);study(store,g.id);
+  for(const part of g.parts!)store.putStudy({...store.study(g.id,part.id),mastery:1,nextReviewAt:'2000-01-01T00:00:00Z'});
   attempt(store,'group-history','members',[{...g,stemMarkdown:'旧公共材料'}],{'group::a':{value:'false'},'group::b':{value:'true'}},{day:1});
   store.put('questions',g.id,{...g,stemMarkdown:'当前公共材料'});
   for(const kind of ['favorite','due']){
@@ -74,7 +75,7 @@ test('batch card counts match source summaries in one indexed metadata batch, in
   const db=store.database,original=db.all.bind(db),queries:any[]=[];
   db.all=((query:any)=>{queries.push(query);return original(query);})as typeof db.all;
   const ids=['card-1','card-0',...Array.from({length:18},(_,index)=>`card-${index+2}`),'missing'],batch=await cards(ids);
-  assert.deepEqual(batch.items.map((item:any)=>item.paperId),ids);assert.equal(queries.length,3,'attempts, paper metadata and shared state should each use one batch');
+  assert.deepEqual(batch.items.map((item:any)=>item.paperId),ids);assert.equal(queries.length,5,'durable results, legacy/draft attempts, paper metadata, root state and leaf state each use one batch');
   const attemptQuery=queries.find(query=>query.compile().sql.includes('from "attempts" as "a"'));assert.ok(attemptQuery);const plan=db.explain(attemptQuery).map(row=>String((row as any).detail));assert.ok(!plan.some(detail=>/SCAN a(?:\s|$)/.test(detail)),plan.join('\n'));assert.ok(plan.some(detail=>detail.includes('attempts_source_paper_status_idx')&&detail.includes('(<expr>=? AND <expr>=?)')),plan.join('\n'));
   for(const item of batch.items.filter((item:any)=>item.paperId!=='missing'))assert.deepEqual(item.counts,(await get(`/api/learning/summary?source=paper&paperId=${item.paperId}`)).counts);
   assert.deepEqual(batch.items.at(-1).counts,{drafts:0,submitted:0,wrong:0,favorite:0,due:0});
@@ -101,6 +102,7 @@ test('global pages hydrate only selected snapshots; summaries/cards exclude bodi
 
 test('global and card identities keep ordinary delimiter IDs separate from same-named group leaves',async t=>{
   const {store,get,cards}=await fixture(t),plain=question('x::a'),g=group('x');paper(store,'changed',[plain]);study(store,plain.id);store.put('questions',g.id,g);study(store,g.id);
+  for(const part of g.parts!)store.putStudy({...store.study(g.id,part.id),mastery:1,nextReviewAt:'2000-01-01T00:00:00Z'});
   attempt(store,'plain-wrong','changed',[plain],{'x::a':{value:'false'}},{day:1});paper(store,'changed',[g]);attempt(store,'group-correct','changed',[g],{'x::a':{value:'true'},'x::b':{value:'true'}},{day:2});
   const wrong=await get('/api/learning/global/questions?kind=wrong');assert.equal(wrong.total,1);assert.equal(wrong.items[0].key,JSON.stringify(['x::a','x::a']));assert.equal(wrong.items[0].attemptId,'plain-wrong');assert.equal(wrong.items[0].wrongCount,1);
   const favorites=await get('/api/learning/global/questions?kind=favorite');assert.equal(favorites.total,3);assert.equal(new Set(favorites.items.map((item:any)=>item.key)).size,3);assert.equal(favorites.items.find((item:any)=>item.key===JSON.stringify(['x','x::a'])).wrongCount,0);

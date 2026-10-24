@@ -3,8 +3,19 @@ import { buildApp } from '../server/index';
 import { configureSQLite, currentDatabase } from './shims/sqlite';
 import { configureSeed, SEED_PATH } from './shims/fs';
 import type { LocalApp } from './shims/fastify';
+import type { SQLiteRecoveryBackup, SQLiteRestorePreview, SQLiteRestoreResult } from '../shared/models/sqlite-restore';
+import { prepareSQLiteRestore, shareableRecoveryBytes } from './restore-validation';
+import { databaseCounts, hasActiveExam } from './database/restore-database';
 
-export interface DurableStorage { load(): Promise<Uint8Array | undefined>; save(bytes: Uint8Array): Promise<void> }
+export interface DurableStorage {
+  load(): Promise<Uint8Array | undefined>;
+  save(bytes: Uint8Array): Promise<void>;
+  createRecoveryBackup?(bytes: Uint8Array): Promise<SQLiteRecoveryBackup>;
+  loadRecoveryBackup?(id: string): Promise<Uint8Array>;
+  latestRecoveryBackup?(): Promise<SQLiteRecoveryBackup | undefined>;
+}
+const sameBytes = (left: Uint8Array | undefined, right: Uint8Array | undefined) => left === undefined || right === undefined ? left === right : left.length === right.length && left.every((value, index) => value === right[index]);
+async function sha256(bytes: Uint8Array) { const value = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes).buffer); return [...new Uint8Array(value)].map(byte => byte.toString(16).padStart(2, '0')).join(''); }
 
 /** All local routes reuse server/index, validation, Store and practice verbatim.
  * A successful mutation is acknowledged only after its SQLite bytes are durable.
@@ -19,22 +30,33 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
     try { await storage.save(database.export()); }
     catch (error) { await app.close(); throw error; }
   }
-  let queue = Promise.resolve(); let closed = false;
+  let queue = Promise.resolve(); let closed = false; let revision = 0; let reloadRequired = false;
+  let durableBaseline = (await storage.load())?.slice();
+  let pending: { preview: SQLiteRestorePreview; bytes: Uint8Array; revision: number; disk: Uint8Array | undefined } | undefined;
+  function enqueue<T>(run: () => Promise<T>): Promise<T> {
+    const operation = queue.then(async () => { if (closed) throw new Error('本地数据库已关闭'); return run(); });
+    queue = operation.then(() => undefined, () => undefined); return operation;
+  }
+  function assertNoActiveExam() {
+    if (hasActiveExam(database)) throw new Error('考试进行中，请先交卷，再恢复数据库');
+  }
   const fetch = (url: string, options: RequestInit = {}): Promise<Response> => {
     // Reads are queued too: they must not observe a mutation awaiting durable commit.
-    const operation = queue.then(async () => {
-      if (closed) throw new Error('本地数据库已关闭');
+    return enqueue(async () => {
       if (options.signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
       const method=(options.method||'GET').toUpperCase();
       // These queries carry JSON through POST rather than a long URL. They
       // must also work with read-only storage and never trigger a full save.
       const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata','/api/learning/card-summaries'].includes(new URL(url,'https://localhost').pathname);
       const write = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!readOnlyPost;
+      if (write && reloadRequired) return new Response(JSON.stringify({ error: { code: 'DATABASE_RESTORED', message: '数据库已恢复，请刷新应用后继续修改。' } }), { status: 409, headers: { 'Content-Type': 'application/json' } });
       const before = write ? database.export() : undefined;
-      const response = await app.inject(url, options);
+      let response: Response;
+      try { response = await app.inject(url, options); }
+      catch (error) { if (write) database.restore(before!); throw error; }
       if (write) {
         if (!response.ok) database.restore(before!);
-        else try { await storage.save(database.export()); }
+        else try { const bytes = database.export(); await storage.save(bytes); durableBaseline = bytes.slice(); revision++; }
         catch {
           database.restore(before!);
           return new Response(JSON.stringify({ error: { code: 'LOCAL_STORAGE_FAILED', message: '保存到手机失败，本次修改已撤销。请检查剩余空间后重试，并及时导出备份。' } }), { status: 507, headers: { 'Content-Type': 'application/json' } });
@@ -42,7 +64,59 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       }
       return response;
     });
-    queue = operation.then(() => undefined, () => undefined); return operation;
   };
-  return { fetch, close: async () => { await queue; closed = true; await app.close(); } };
+  return {
+    fetch,
+    previewRestore(bytes: Uint8Array, filename: string): Promise<SQLiteRestorePreview> {
+      // Own this immutable snapshot before waiting behind any concurrent writes.
+      const selected = bytes.slice();
+      return enqueue(async () => {
+        pending = undefined; assertNoActiveExam();
+        const disk = await storage.load();
+        if (!sameBytes(disk, durableBaseline)) throw new Error('本机数据库文件已在应用外改变，请重启应用后重新预览');
+        const prepared = await prepareSQLiteRestore(sql, selected);
+        const preview: SQLiteRestorePreview = { token: crypto.randomUUID(), filename, byteLength: selected.length, sha256: await sha256(selected), schemaVersion: 1, counts: prepared.counts, currentCounts: databaseCounts(database), sourceHadAiKey: prepared.sourceHadAiKey, activeExamCount: prepared.activeExamCount };
+        pending = { preview, bytes: prepared.bytes, revision, disk: disk?.slice() };
+        return preview;
+      });
+    },
+    restore(token: string): Promise<SQLiteRestoreResult> {
+      return enqueue(async () => {
+        assertNoActiveExam();
+        const prepared = pending; pending = undefined;
+        if (!prepared || token !== prepared.preview.token || prepared.revision !== revision) throw new Error('恢复预览已失效，或本机数据已修改，请重新选择文件并预览');
+        if (!sameBytes(await storage.load(), prepared.disk)) throw new Error('本机数据库文件在预览后发生变化，已取消恢复，请重启应用');
+        if (!storage.createRecoveryBackup) throw new Error('当前存储无法保存独立的恢复前副本，已取消恢复');
+        const before = database.export();
+        const recoveryBackup = await storage.createRecoveryBackup(before);
+        let replacement: ReturnType<typeof database.beginReplacement> | undefined;
+        try {
+          // Open the already validated and upgraded candidate before touching
+          // disk. Existing Store/routes retain this exact connection object.
+          replacement = database.beginReplacement(prepared.bytes);
+          await storage.save(prepared.bytes);
+          replacement.commit();
+          durableBaseline = prepared.bytes.slice(); revision++; reloadRequired = true;
+          return { recoveryBackup };
+        } catch (error) {
+          replacement?.rollback();
+          // save() normally restores disk atomically. If a bridge failed during
+          // recovery too, use the independent copy, never a rotated PREVIOUS.
+          try {
+            if (!sameBytes(await storage.load(), durableBaseline)) await storage.save(before);
+            durableBaseline = (await storage.load())?.slice();
+          } catch {
+            throw new Error(`恢复失败，原数据已恢复到内存；恢复前完整副本仍保存在本机（${recoveryBackup.id}）。请导出该副本并检查手机存储后重启应用。`);
+          }
+          throw new Error(`恢复失败，原数据已保留，应用可继续使用。恢复前副本：${recoveryBackup.id}。${error instanceof Error ? error.message : ''}`);
+        }
+      });
+    },
+    latestRecoveryBackup: () => enqueue(async () => storage.latestRecoveryBackup?.()),
+    recoveryBackupBytes: (id: string) => enqueue(async () => {
+      if (!storage.loadRecoveryBackup) throw new Error('当前存储不支持读取恢复前副本');
+      return shareableRecoveryBytes(sql, await storage.loadRecoveryBackup(id));
+    }),
+    close: async () => { await queue; closed = true; pending = undefined; await app.close(); },
+  };
 }

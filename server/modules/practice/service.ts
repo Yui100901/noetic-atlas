@@ -8,6 +8,7 @@ import { distributeGroupPoints, flattenQuestions, validatePaperAnswers, type Sto
 import { applyAttemptRetention, getSettings } from '../settings/routes.js';
 import { validateAssetReferences } from '../assets/routes.js';
 import { answerState, attemptElapsedSeconds, examExpired } from '../../../shared/practice/attempt-timing.js';
+import { preserveLearningResults } from './learning-results.js';
 
 export interface StoredPaper extends Paper { snapshot: Question[] }
 export interface StoredAttempt extends Omit<Attempt, 'questions'> { questions: StoredLeafQuestion[] }
@@ -73,7 +74,7 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
       selected = pool.slice(0, count);
     }
   }
-  const snapshot = selected.map(q => { const { study: _study, ...clean } = q; return clean; });
+  const snapshot = selected.map(q => { const { study: _study, partStudies: _parts, ...clean } = q; return clean; });
   validatePaperAnswers(snapshot,input.mode==='manual'?1_500_000:500);
   const scoring = normalizeScoring(snapshot, scoringInput);
   return { ...(previous?.legacyBankId ? {legacyBankId:previous.legacyBankId}:{}), id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, mode: input.mode, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
@@ -229,13 +230,16 @@ export function submitAttempt(store: Store, attempt: StoredAttempt, answers?: Re
     for (const q of attempt.questions) {
       if (isSubjectiveType(q.type)) continue;
       if (isCorrect(q, attempt.answers[q.id])) attempt.objectiveScore = fromCents(cents(attempt.objectiveScore) + cents(scoring.questionPoints[q.id]!));
-      else if (store.get('questions', q.sourceQuestionId || q.id) && !wrongSources.has(q.sourceQuestionId || q.id)) {
-        const sourceId = q.sourceQuestionId || q.id; wrongSources.add(sourceId);
-        const state = store.study(sourceId); state.wrongCount += 1;
-        state.nextReviewAt = now(); store.put('study', sourceId, state);
+      else {
+        const sourceId = q.sourceQuestionId || q.id, source = store.get<Question>('questions', sourceId), key = JSON.stringify([sourceId, q.partId]);
+        if (!source || wrongSources.has(key) || (q.partId !== undefined ? source.type !== 'group' || !source.parts?.some(part => part.id === q.partId && part.type === q.type) : source.type === 'group')) continue;
+        wrongSources.add(key);
+        const state = store.study(sourceId, q.partId); state.wrongCount += 1;
+        state.nextReviewAt = now(); store.putStudy(state);
       }
     }
     store.put('attempts', attempt.id, attempt);
+    preserveLearningResults(store, attempt);
     applyAttemptRetention(store, attempt);
   }); return attempt;
 }
@@ -252,25 +256,26 @@ export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Reco
       attempt.answers[id] = { ...old, value: old?.value || '', selfScore: score };
       if (score != null && mastery[id] === undefined) mastery[id] = scoring.questionPoints[id]! > 0 ? Math.round(score / scoring.questionPoints[id]! * 3) : 3;
     }
-    const reviewedSources = new Set<string>();
+    const changedMastery = new Set<string>();
     for (const [id, level] of Object.entries(mastery)) {
       if (!attempt.questions.some(q => q.id === id)) fail(400, 'INVALID_MASTERY_QUESTION', '掌握自评题号不属于本次练习');
-      const old = attempt.answers[id]; attempt.answers[id] = { ...old, value: old?.value || '', mastery: level };
+      const old = attempt.answers[id]; if (old?.mastery !== level) changedMastery.add(id);
+      attempt.answers[id] = { ...old, value: old?.value || '', mastery: level };
     }
-    for (const id of Object.keys(mastery)) {
+    for (const id of changedMastery) {
       const q = attempt.questions.find(q => q.id === id)!, sourceId = q.sourceQuestionId || id;
-      if (!store.get('questions', sourceId) || reviewedSources.has(sourceId)) continue;
-      reviewedSources.add(sourceId);
-      const sourceLevels = attempt.questions.filter(q => (q.sourceQuestionId || q.id) === sourceId).map(q => attempt.answers[q.id]?.mastery).filter((v): v is number => v != null);
-      const aggregate = Math.min(...sourceLevels);
-      const state = store.study(sourceId); state.mastery = aggregate; state.lastReviewedAt = now();
-      state.nextReviewAt = new Date(Date.now() + getSettings(store).reviewIntervalsDays[aggregate]! * 86400000).toISOString();
-      store.put('study', sourceId, state);
+      const source = store.get<Question>('questions', sourceId);
+      if (!source || (q.partId !== undefined ? source.type !== 'group' || !source.parts?.some(part => part.id === q.partId && part.type === q.type) : source.type === 'group')) continue;
+      const level = mastery[id]!;
+      const state = store.study(sourceId, q.partId); state.mastery = level; state.lastReviewedAt = now();
+      state.nextReviewAt = new Date(Date.now() + getSettings(store).reviewIntervalsDays[level]! * 86400000).toISOString();
+      store.putStudy(state);
       const reviewId = makeId('review');
-      store.put('reviews', reviewId, { id: reviewId, questionId: sourceId, mastery: aggregate, reviewedAt: now(), source: 'attempt', attemptId: attempt.id });
+      store.put('reviews', reviewId, { id: reviewId, questionId: sourceId, ...(q.partId === undefined ? {} : { partId: q.partId }), mastery: level, reviewedAt: now(), source: 'attempt', attemptId: attempt.id });
     }
     attempt.subjectiveScore = fromCents(Object.values(attempt.answers).reduce((n, a) => n + cents(a.selfScore ?? 0), 0));
     attempt.updatedAt = nextStamp(attempt.updatedAt || attempt.startedAt); store.put('attempts', attempt.id, attempt);
+    preserveLearningResults(store, attempt);
   }); return attempt;
 }
 export function paperMarkdown(paper: StoredPaper, answers: boolean): string {

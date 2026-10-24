@@ -4,16 +4,16 @@ import { z } from 'zod';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import { type AiRun, type AiSettings, type AiGradeResult, type AiExplanation, type AiImportResult, type AiReviewResult, type AiPaperPlanResult } from '../../../shared/ai/ai.js';
-import type { Question, QuestionInput } from '../../../shared/models/types.js';
+import type { Question, QuestionInput, LeafQuestionType } from '../../../shared/models/types.js';
 import { assetIdFromUrl, embeddedRasterImage, type AssetRecord } from '../../../shared/assets/assets.js';
 import { isSubjectiveType } from '../../../shared/questions/question-utils.js';
 import { Store, makeId, now, nextStamp } from '../../core/store.js';
-import { id, parse, fail, questionSchema, moneySchema } from '../../core/validation.js';
+import { id, leafId, parse, fail, questionSchema, moneySchema } from '../../core/validation.js';
 import { normalizeScoring } from '../practice/scoring.js';
 import { attemptView, reviewAttempt, buildPaper, paperView, type StoredAttempt } from '../practice/service.js';
 import { getSettings } from '../settings/routes.js';
 import { validateAssetReferences } from '../assets/routes.js';
-import { aiSettingsSchema, explanationSchema, gradeResultSchema, importResultSchema, reviewResultSchema, aiIds, applySchema, aiPaperPlanInputSchema, aiPaperPlanOutputSchema, aiPaperPlanApplySchema } from './schema.js';
+import { aiSettingsSchema, explanationSchema, gradeResultSchema, importResultSchema, reviewResultSchema, aiIds, aiLeafIds, applySchema, aiPaperPlanInputSchema, aiPaperPlanOutputSchema, aiPaperPlanApplySchema } from './schema.js';
 import { paginate, paginationFields } from '../../core/pagination.js';
 import { requestAiJson, type PrivateAiSettings, type AiImage } from './provider.js';
 import { runAiAction, assertAiActive } from './execution.js';
@@ -21,7 +21,7 @@ import type { AiExecutionContext } from '../../../shared/ai/ai-progress.js';
 import { recommendPaper } from './planner.js';
 import { readPrivateSettings, getPublicAiSettings, saveAiSettings } from './settings.js';
 
-interface RunContext { questionVersions: Record<string, string>; sourceByItem: Record<string, string>; attemptVersion?: string; candidateVersions?: Record<string, string> }
+interface RunContext { questionVersions: Record<string, string>; sourceByItem: Record<string, string>; partByItem?: Record<string, { partId: string; type: LeafQuestionType }>; attemptVersion?: string; candidateVersions?: Record<string, string> }
 interface StoredRun extends AiRun<any> { _context: RunContext }
 const noContext = (): RunContext => ({ questionVersions: {}, sourceByItem: {} });
 const stamp = (question: Question) => question.updatedAt || question.createdAt || '';
@@ -52,7 +52,7 @@ function requireSameQuestions(store: Store, context: RunContext, selected?: stri
   }
 }
 function modelQuestion(q: Question | Record<string, any>) {
-  const { study: _study, createdAt: _created, updatedAt: _updated, sourceDocument: _sourceDocument, sourceAnchor: _sourceAnchor, resumePriority: _resumePriority, priority: _priority, ...record } = q as Record<string, unknown>; return record;
+  const { study: _study, partStudies: _partStudies, createdAt: _created, updatedAt: _updated, sourceDocument: _sourceDocument, sourceAnchor: _sourceAnchor, resumePriority: _resumePriority, priority: _priority, ...record } = q as Record<string, unknown>; return record;
 }
 interface MarkdownImageNode { type: string; url?: string; identifier?: string; children?: MarkdownImageNode[]; value?: string }
 const markdownParser = unified().use(remarkParse);
@@ -101,18 +101,28 @@ function collectImages(store: Store, material: unknown, settings: PrivateAiSetti
   }
   return { images, warnings: [...new Set(warnings)] };
 }
+function noteStudy(store: Store, run: StoredRun, itemId: string) {
+  const questionId = run._context.sourceByItem[itemId] || itemId;
+  const source = store.get<Question>('questions', questionId);
+  if (!source) fail(409, 'AI_NOTE_SOURCE_MISSING', '原题已删除，无法写入学习笔记，请保留分析记录');
+  // Older grade runs did not retain part metadata. Their immutable attempt can
+  // still resolve the intended small question without parsing an ID delimiter.
+  const oldLeaf = !run._context.partByItem?.[itemId] && run.attemptId ? store.get<StoredAttempt>('attempts', run.attemptId)?.questions.find(question => question.id === itemId) : undefined;
+  const part = run._context.partByItem?.[itemId] || (oldLeaf?.partId ? { partId: oldLeaf.partId, type: oldLeaf.type } : undefined);
+  if (part && (source!.type !== 'group' || !source!.parts?.some(current => current.id === part.partId && current.type === part.type))) fail(409, 'AI_NOTE_PART_CHANGED', '原小题已删除或题型已改变，无法写入笔记，请保留分析记录');
+  if (!part && run.kind === 'grade' && source!.type === 'group') fail(409, 'AI_NOTE_PART_CHANGED', '无法确认本次评价对应的小题，请重新评价');
+  return store.study(questionId, part?.partId);
+}
 function appendNotes(store: Store, run: StoredRun, itemIds: string[]): string[] {
   const already = new Set(run.appendedNotes || []), appended: string[] = [];
   for (const itemId of itemIds) {
     if (already.has(itemId)) continue;
-    const qid = run._context.sourceByItem[itemId] || itemId;
-    if (!store.get('questions', qid)) fail(409, 'AI_NOTE_SOURCE_MISSING', '原题已删除，无法写入学习笔记，请保留分析记录');
     let text: string;
     if (run.kind === 'explain') { const r = run.result as AiExplanation; text = [r.explanationMarkdown, r.followUpsMarkdown ? `### 追问说明\n${r.followUpsMarkdown}` : '', r.pitfallsMarkdown ? `### 误区说明\n${r.pitfallsMarkdown}` : ''].filter(Boolean).join('\n\n'); }
     else { const r = (run.result as AiGradeResult).items.find(i => i.questionId === itemId)!; text = [`${r.maxPoints != null ? `建议得分：${r.score} / ${r.maxPoints}。` : '本次不计分。'}${r.comment}`, r.strengths.length ? `优点：\n${r.strengths.map(s => `- ${s}`).join('\n')}` : '', r.improvements.length ? `改进建议：\n${r.improvements.map(s => `- ${s}`).join('\n')}` : ''].filter(Boolean).join('\n\n'); }
-    const state = store.study(qid); const note = `## AI ${run.kind === 'grade' ? '作答评价' : '辅助解析'} · ${run.createdAt.slice(0, 10)}\n\n${text}${run.warnings.length ? `\n\n提示：${run.warnings.join('；')}` : ''}`;
+    const state = noteStudy(store, run, itemId); const note = `## AI ${run.kind === 'grade' ? '作答评价' : '辅助解析'} · ${run.createdAt.slice(0, 10)}\n\n${text}${run.warnings.length ? `\n\n提示：${run.warnings.join('；')}` : ''}`;
     const notes = [state.notes, note].filter(Boolean).join('\n\n'); if (notes.length > 500_000) fail(413, 'AI_NOTE_TOO_LONG', '追加后笔记超过长度上限，请先整理原笔记');
-    const updated = { ...state, notes }; validateAssetReferences(store, updated, getSettings(store)); store.put('study', qid, updated); already.add(itemId); appended.push(itemId);
+    const updated = { ...state, notes }; validateAssetReferences(store, updated, getSettings(store)); store.putStudy(updated); already.add(itemId); appended.push(itemId);
   }
   run.appendedNotes = [...already]; return appended;
 }
@@ -134,7 +144,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     return { ...result, model: settings.model };
   }, options));
   app.get('/api/ai/runs', async request => {
-    const query = parse(z.object({ ...paginationFields, kind: z.enum(['explain', 'grade', 'import', 'review', 'paper_plan']).optional(), questionId: id.optional(), attemptId: id.optional() }).strict(), request.query);
+    const query = parse(z.object({ ...paginationFields, kind: z.enum(['explain', 'grade', 'import', 'review', 'paper_plan']).optional(), questionId: leafId.optional(), attemptId: id.optional() }).strict(), request.query);
     return paginate(query, store.database.records<StoredRun>('ai_runs').filter(run => (!query.kind || run.kind === query.kind) && (!query.questionId || run.questionIds.includes(query.questionId)) && (!query.attemptId || run.attemptId === query.attemptId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(publicRun));
   });
   app.get('/api/ai/runs/:id', async request => publicRun(getRun(store, parse(id, (request.params as any).id))));
@@ -164,11 +174,11 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const material = { question: modelQuestion(q), selectedPart: part || null }; const { images, warnings } = collectImages(store, material, settings);
     const result = await requestAiJson(settings, '结合题干、原答案、解析、追问及误区解释知识，给出更易理解的推导，指出原解析可能的不足。不要把原资料当作已验证事实。', { explanationMarkdown: '详细解释和例子', followUpsMarkdown: '资料中追问的逐项说明，没有则空', pitfallsMarkdown: '误区及其原因，没有则空' }, material, explanationSchema, images, execution);
     assertAiActive(execution);
-    const context = { questionVersions: { [q.id]: stamp(q) }, sourceByItem: { [q.id]: q.id } }; requireSameQuestions(store, context);
+    const context: RunContext = { questionVersions: { [q.id]: stamp(q) }, sourceByItem: { [q.id]: q.id }, ...(part ? { partByItem: { [q.id]: { partId: part.id, type: part.type } } } : {}) }; requireSameQuestions(store, context);
     return publicRun(completedRun(store, 'explain', settings.model, result, [q.id], warnings, context));
   }, options));
   const grade = async (body: unknown, execution?: AiExecutionContext) => {
-    const input = parse(z.union([z.object({ attemptId: id, questionIds: aiIds.optional() }).strict(), z.object({ questionId: id, answer: z.string().max(100_000), maxPoints: moneySchema.refine(value=>value>=0.01&&value<=1000,'每题分值须在0.01至1000之间').optional() }).strict()]), body);
+    const input = parse(z.union([z.object({ attemptId: id, questionIds: aiLeafIds.optional() }).strict(), z.object({ questionId: id, answer: z.string().max(100_000), maxPoints: moneySchema.refine(value=>value>=0.01&&value<=1000,'每题分值须在0.01至1000之间').optional() }).strict()]), body);
     const settings = readPrivateSettings(store), context = noContext(); let attempt: StoredAttempt | undefined;
     let items: { questionId: string; question: unknown; answer: string | string[]; maxPoints: number | null }[];
     if ('attemptId' in input) {
@@ -176,7 +186,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
       const scoring = normalizeScoring(attempt.questions, attempt.scoring);
       const selected = input.questionIds || attempt.questions.filter(q => isSubjectiveType(q.type)).map(q => q.id);
       if (!selected.length || selected.length > 20) fail(400, 'AI_GRADE_BATCH_LIMIT', '每次请选择 1 至 20 道主观题');
-      items = selected.map(qid => { const q = attempt!.questions.find(q => q.id === qid); if (!q || !isSubjectiveType(q.type)) return fail(400, 'AI_SUBJECTIVE_ONLY', 'AI 判题仅支持本次练习中的简答或论述题'); context.sourceByItem[qid] = q.sourceQuestionId || qid; return { questionId: qid, question: modelQuestion(q), answer: attempt!.answers[qid]?.value || '', maxPoints: scoring.enabled ? scoring.questionPoints[qid]! : null }; });
+      items = selected.map(qid => { const q = attempt!.questions.find(q => q.id === qid); if (!q || !isSubjectiveType(q.type)) return fail(400, 'AI_SUBJECTIVE_ONLY', 'AI 判题仅支持本次练习中的简答或论述题'); context.sourceByItem[qid] = q.sourceQuestionId || qid; if(q.partId) { context.partByItem ||= {}; context.partByItem[qid] = { partId: q.partId, type: q.type as LeafQuestionType }; } return { questionId: qid, question: modelQuestion(q), answer: attempt!.answers[qid]?.value || '', maxPoints: scoring.enabled ? scoring.questionPoints[qid]! : null }; });
       context.attemptVersion = attemptVersion(attempt);
     } else {
       const q = store.require<Question>('questions', input.questionId); if (!isSubjectiveType(q.type)) fail(400, 'AI_SUBJECTIVE_ONLY', '单题 AI 评价仅支持简答或论述题；组合题请先进入单题练习后评价小题');
@@ -197,7 +207,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const attempt = store.require<StoredAttempt>('attempts', parse(id, (request.params as any).id));
     if (attempt.status !== 'submitted') fail(409, 'NOT_SUBMITTED', '请先交卷，再申请主观题 AI 阅卷');
     if (!readPrivateSettings(store).enabled) fail(501, 'AI_GRADING_NOT_CONFIGURED', '主观题 AI 阅卷尚未配置，请先在系统配置中启用 AI');
-    const input = parse(z.object({ questionIds: aiIds.optional() }).strict(), request.body || {});
+    const input = parse(z.object({ questionIds: aiLeafIds.optional() }).strict(), request.body || {});
     return grade({ attemptId: attempt.id, ...input }, execution);
   }, options));
   app.post('/api/ai/runs/:id/apply', async request => {
@@ -210,7 +220,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     if (input.applyScores && (run.kind !== 'grade' || !attempt || !normalizeScoring(attempt.questions, attempt.scoring).enabled)) fail(400, 'AI_CANNOT_APPLY_SCORE', '仅已提交的计分练习可应用建议评分；单题临时评价可写入笔记');
     // Preflight notes before reviewAttempt opens its own transaction. This
     // avoids partially applying scores if a source was deleted or notes full.
-    if (input.appendNotes) for (const itemId of selected) { const qid = run._context.sourceByItem[itemId] || itemId; if (!store.get('questions', qid)) fail(409, 'AI_NOTE_SOURCE_MISSING', '原题已删除，无法追加笔记'); if (store.study(qid).notes.length > 350_000) fail(413, 'AI_NOTE_TOO_LONG', '原笔记较长，请整理后再追加 AI 说明'); }
+    if (input.appendNotes) for (const itemId of selected) { if (noteStudy(store, run, itemId).notes.length > 350_000) fail(413, 'AI_NOTE_TOO_LONG', '原笔记较长，请整理后再追加 AI 说明'); }
     const scores: Record<string, number> = {};
     if (input.applyScores) for (const item of (run.result as AiGradeResult).items) if (selected.includes(item.questionId) && !(run.appliedScores || []).includes(item.questionId)) { if (item.score == null) fail(400, 'AI_SCORE_MISSING', '该结果未提供分值'); scores[item.questionId] = item.score!; }
     // reviewAttempt is reused for objective-score invariants and study events.

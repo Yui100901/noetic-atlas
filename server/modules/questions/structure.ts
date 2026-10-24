@@ -2,7 +2,7 @@ import type { Question } from '../../../shared/models/types.js';
 import { fail } from '../../core/validation.js';
 export interface StoredLeafQuestion extends Question { sourceQuestionId?: string; groupId?: string; groupTitle?: string; groupStemMarkdown?: string; partId?: string; partIndex?: number }
 export function flattenQuestions(questions: Question[]): StoredLeafQuestion[] {
-  return questions.flatMap(q => q.type !== 'group' ? [q] : (q.parts || []).map((part, index) => ({ ...q, ...part, id: `${q.id}::${part.id}`, parts: undefined, sourceQuestionId: q.id, groupId: q.id, groupTitle: q.title, groupStemMarkdown: q.stemMarkdown, partId: part.id, partIndex: index })));
+  return questions.flatMap(({ partStudies: _studies, ...q }) => q.type !== 'group' ? [q] : (q.parts || []).map((part, index) => ({ ...q, ...part, id: `${q.id}::${part.id}`, parts: undefined, sourceQuestionId: q.id, groupId: q.id, groupTitle: q.title, groupStemMarkdown: q.stemMarkdown, partId: part.id, partIndex: index })));
 }
 /** Papers count material groups as one question, but every independent answer
  * still consumes the shared 500-answer payload/snapshot limit. */

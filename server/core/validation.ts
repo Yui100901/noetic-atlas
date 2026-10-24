@@ -4,7 +4,10 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: unknown) { super(message); }
 }
 export const fail = (status: number, code: string, message: string, details?: unknown): never => { throw new ApiError(status, code, message, details); };
-export const id = z.string().trim().min(1).max(160).regex(/^[\p{L}\p{N}_.:-]+$/u, 'ID 只能含字母、数字和 _ . : -').refine(v => !['__proto__', 'prototype', 'constructor'].includes(v), 'ID 为保留名称');
+const identifier = (maximum: number) => z.string().trim().min(1).max(maximum).regex(/^[\p{L}\p{N}_.:-]+$/u, 'ID 只能含字母、数字和 _ . : -').refine(v => !['__proto__', 'prototype', 'constructor'].includes(v), 'ID 为保留名称');
+export const id = identifier(160);
+/** A flattened identity contains a 160-character parent, ::, and a 160-character part. */
+export const leafId = identifier(322);
 const text = z.string().max(500_000);
 const name = z.string().trim().min(1).max(300);
 const ids = z.array(id).max(500).refine(a => new Set(a).size === a.length, '引用 ID 不得重复');
@@ -46,7 +49,7 @@ export const questionSchema = z.object({
     if (new Set(q.parts?.map(p => p.id)).size !== q.parts?.length) ctx.addIssue({ code: 'custom', message: '子题ID不能重复' });
   } else if (q.parts?.length) ctx.addIssue({ code: 'custom', message: '仅组合题可以定义子题' });
 });
-export const snapshotQuestionSchema = questionSchema.safeExtend({ sourceQuestionId: id.optional(), groupId: id.optional(), groupTitle: name.optional(), groupStemMarkdown: text.optional(), partId: id.optional(), partIndex: z.number().int().min(0).max(29).optional() });
+export const snapshotQuestionSchema = questionSchema.safeExtend({ id: leafId.optional(), sourceQuestionId: id.optional(), groupId: id.optional(), groupTitle: name.optional(), groupStemMarkdown: text.optional(), partId: id.optional(), partIndex: z.number().int().min(0).max(29).optional() }).superRefine((question, context) => { if (!question.partId && question.id && !id.safeParse(question.id).success) context.addIssue({ code: 'custom', path: ['id'], message: '普通题或整组题号最多160字符' }); });
 export const selectedIdsSchema = z.object({ ids: ids.refine(a => a.length > 0, '至少选择一道题目') }).strict();
 export const questionMetadataInputSchema = z.object({ ids: z.array(id).min(1).max(50000).refine(values => new Set(values).size === values.length, '题号不得重复') }).strict();
 export const questionReviewSchema = selectedIdsSchema.extend({ action: z.enum(['approve', 'return_to_draft']), confirmed: z.literal(true), expectedUpdatedAt: z.record(id, stamp) }).strict().superRefine((v, ctx) => {
@@ -67,16 +70,16 @@ export const filtersSchema = z.object({ tagIds: ids.optional(), tagMode: z.enum(
 export const moneySchema = z.number().finite().min(0).max(10000).refine(v => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, '分值最多保留两位小数');
 const positivePoints = moneySchema.refine(v => v >= 0.01 && v <= 1000, '每题分值须在0.01至1000之间');
 export const typePointsSchema = z.object({ short_answer: positivePoints.optional(), true_false: positivePoints.optional(), single_choice: positivePoints.optional(), multiple_choice: positivePoints.optional(), fill_blank: positivePoints.optional(), essay: positivePoints.optional(), group: positivePoints.optional() }).strict();
-export const scoringInputSchema = z.object({ enabled: z.boolean(), totalPoints: moneySchema.optional(), questionPoints: z.record(id, positivePoints).optional(), objectivePercent: z.number().finite().min(0).max(100).optional(), pointsByType: typePointsSchema.optional() }).strict();
+export const scoringInputSchema = z.object({ enabled: z.boolean(), totalPoints: moneySchema.optional(), questionPoints: z.record(leafId, positivePoints).optional(), objectivePercent: z.number().finite().min(0).max(100).optional(), pointsByType: typePointsSchema.optional() }).strict();
 // Stored fields include calculated values, which are checked against snapshots
 // on import rather than silently discarding a corrupted scoring configuration.
-export const storedScoringSchema = z.object({ enabled: z.boolean(), totalPoints: moneySchema, questionPoints: z.record(id, moneySchema), objectivePercent: z.number().finite().min(0).max(100), actualObjectivePercent: z.number().finite().min(0).max(100), objectivePoints: moneySchema, subjectivePoints: moneySchema, pointsByType: typePointsSchema.refine(p => ['short_answer','true_false','single_choice','multiple_choice'].every(t => p[t as keyof typeof p] !== undefined), '旧有四种题型分值不可缺项'), scheme: z.enum(['legacy', 'custom', 'none']) }).strict();
+export const storedScoringSchema = z.object({ enabled: z.boolean(), totalPoints: moneySchema, questionPoints: z.record(leafId, moneySchema), objectivePercent: z.number().finite().min(0).max(100), actualObjectivePercent: z.number().finite().min(0).max(100), objectivePoints: moneySchema, subjectivePoints: moneySchema, pointsByType: typePointsSchema.refine(p => ['short_answer','true_false','single_choice','multiple_choice'].every(t => p[t as keyof typeof p] !== undefined), '旧有四种题型分值不可缺项'), scheme: z.enum(['legacy', 'custom', 'none']) }).strict();
 export const paperInputSchema = z.object({ id: id.optional(), title: name, description: text.default(''), mode: z.enum(['manual', 'random']), organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null), questionIds: z.array(id).max(50_000).refine(a=>new Set(a).size===a.length, '题集题号不可重复').optional(), filters: filtersSchema.nullable().optional(), count: z.number().int().min(1).max(500).optional(), scoring: scoringInputSchema.optional() });
 export const answerSchema = z.object({ value: z.union([z.string().max(100_000), z.array(z.string().max(1000)).max(30)]), selfScore: moneySchema.nullable().optional(), mastery: z.number().int().min(0).max(3).nullable().optional() });
 export const answersSchema = z.record(z.string(), answerSchema).refine(v => Object.keys(v).length <= 500, '单次最多500个作答项');
-export const studySchema = z.object({ favorite: z.boolean().optional(), mastery: z.number().int().min(0).max(3).nullable().optional(), notes: text.optional(), nextReviewAt: stamp.nullable().optional() }).strict();
-export const reviewSchema = z.object({ mastery: z.number().int().min(0).max(3) }).strict();
-export const scoreSchema = z.object({ scores: z.record(id, moneySchema.nullable()).optional(), mastery: z.record(id, z.number().int().min(0).max(3)).optional() }).strict().refine(v => Object.keys(v.scores || {}).length + Object.keys(v.mastery || {}).length > 0, '至少提交一道题的评分或掌握自评');
+export const studySchema = z.object({ partId: id.optional(), favorite: z.boolean().optional(), mastery: z.number().int().min(0).max(3).nullable().optional(), notes: text.optional(), nextReviewAt: stamp.nullable().optional() }).strict();
+export const reviewSchema = z.object({ partId: id.optional(), mastery: z.number().int().min(0).max(3) }).strict();
+export const scoreSchema = z.object({ scores: z.record(leafId, moneySchema.nullable()).optional(), mastery: z.record(leafId, z.number().int().min(0).max(3)).optional() }).strict().refine(v => Object.keys(v.scores || {}).length + Object.keys(v.mastery || {}).length > 0, '至少提交一道题的评分或掌握自评');
 export function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success) fail(400, 'VALIDATION_ERROR', '输入数据不符合约定', result.error.issues.map(e => ({ path: e.path.join('.'), message: e.message })));

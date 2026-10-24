@@ -30,14 +30,14 @@ export function validateAssetReferences(store: Store, record: unknown, limits?: 
   if (doc && 'bodyMarkdown' in doc && doc.format !== 'pdf' && doc.assetId) fail(400, 'MARKDOWN_ASSET_NOT_ALLOWED', 'Markdown 资料直接保存可编辑正文，不关联原始文件资产');
 }
 export function validateAllAssetReferences(store: Store) {
-  for (const table of ['questions', 'documents', 'papers', 'attempts', 'study', 'reviews'] as const) for (const record of store.all(table)) validateAssetReferences(store, record);
+  for (const table of ['questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'reviews', 'learning_results'] as const) for (const record of store.all(table)) validateAssetReferences(store, record);
 }
 /** Derived references use the same structural collector as writes/migration;
  * a file page never scans source bodies or historical snapshots. */
 function referencedAssetIds(store: Store, wanted: Set<string>): Set<string> {
   if (!wanted.size) return new Set();
   const database = store.database;
-  database.projections.ensure(['questions', 'documents', 'papers', 'attempts', 'study', 'reviews']);
+  database.projections.ensure(['questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'reviews', 'learning_results']);
   return new Set(database.all(database.query.selectFrom('asset_references').select('asset_id').distinct().where(database.expressions.idInJson('asset_id', [...wanted]))).map(row => row.asset_id));
 }
 export function assetIsReferenced(store: Store, aid: string): boolean {

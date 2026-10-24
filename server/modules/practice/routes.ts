@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { PaperDraft } from '../../../shared/practice/paper-drafts.js';
 import type { Question } from '../../../shared/models/types.js';
 import { Store, now, nextStamp } from '../../core/store.js';
-import { fail, parse, id, paperInputSchema, filtersSchema, answersSchema, scoreSchema } from '../../core/validation.js';
+import { fail, parse, id, leafId, paperInputSchema, filtersSchema, answersSchema, scoreSchema } from '../../core/validation.js';
 import { attemptView, buildPaper, createAttempt, createQuickAttempt, saveAttempt, revealQuickAttempt, paperMarkdown, paperView, reviewAttempt, submitAttempt, syncAttempt, syncExams, getActiveExam, type StoredAttempt, type StoredPaper } from './service.js';
 import { getSettings } from '../settings/routes.js';
 import { paginationFields } from '../../core/pagination.js';
@@ -22,7 +22,7 @@ export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
     return paperView(store.require<StoredPaper>('papers',getId(request)),query.summary==='true'?'summary':true);
   });
   app.get('/api/papers/:id/questions/:questionId', async request => {
-    const params = parse(z.object({id,questionId:id}).strict(), request.params);
+    const params = parse(z.object({id,questionId:leafId}).strict(), request.params);
     const paper = store.require<StoredPaper>('papers', params.id);
     const question = flattenQuestions(paper.snapshot).find(q=>q.id===params.questionId);
     if (!question) fail(404,'QUESTION_SET_MEMBER_NOT_FOUND','该题目不属于此题集');

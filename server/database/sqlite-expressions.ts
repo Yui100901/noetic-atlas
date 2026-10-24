@@ -25,6 +25,7 @@ export class SqliteExpressions {
     return sql<string>`(select coalesce(json_group_array(json_object(
       'id',${qid},'type',json_extract(item.value,'$.type'),
       'sourceQuestionId',json_extract(item.value,'$.sourceQuestionId'),
+      'partId',json_extract(item.value,'$.partId'),
       'correctAnswers',json_extract(item.value,'$.correctAnswers'),'blanks',json_extract(item.value,'$.blanks'),
       'answerValue',case when json_extract(item.value,'$.type') in ('short_answer','essay') then null else json_extract(${data},${answerPath} || '.value') end,
       'selfScore',json_extract(${data},${answerPath} || '.selfScore'),
@@ -36,19 +37,28 @@ export class SqliteExpressions {
   questionLearningLeaves(ref:string):RawBuilder<string> {
     const data=sql.ref(ref),root=sql`json_extract(${data},'$.id')`;
     return sql<string>`case when json_extract(${data},'$.type')='group' then
-      (select coalesce(json_group_array(json_object('id',${root} || '::' || json_extract(part.value,'$.id'),'sourceId',${root})),'[]') from json_each(${data},'$.parts') as part)
-      else json_array(json_object('id',${root},'sourceId',${root})) end`;
+      (select coalesce(json_group_array(json_object('id',${root} || '::' || json_extract(part.value,'$.id'),'sourceId',${root},'partId',json_extract(part.value,'$.id'),'type',json_extract(part.value,'$.type'))),'[]') from json_each(${data},'$.parts') as part)
+      else json_array(json_object('id',${root},'sourceId',${root},'type',json_extract(${data},'$.type'))) end`;
   }
   paperLearningLeaves(ref:string):RawBuilder<string> {
     const data=sql.ref(ref);
-    return sql<string>`(select coalesce(json_group_array(json_object('id',leaf_id,'sourceId',source_id)),'[]') from (
-      select json_extract(member.value,'$.id') as leaf_id,coalesce(json_extract(member.value,'$.sourceQuestionId'),json_extract(member.value,'$.id')) as source_id
+    return sql<string>`(select coalesce(json_group_array(json_object('id',leaf_id,'sourceId',source_id,'partId',part_id)),'[]') from (
+      select json_extract(member.value,'$.id') as leaf_id,coalesce(json_extract(member.value,'$.sourceQuestionId'),json_extract(member.value,'$.id')) as source_id,json_extract(member.value,'$.partId') as part_id
       from json_each(${data},'$.snapshot') as member where json_extract(member.value,'$.type')!='group'
       union all
-      select json_extract(member.value,'$.id') || '::' || json_extract(part.value,'$.id') as leaf_id,json_extract(member.value,'$.id') as source_id
+      select json_extract(member.value,'$.id') || '::' || json_extract(part.value,'$.id') as leaf_id,json_extract(member.value,'$.id') as source_id,json_extract(part.value,'$.id') as part_id
       from json_each(${data},'$.snapshot') as member join json_each(member.value,'$.parts') as part
       where json_extract(member.value,'$.type')='group'
     ))`;
+  }
+  /** Page-local frozen content, without unrelated questions or user answers. */
+  selectedLearningQuestions(ref: string, identities: readonly { sourceId: string; id: string }[]): RawBuilder<string> {
+    const wanted = JSON.stringify(identities.map(item => [item.sourceId, item.id]));
+    return sql<string>`(select coalesce(json_group_array(json(item.value)),'[]') from json_each(${sql.ref(ref)},'$.questions') as item
+      where exists(select 1 from json_each(${wanted}) as selected where json_extract(selected.value,'$[0]')=coalesce(json_extract(item.value,'$.sourceQuestionId'),json_extract(item.value,'$.id')) and json_extract(selected.value,'$[1]')=json_extract(item.value,'$.id')))`;
+  }
+  arrayRecordsByIds(ref: string, key: string, ids: readonly string[]): RawBuilder<string> {
+    return sql<string>`(select coalesce(json_group_array(json(item.value)),'[]') from json_each(${sql.ref(ref)},${this.path(key)}) as item where json_extract(item.value,'$.id') in (select value from json_each(${JSON.stringify(ids)})))`;
   }
   idInJson(ref: string, values: readonly string[]): RawBuilder<SqlBool> { return sql<SqlBool>`${sql.ref(ref)} in (select value from json_each(${JSON.stringify(values)}))`; }
   unicodeContains(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`atlas_unicode_contains(${value},${needle})=1`; }
@@ -58,4 +68,5 @@ export class SqliteExpressions {
   dateValue(value: Expression<any>): RawBuilder<number | null> { return sql<number | null>`julianday(${value})`; }
   concat(values: readonly Expression<any>[]): RawBuilder<string> { return sql<string>`${sql.join(values,sql` || ' ' || `)}`; }
   interpolated(ref: string,key: string): RawBuilder<string> { return sql<string>`case when json_type(${sql.ref(ref)},${this.path(key)}) is null then 'undefined' when json_type(${sql.ref(ref)},${this.path(key)})='null' then 'null' else ${this.field(ref,key)} end`; }
+  objectArrayHas(ref:string,key:string,property:string,value:Expression<any>):RawBuilder<SqlBool> { return sql<SqlBool>`exists(select 1 from json_each(${sql.ref(ref)},${this.path(key)}) as member where json_extract(member.value,${this.path(property)})=${value})`; }
 }

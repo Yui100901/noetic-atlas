@@ -13,6 +13,8 @@ import { paperDraftSchema, validatePaperDraft } from '../practice/paper-drafts.j
 import type { PaperDraftState } from '../../../shared/practice/paper-drafts.js';
 import { cleanLearningEnvelope } from '../../../shared/questions/learning-records.js';
 import { cleanLegacyBankFilters, legacyBankPaper, legacyBankPaperId, migrateLegacyBanks } from '../banks/legacy-banks.js';
+import { studyPartKey } from '../../../shared/questions/study-state.js';
+import { learningResultSchema, validateLearningResult, migrateLearningResults } from '../practice/learning-results.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
@@ -27,16 +29,18 @@ const attemptSchema = z.object({
   practiceMode: z.enum(['practice','exam']).optional(), durationMinutes: z.number().int().min(1).max(1440).nullable().optional(), deadlineAt: datetime.nullable().optional(), elapsedSeconds: z.number().int().nonnegative().optional(), autoSubmitted: z.boolean().optional(),
 });
 const studySchema = z.object({ questionId: id, favorite: z.boolean(), mastery: z.number().int().min(0).max(3).nullable(), notes: z.string().max(500000), nextReviewAt: datetime.nullable(), lastReviewedAt: datetime.nullable(), wrongCount: z.number().int().nonnegative() });
-const reviewSchema = z.object({ id: id.optional(), questionId: id, mastery: z.number().int().min(0).max(3), reviewedAt: datetime, source: z.string().max(100).default('manual'), attemptId: id.optional() });
+const partStudySchema = studySchema.extend({ partId: id, favorite: z.literal(false).default(false) });
+const reviewSchema = z.object({ id: id.optional(), questionId: id, partId: id.optional(), mastery: z.number().int().min(0).max(3), reviewedAt: datetime, source: z.string().max(100).default('manual'), attemptId: id.optional() });
 const envelopeSchema = z.object({
   schemaVersion: z.literal(1), generatedAt: z.string().optional(), exportedAt: z.string().optional(),
   domains: z.array(domainSchema.extend({ id })), categories: z.array(categorySchema.extend({ id })), tags: z.array(tagSchema.extend({ id })), questions: z.array(questionSchema), documents: z.array(documentSchema.extend({ _archived: z.boolean().optional() })), papers: z.array(paperSchema),
-  study: z.array(studySchema).default([]), reviews: z.array(reviewSchema).default([]), attempts: z.array(attemptSchema).default([]),
+  study: z.array(studySchema).default([]), studyParts: z.array(partStudySchema).default([]), learningResults: z.array(learningResultSchema).default([]), reviews: z.array(reviewSchema).default([]), attempts: z.array(attemptSchema).default([]),
   questionBanks: z.array(questionBankSchema.safeExtend({ id })).default([]),
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table;
+const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table;
+const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
   const papers = store.all<StoredPaper>('papers');
@@ -50,16 +54,16 @@ export function importData(store: Store, raw: unknown) {
   const data = parse(envelopeSchema, cleanLegacyBankFilters(cleanLearningEnvelope(raw)));
   for (const table of tables) {
     const records = data[dataKey(table)];
-    const keys = records.map((r: any) => table === 'study' ? r.questionId : r.id).filter(Boolean);
+    const keys = records.map((r: any) => recordKey(table, r)).filter(Boolean);
     if (new Set(keys).size !== keys.length) fail(400, 'DUPLICATE_IMPORT_ID', `导入数据包含重复 ID：${table}`);
     if (table !== 'reviews' && keys.length !== records.length) fail(400, 'IMPORT_ID_REQUIRED', `导入数据缺少 ID：${table}`);
   }
   const result: Record<string, { added: number; skipped: number }> = {};
   return store.transaction(() => {
-    function insert(table: Table, records: any[], key = 'id') {
+    function insert(table: Table, records: any[], key: string | ((record: any) => string) = 'id') {
       const counts = result[dataKey(table)] = { added: 0, skipped: 0 };
       for (const value of records) {
-        const entityId = value[key] || makeId(table.slice(0, -1));
+        const entityId = (typeof key === 'function' ? key(value) : value[key]) || makeId(table.slice(0, -1));
         if (store.get(table, entityId)) { counts.skipped++; continue; }
         store.insert(table, entityId, table === 'reviews' ? { ...value, id: entityId } : value); counts.added++;
       }
@@ -114,6 +118,10 @@ export function importData(store: Store, raw: unknown) {
     insert('paper_drafts', data.paperDrafts);
     for (const state of data.study) store.require('questions', state.questionId);
     insert('study', data.study, 'questionId');
+    // Keep removed-part history in a backup without assigning it to another
+    // current part. Readers validate current membership before using it.
+    for (const state of data.studyParts) store.require('questions', state.questionId);
+    insert('study_parts', data.studyParts, value => studyPartKey(value.questionId, value.partId));
     for (const a of data.attempts) {
       if (a.source === 'quick') {
         if (a.paperId !== QUICK_PAPER_ID || a.paperVersion !== 1) fail(400, 'INVALID_ATTEMPT_SOURCE', '随机单题来源与固定标识不一致');
@@ -135,6 +143,9 @@ export function importData(store: Store, raw: unknown) {
       a.updatedAt = a.updatedAt || a.submittedAt || a.startedAt;
     }
     insert('attempts', data.attempts);
+    const importedAttempts = new Map(data.attempts.map(value => [value.id, value as StoredAttempt]));
+    insert('learning_results', data.learningResults.map(value => validateLearningResult(store, value, importedAttempts.get(value.id))));
+    migrateLearningResults(store);
     // Reviews remain useful study events after retention removes their attempt.
     for (const r of data.reviews) store.require('questions', r.questionId);
     insert('reviews', data.reviews);

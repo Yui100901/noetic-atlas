@@ -4,6 +4,7 @@ import { nextStamp, type Store } from '../../core/store.js';
 import { fail, typePointsSchema } from '../../core/validation.js';
 import type { StoredAttempt } from '../practice/service.js';
 import { paperDraftRetentionCandidates } from '../practice/paper-draft-retention.js';
+import { preserveLearningResults } from '../practice/learning-results.js';
 
 export const settingsSchema = z.object({
   id: z.literal('system'), updatedAt: z.string().datetime({ offset: true }),
@@ -62,7 +63,7 @@ export function retentionPreview(attempts: StoredAttempt[]): RetentionPreview {
 }
 
 export function applyAttemptRetention(store: Store, attempt: StoredAttempt) {
-  for (const old of retentionCandidates(store, getSettings(store), { source: attempt.source || 'paper', paperId: attempt.paperId, status: attempt.status, preserveId: attempt.id })) store.remove('attempts', old.id);
+  for (const old of retentionCandidates(store, getSettings(store), { source: attempt.source || 'paper', paperId: attempt.paperId, status: attempt.status, preserveId: attempt.id })) { preserveLearningResults(store, old); store.remove('attempts', old.id); }
 }
 
 export function settingsRetentionPlan(store: Store, settings: SystemSettings) {
@@ -82,7 +83,7 @@ export function saveSettings(store: Store, settings: SystemSettings, options: { 
   if (options.confirmedRetention && options.expectedRetention && (['drafts', 'history', 'total', 'authoring'] as const).some(key => (options.expectedRetention![key] || 0) !== (retention[key] || 0))) fail(409, 'RETENTION_CONFIRMATION_REQUIRED', '确认期间待清理记录数量已变化，请重新检查当前数量', retention);
   const saved = { ...settings, updatedAt: nextStamp(previous.updatedAt) };
   store.put('settings', 'system', saved);
-  for (const old of attempts) store.remove('attempts', old.id);
+  for (const old of attempts) { preserveLearningResults(store, old); store.remove('attempts', old.id); }
   for (const old of authoring) store.remove('paper_drafts', old.id);
   return { settings: saved, retention };
 }

@@ -77,6 +77,7 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
     return store.transaction(() => {
       store.remove('questions', qid);
       if (store.get('study', qid)) store.remove('study', qid);
+      for (const state of store.all<any>('study_parts')) if (state.questionId === qid) store.remove('study_parts', JSON.stringify([qid, state.partId]));
       for (const review of store.all<any>('reviews')) if (review.questionId === qid) store.remove('reviews', review.id);
       return { ok: true, deleted: qid };
     });

@@ -11,16 +11,15 @@ import { paginationFields } from '../../core/pagination.js';
 import { flattenQuestions } from '../questions/structure.js';
 import { learningJudgment, learningQuestionKey, type LearningJudgingItem } from './learning-state.js';
 import { QUICK_PAPER_ID, type StoredAttempt } from './service.js';
+import { learningMetadata, learningSnapshots, type LearningMetadata } from './learning-results.js';
+import { loadLeafStudies } from '../study/state.js';
 
 export const globalLearningSummaryQuerySchema=z.object({}).strict();
 export const globalLearningQuestionsQuerySchema=z.object({kind:z.enum(['wrong','favorite','due']),...paginationFields,page:paginationFields.page.default(1),pageSize:paginationFields.pageSize.default(20)}).strict();
 export const learningCardSummariesInputSchema=z.object({paperIds:z.array(id).min(1).max(100).refine(ids=>new Set(ids).size===ids.length,'题集ID不得重复')}).strict();
 
-interface Leaf { id:string; sourceId:string }
-interface AttemptMetadata {
-  id:string; source:LearningSource|null; paperId:string; paperTitle:string; paperVersion:number;
-  status:'in_progress'|'submitted'; startedAt:string; submittedAt:string|null; updatedAt:string|null; items:string;
-}
+interface Leaf { id:string; sourceId:string; partId?:string }
+type AttemptMetadata = LearningMetadata;
 interface Entry extends Leaf { key:string; attempt:AttemptMetadata; answerState?:'incorrect'|'unanswered' }
 interface Context {
   source:LearningSource; paperId:string; drafts:number; submitted:number;
@@ -36,27 +35,22 @@ const recentEntries=(a:Entry,b:Entry)=>timestamp(practicedAt(b.attempt))-timesta
 /** One compact query for the requested contexts. No attempt or question body,
  * subjective answer text, study notes or full paper snapshot crosses this read. */
 function attemptContexts(store:Store,paperIds?:readonly string[]):Context[] {
-  const db=store.database,field=db.expressions.field.bind(db.expressions);
-  let query=db.query.selectFrom('attempts as a').select('a.id').select([
-    field<LearningSource|null>('a.data','source').as('source'),field<string>('a.data','paperId').as('paperId'),field<string>('a.data','paperTitle').as('paperTitle'),field<number>('a.data','paperVersion').as('paperVersion'),
-    field<'in_progress'|'submitted'>('a.data','status').as('status'),field<string>('a.data','startedAt').as('startedAt'),field<string|null>('a.data','submittedAt').as('submittedAt'),field<string|null>('a.data','updatedAt').as('updatedAt'),db.expressions.attemptLearningItems('a.data').as('items'),
-  ]);
-  if(paperIds)query=query.where(eb=>eb.or([eb(field('a.data','source'),'=','paper'),eb(field('a.data','source'),'is',null)])).where(field<string>('a.data','paperId'),'in',paperIds);
-  const rows=db.all(query).sort((a,b)=>timestamp(practicedAt(b))-timestamp(practicedAt(a))||b.id.localeCompare(a.id));
+  const rows=learningMetadata(store,{paperIds});
   const contexts=new Map<string,Context>();
   for(const attempt of rows){
     const source=attempt.source||'paper',contextKey=JSON.stringify([source,attempt.paperId]);
     let context=contexts.get(contextKey);
     if(!context){context={source,paperId:attempt.paperId,drafts:0,submitted:0,latest:new Map(),judged:new Map(),wrongCounts:new Map()};contexts.set(contextKey,context);}
-    if(attempt.status==='submitted')context.submitted++;else context.drafts++;
-    for(const item of JSON.parse(attempt.items) as LearningJudgingItem[]){
-      const sourceId=item.sourceQuestionId||item.id,key=learningQuestionKey(sourceId,item.id),entry:Entry={id:item.id,sourceId,key,attempt};
+    if(attempt.historyAvailable){if(attempt.status==='submitted')context.submitted++;else context.drafts++;}
+    for(const item of attempt.items){
+      const sourceId=item.sourceQuestionId||item.id,key=learningQuestionKey(sourceId,item.id),entry:Entry={id:item.id,sourceId,...(item.partId?{partId:item.partId}:{}),key,attempt};
       if(!context.latest.has(key))context.latest.set(key,entry);
       if(attempt.status!=='submitted')continue;
-      const judgment=learningJudgment(item);if(!judgment)continue;
-      entry.answerState=judgment.answerState;
-      if(judgment.wrong)context.wrongCounts.set(key,(context.wrongCounts.get(key)||0)+1);
-      if(!context.judged.has(key))context.judged.set(key,{wrong:judgment.wrong,entry});
+      if(!item.judgment)continue;
+      const wrong=item.judgment!=='correct';
+      if(wrong)entry.answerState=item.judgment as 'incorrect'|'unanswered';
+      if(wrong)context.wrongCounts.set(key,(context.wrongCounts.get(key)||0)+1);
+      if(!context.judged.has(key))context.judged.set(key,{wrong,entry});
     }
   }
   return [...contexts.values()];
@@ -77,19 +71,27 @@ function papers(store:Store,options:{paperIds?:readonly string[];sourceIds?:read
 function libraryLeaves(store:Store):LibraryLeaf[] {
   const db=store.database,field=db.expressions.field.bind(db.expressions),now=Date.now();
   const rows=db.all(db.query.selectFrom('study as s').innerJoin('questions as q','q.id','s.id').select([
-    field<number>('s.data','favorite').as('favorite'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt'),db.expressions.questionLearningLeaves('q.data').as('leaves'),
+    field<number>('s.data','favorite').as('favorite'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt'),field<string>('q.data','type').as('type'),db.expressions.questionLearningLeaves('q.data').as('leaves'),
   ]).where(eb=>eb.or([eb(field('s.data','favorite'),'=',1),eb(field('s.data','nextReviewAt'),'is not',null)])));
-  return rows.flatMap(row=>{
-    const favorite=!!row.favorite,due=!!row.nextReviewAt&&Number.isFinite(Date.parse(row.nextReviewAt))&&Date.parse(row.nextReviewAt)<=now;
-    if(!favorite&&!due)return [];
-    return (JSON.parse(row.leaves) as Leaf[]).map(leaf=>({...leaf,key:learningQuestionKey(leaf.sourceId,leaf.id),favorite,due,nextReviewAt:row.nextReviewAt}));
-  });
+  const result=new Map<string,LibraryLeaf>();
+  for(const row of rows){
+    const favorite=!!row.favorite,due=row.type!=='group'&&!!row.nextReviewAt&&Number.isFinite(Date.parse(row.nextReviewAt))&&Date.parse(row.nextReviewAt)<=now;
+    if(!favorite&&!due)continue;
+    for(const leaf of JSON.parse(row.leaves) as Leaf[]){const key=learningQuestionKey(leaf.sourceId,leaf.id);result.set(key,{...leaf,key,favorite,due,nextReviewAt:row.type==='group'?null:row.nextReviewAt});}
+  }
+  const parts=db.all(db.query.selectFrom('study_parts as s').innerJoin('questions as q',join=>join.onRef('q.id','=',field<string>('s.data','questionId'))).select([field<string>('s.data','partId').as('partId'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt'),db.expressions.questionLearningLeaves('q.data').as('leaves')]).where(field('q.data','type'),'=','group').where(field('s.data','nextReviewAt'),'is not',null));
+  for(const row of parts){
+    if(!row.nextReviewAt||!Number.isFinite(Date.parse(row.nextReviewAt))||Date.parse(row.nextReviewAt)>now)continue;
+    const leaf=(JSON.parse(row.leaves) as Leaf[]).find(leaf=>leaf.partId===row.partId);if(!leaf)continue;
+    const key=learningQuestionKey(leaf.sourceId,leaf.id),previous=result.get(key);result.set(key,{...leaf,key,favorite:previous?.favorite||false,due:true,nextReviewAt:row.nextReviewAt});
+  }
+  return [...result.values()];
 }
 function wrongCandidates(contexts:Context[]):GlobalCandidate[] {
   const result=new Map<string,GlobalCandidate>();
   for(const context of contexts)for(const {wrong,entry} of context.judged.values())if(wrong){
     let candidate=result.get(entry.key);
-    if(!candidate){candidate={key:entry.key,id:entry.id,sourceId:entry.sourceId,entries:[]};result.set(entry.key,candidate);}
+    if(!candidate){candidate={key:entry.key,id:entry.id,sourceId:entry.sourceId,...(entry.partId?{partId:entry.partId}:{}),entries:[]};result.set(entry.key,candidate);}
     candidate.entries.push({context,entry});
     if(!candidate.selected||recentEntries(entry,candidate.selected)<0)candidate.selected=entry;
   }
@@ -97,7 +99,7 @@ function wrongCandidates(contexts:Context[]):GlobalCandidate[] {
 }
 function attemptOrigin(context:Context,entry:Entry,paperMap:Map<string,PaperMetadata>):LearningOrigin {
   const a=entry.attempt,paper=paperMap.get(context.paperId);
-  return {source:context.source,...(context.source==='paper'?{paperId:context.paperId,deleted:!paper,archived:!!paper?.archived}:{}),paperTitle:a.paperTitle||'随机练习',attemptId:a.id,paperVersion:a.paperVersion,startedAt:a.startedAt,submittedAt:a.submittedAt,questionId:entry.id,...(entry.answerState?{answerState:entry.answerState}:{}),wrongCount:context.wrongCounts.get(entry.key)||0};
+  return {source:context.source,...(context.source==='paper'?{paperId:context.paperId,deleted:!paper,archived:!!paper?.archived}:{}),paperTitle:a.paperTitle||'随机练习',attemptId:a.id,historyAvailable:a.historyAvailable,paperVersion:a.paperVersion,startedAt:a.startedAt,submittedAt:a.submittedAt,questionId:entry.id,...(entry.answerState?{answerState:entry.answerState}:{}),wrongCount:context.wrongCounts.get(entry.key)||0};
 }
 function hydrate(store:Store,candidates:GlobalCandidate[],kind:GlobalLearningKind,contexts:Context[]):GlobalLearningQuestion[] {
   if(!candidates.length)return [];
@@ -115,20 +117,17 @@ function hydrate(store:Store,candidates:GlobalCandidate[],kind:GlobalLearningKin
     const historyPaperIds=[...new Set(contexts.filter(context=>context.source==='paper'&&[...context.latest.keys()].some(key=>pageKeys.has(key))).map(context=>context.paperId))].filter(id=>!paperMap.has(id));
     for(const paper of papers(store,{paperIds:historyPaperIds}))paperMap.set(paper.id,paper);
   }
-  const attemptIds=[...new Set(candidates.flatMap(candidate=>candidate.selected?[candidate.selected.attempt.id]:[]))];
-  const attemptRows=attemptIds.length?db.all(db.query.selectFrom('attempts').select(['id','data']).where(db.expressions.idInJson('id',attemptIds))):[];
-  const snapshots=new Map(attemptRows.map(row=>[row.id,new Map((cleanLearningRecord('attempts',JSON.parse(row.data)) as StoredAttempt).questions.map(q=>[q.id,q]))]));
+  const snapshots=learningSnapshots(store,candidates.flatMap(candidate=>candidate.selected?[{...candidate,attemptId:candidate.selected.attempt.id}]:[]));
   const questionRows=kind==='wrong'?[]:db.all(db.query.selectFrom('questions').select(['id','data']).where(db.expressions.idInJson('id',roots)));
   const current=new Map(questionRows.flatMap(row=>flattenQuestions([cleanLearningRecord('questions',JSON.parse(row.data)) as Question]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q] as const)));
-  const stateRows=db.all(db.query.selectFrom('study as s').innerJoin('questions as q','q.id','s.id').select(['s.id','s.data']).where(db.expressions.idInJson('s.id',roots)));
-  const states=new Map(stateRows.map(row=>[row.id,JSON.parse(row.data) as StudyState]));
+  const states=loadLeafStudies(store,candidates,{includeNotes:true});
   return candidates.map(candidate=>{
     const entries=kind==='wrong'?candidate.entries:contexts.flatMap(context=>{const entry=context.latest.get(candidate.key);return entry?[{context,entry}]:[];});
     entries.sort((a,b)=>recentEntries(a.entry,b.entry));
     const origins=[...(kind==='wrong'?[]:memberships.get(candidate.key)||[]),...entries.map(({context,entry})=>attemptOrigin(context,entry,paperMap))];
     if(!origins.length)origins.push({source:'library',paperTitle:'知识题库',questionId:candidate.id});
     const selected=candidate.selected,lastPracticedAt=selected?practicedAt(selected.attempt):entries[0]?practicedAt(entries[0].entry.attempt):undefined;
-    return {key:candidate.key,question:selected?snapshots.get(selected.attempt.id)!.get(candidate.id)!:current.get(candidate.key)!,snapshotSource:kind==='wrong'?'attempt':'library',origins,wrongCount:entries.reduce((n,{context})=>n+(context.wrongCounts.get(candidate.key)||0),0),...(selected?{attemptId:selected.attempt.id,...(selected.answerState?{answerState:selected.answerState}:{})}:{}),...(lastPracticedAt?{lastPracticedAt}:{}),...(states.has(candidate.sourceId)?{study:states.get(candidate.sourceId)!}:{})};
+    return {key:candidate.key,question:selected?snapshots.get(selected.attempt.id)!.get(candidate.key)!:current.get(candidate.key)!,snapshotSource:kind==='wrong'?'attempt':'library',origins,wrongCount:entries.reduce((n,{context})=>n+(context.wrongCounts.get(candidate.key)||0),0),...(selected?{attemptId:selected.attempt.id,historyAvailable:selected.attempt.historyAvailable,...(selected.answerState?{answerState:selected.answerState}:{})}:{}),...(lastPracticedAt?{lastPracticedAt}:{}),...(states.has(candidate.key)?{study:states.get(candidate.key)!}:{})};
   });
 }
 
@@ -146,17 +145,15 @@ export function learningCardSummaries(store:Store,paperIds:readonly string[]):Le
   const contexts=attemptContexts(store,paperIds),byPaper=new Map(contexts.map(context=>[context.paperId,context])),paperRows=papers(store,{paperIds}),paperMap=new Map(paperRows.map(paper=>[paper.id,paper]));
   const members=new Map<string,Map<string,Leaf>>();
   for(const paperId of paperIds){
-    const context=byPaper.get(paperId),leaves=new Map<string,Leaf>(context?[...context.latest].map(([key,entry])=>[key,{id:entry.id,sourceId:entry.sourceId}]):[]);
+    const context=byPaper.get(paperId),leaves=new Map<string,Leaf>(context?[...context.latest].map(([key,entry])=>[key,{id:entry.id,sourceId:entry.sourceId,...(entry.partId?{partId:entry.partId}:{})}]):[]);
     const paper=paperMap.get(paperId);if(paper)for(const leaf of JSON.parse(paper.leaves) as Leaf[])leaves.set(learningQuestionKey(leaf.sourceId,leaf.id),leaf);
     members.set(paperId,leaves);
   }
-  const roots=[...new Set([...members.values()].flatMap(leaves=>[...leaves.values()].map(leaf=>leaf.sourceId)))],db=store.database,field=db.expressions.field.bind(db.expressions);
-  const states=roots.length?db.all(db.query.selectFrom('study as s').innerJoin('questions as q','q.id','s.id').select('s.id').select([field<number>('s.data','favorite').as('favorite'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt')]).where(db.expressions.idInJson('s.id',roots))):[];
-  const stateMap=new Map(states.map(state=>[state.id,state])),now=Date.now();
+  const stateMap=loadLeafStudies(store,[...members.values()].flatMap(leaves=>[...leaves.values()])),now=Date.now();
   return {items:paperIds.map(paperId=>{
     const context=byPaper.get(paperId),leaves=members.get(paperId)!;let favorite=0,due=0;
     for(const leaf of leaves.values()){
-      const state=stateMap.get(leaf.sourceId);if(state?.favorite)favorite++;
+      const state=stateMap.get(learningQuestionKey(leaf.sourceId,leaf.id));if(state?.favorite)favorite++;
       if(state?.nextReviewAt&&Number.isFinite(Date.parse(state.nextReviewAt))&&Date.parse(state.nextReviewAt)<=now)due++;
     }
     return {paperId,counts:{drafts:context?.drafts||0,submitted:context?.submitted||0,wrong:context?[...context.judged.values()].filter(value=>value.wrong).length:0,favorite,due}};

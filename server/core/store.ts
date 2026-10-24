@@ -6,9 +6,10 @@ import type { Question, QuestionBank, QuestionPage, Category, Domain, Tag, Docum
 import { fail } from './validation.js';
 import { cleanLearningRecord } from '../../shared/questions/learning-records.js';
 import { QuestionQueries, type QuestionSelection } from '../modules/questions/queries.js';
+import { emptyStudy, studyPartKey } from '../../shared/questions/study-state.js';
 
 export type Entity = Domain | Category | Tag | Question | QuestionBank | DocumentRecord | StudyState | Paper | Attempt;
-export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts'] as const;
+export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts'] as const;
 export type Table = typeof tables[number];
 export const now = () => new Date().toISOString();
 export const nextStamp = (previous?: string) => new Date(Math.max(Date.now(), previous ? Date.parse(previous) + 1 : 0)).toISOString();
@@ -104,8 +105,9 @@ export class Store {
     while (changed) { changed = false; for (const c of categories) if (c.parentId && result.has(c.parentId) && !result.has(c.id)) { result.add(c.id); changed = true; } }
     return result;
   }
-  study(id: string): StudyState { return this.get<StudyState>('study', id) ?? { questionId: id, favorite: false, mastery: null, notes: '', nextReviewAt: null, lastReviewedAt: null, wrongCount: 0 }; }
-  question(id: string): Question { const q = this.require<Question>('questions', id); return { ...q, study: this.study(id) }; }
+  study(id: string, partId?: string): StudyState { return (partId === undefined ? this.get<StudyState>('study', id) : this.get<StudyState>('study_parts', studyPartKey(id, partId))) ?? emptyStudy(id, partId); }
+  putStudy(state: StudyState) { this.put(state.partId === undefined ? 'study' : 'study_parts', state.partId === undefined ? state.questionId : studyPartKey(state.questionId, state.partId), state); }
+  question(id: string): Question { const q = this.require<Question>('questions', id); return { ...q, study: this.study(id), ...(q.type === 'group' ? { partStudies: (q.parts || []).map(part => this.study(id, part.id)) } : {}) }; }
   private questionSelection(query:Record<string,any>):QuestionSelection {
     const paperQuestions=query.paperId?this.require<Paper>('papers',query.paperId).questionIds:undefined;
     const categories=query.categoryId?[...this.categoryDescendants(query.categoryId)]:undefined;

@@ -251,6 +251,7 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   const wrongQuick = await call('/api/quick-practice', 'POST', { questionId: group.id }, 201);
   await call(`/api/attempts/${wrongQuick.id}/submit`, 'POST', { answers: { [`${group.id}::sum`]: { value: ['5'] }, [`${group.id}::discuss`]: { value: '未计分主观作答不应被记错' } } });
   await call(`/api/study/${group.id}`, 'PUT', { favorite: true, nextReviewAt: '2020-01-01T00:00:00.000Z' });
+  for(const partId of ['sum','mutate','discuss'])await call(`/api/study/${group.id}`, 'PUT', { partId, nextReviewAt: '2020-01-01T00:00:00.000Z' });
   await call(`/api/papers/${groupPaper.id}?permanent=true`, 'DELETE');
   await call(`/api/papers/${draftPaper.id}?permanent=true`, 'DELETE');
   const groupScope = `source=paper&paperId=${groupPaper.id}`;

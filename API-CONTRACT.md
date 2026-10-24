@@ -97,19 +97,20 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 - `GET /api/learning/summary?source=paper&paperId=ID`：当前题集的草稿、历史、错题、到期与收藏计数；随机／单题使用 `source=quick` 且不能携带 paperId。
 - `GET /api/learning/attempts`：同一上下文，必填 `status=in_progress|submitted`，支持 page、pageSize，返回不含题目和答案正文的分页历史摘要。
 - `GET /api/learning/questions`：同一上下文，必填 `kind=wrong|due|favorite`，支持分页，返回当次内容快照、关联作答及必要原题学习状态。
-- `GET /api/learning/contexts`：分页返回仍有作答记录、但源题集已永久删除的上下文，供题集页保留历史入口。
+- `GET /api/learning/contexts`：分页返回仍有作答或独立学习结果、但源题集已永久删除的上下文，供题集页保留历史入口。
 - `GET /api/learning/global/summary`：返回三个固定汇总题集的去重题数 `{counts:{wrong,favorite,due}}`。
 - `GET /api/learning/global/questions?kind=wrong|favorite|due`：分页返回汇总题目、复合 `key`、完整 `origins` 及 `snapshotSource`。错题合并各来源仍待巩固的错误，默认返回最近错误快照；收藏与到期采用存活原题，包含没有题集或作答关联的题目。来源可含题集、版本、是否已删除、具体作答ID与时间；不截断来源列表。
 - `POST /api/learning/card-summaries`：严格接收 `{paperIds}`，1—100个不重复题集ID，返回 `{items:[{paperId,counts:{wrong,favorite,due,drafts,submitted}}]}`。只读批量统计，不写学习状态；移动运行时不触发落盘。
-- `GET /api/study`：学习状态和复习记录；`GET /api/reviews` 可按 questionId 与分页查询复习事件。
-- `PUT /api/study/:id`：`{favorite?,mastery?,notes?,nextReviewAt?}`；`POST /api/study/:id/review`：`{mastery:0..3}`。
+- `GET /api/study`：`items`整题状态、`partItems`小题状态和复习记录；`GET /api/reviews` 可按 questionId、partId 与分页查询，`whole=true`仅查询整题旧记录。
+- `PUT /api/study/:id`：`{partId?,favorite?,mastery?,notes?,nextReviewAt?}`；`POST /api/study/:id/review`：`{partId?,mastery:0..3}`。指定partId时掌握、日期和笔记仅作用于该小题，收藏仍在整题记录操作。题目详情返回`partStudies`，旧整组状态不克隆为各小题状态。
+- `GET /api/learning/reset-preview`：读取影响数量及新鲜度指纹；`POST /api/learning/reset`接收`{confirmed:true,fingerprint}`，事务内重新核对。清除掌握、复习安排、错误状态与复习事件，保留收藏、笔记、卷面历史成绩和草稿。过期返回`LEARNING_RESET_PREVIEW_STALE`，必须重新预览。
 - `GET /api/settings`：SystemSettings；`PUT /api/settings`：`{settings,confirmedRetention?,expectedRetention?}`。
 
-前端不再设置全局学习记录导航：题集详情组织各自草稿、历史、错题与复习，随机与单题在随机练习页单独组织。旧 `/api/study`、`/api/reviews` 及作答数据表继续保留。上下文错题取该范围内每个叶题最新已判结果，后续正确则移出，未判不覆盖已判，未答客观题需巩固；不使用全局累计 wrongCount 作为当前错题。收藏与到期按相关存活原题的共享学习状态筛选。
+前端不再设置全局学习记录导航：题集详情组织各自草稿、历史、错题与复习，随机与单题在随机练习页单独组织。上下文错题取该范围内每个叶题最新已判结果，后续正确则移出，未判不覆盖已判，未答客观题需巩固。`learning_results`独立保存判定、来源及错误题目必要快照，不保留整卷答案；清理历史后仍可阅读公共材料和错误题目，`historyAvailable:false`表示不再有完整复盘，客户端不生成失效链接。组合小题使用原题ID与小题ID的元组保存学习状态；收藏整组，掌握、日期及笔记独立。
 
 配置包括答题草稿上限、随机自测草稿、组题草稿 maxPaperDrafts、历史保留、考试分钟、组题默认值、每种题型分值、复习间隔、自动保存等待、资料及图片大小。初始答题／组题草稿各 3 份；提交历史 0 表示不限量；组题默认 20 题、不计分；计分时默认 100 分、客观目标 60%；考试默认 120 分钟。
 
-降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪作答或组题记录不会删除题目的独立学习笔记与复习安排。
+降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪不删除独立错题状态、错误快照、来源摘要、笔记及复习安排。旧库启动和旧备份导入时从尚存历史补建学习证据，已提前删除的历史无法追溯恢复。
 
 ## AI 配置与任务
 
@@ -181,6 +182,8 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 - `GET /api/papers/:id/export?answers=true|false`：Markdown 卷。网页下载转换托管图片为 data URI；PDF 中 PNG/JPEG 直嵌，GIF/WebP 使用首帧。
 - `GET /api/export`：完整 JSON；`POST /api/import`：`{data,mode:'merge'}`。迁移保留题目原审核状态，与新增题目导入区分；同 ID 内容不静默覆盖。
 - `GET /api/backup.sqlite`：可迁移 SQLite 下载副本，清除 AI 密钥，保留本机源库。JSON 备份／分享不包含 AI 凭据；附件较多时优先 SQLite。
+
+Android通过原生平台接口接收SQLite二进制进行完整恢复，不通过HTTP JSON传输。预览先检查原始文件头、完整性、版本、应用表结构及记录主键，再在隔离副本验证数据和引用，剥除输入触发器及派生缓存并由可信代码重建。确认绑定已校验文件、本机写入版本及磁盘基线；本机有活动考试时拒绝。替换前写入并回读独立原库副本，落盘失败回退原连接和原文件；成功后刷新应用，旧页面写入被拒绝。恢复后的AI密钥清除且AI关闭，需重新填写启用；原库私有副本仍含原配置，对外导出时脱敏。JSON完整备份包含`studyParts`及`learningResults`，与同包作答不一致的学习证据整批拒绝。
 
 旧数据库启动、可信 JSON 导入及旧分享包导入时，会把 questionBanks／question_banks 自动转为题集，保留名称、说明、顺序与完整题目快照；ID冲突使用迁移标记和新ID处理，重复导入不重复创建。含未发布题或空集合先归档。旧 bankId 筛选被清理，已有题目、笔记和作答历史不改写。
 

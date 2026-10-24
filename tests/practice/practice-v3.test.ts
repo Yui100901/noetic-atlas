@@ -65,14 +65,14 @@ test('fill blank matching is ordered and literal with explicit trim/case rules a
   const submitted = json(await app.inject({ method: 'POST', url: `/api/attempts/${a.id}/submit`, payload: { answers: { F: { value: [' TCP ', 'Go'] } } } })); assert.equal(submitted.objectiveScore, 2); assert.deepEqual(submitted.questions[0].blanks[0].answers, ['TCP', '传输控制协议']);
 });
 
-test('group leaves keep common material, independent answers, exact cents and parent study aggregation', async t => {
+test('group leaves keep common material, independent answers, exact cents and independent part study', async t => {
   const app = await appFixture(t); const p = json(await app.inject({ method: 'POST', url: '/api/papers', payload: { title: '程序材料', mode: 'manual', questionIds: ['G'], scoring: { enabled: true, questionPoints: { G: 10 }, totalPoints: 10 } } }), 201);
   assert.equal(p.questionCount, 1); assert.equal(p.answerCount, 3); assert.deepEqual(p.questions.map((q: any) => q.points), [3.34, 3.33, 3.33]); assert.equal(p.scoring.objectivePoints, 6.67); assert.equal(p.questions[1].sourceQuestionId, 'G');
   const a = json(await app.inject({ method: 'POST', url: `/api/papers/${p.id}/attempts` }), 201); assert.equal(a.questions[1].groupStemMarkdown, group('G').stemMarkdown); assert.equal(a.questions[1].blanks[0].answers, undefined);
   const answers = { 'G::part-1': { value: 'false' }, 'G::part-2': { value: ['wrong', 'Go'] }, 'G::part-3': { value: '长篇说明' } };
-  const submitted = json(await app.inject({ method: 'POST', url: `/api/attempts/${a.id}/submit`, payload: { answers } })); assert.equal(submitted.objectiveScore, 0); assert.equal(submitted.pendingSubjectiveCount, 1); assert.equal(json(await app.inject('/api/questions/G')).study.wrongCount, 1);
-  const reviewed = json(await app.inject({ method: 'PUT', url: `/api/attempts/${a.id}/review`, payload: { scores: { 'G::part-3': 3.25 }, mastery: { 'G::part-1': 1, 'G::part-2': 3, 'G::part-3': 2 } } })); assert.equal(reviewed.totalScore, 3.25); assert.equal(json(await app.inject('/api/questions/G')).study.mastery, 1);
-  const backup = json(await app.inject('/api/export')); assert.equal(backup.reviews.length, 1); assert.equal(backup.reviews[0].questionId, 'G');
+  const submitted = json(await app.inject({ method: 'POST', url: `/api/attempts/${a.id}/submit`, payload: { answers } })); assert.equal(submitted.objectiveScore, 0); assert.equal(submitted.pendingSubjectiveCount, 1); const studyAfterSubmit = json(await app.inject('/api/questions/G')); assert.equal(studyAfterSubmit.study.wrongCount, 0); assert.deepEqual(studyAfterSubmit.partStudies.map((s: any) => s.wrongCount), [1, 1, 0]);
+  const reviewed = json(await app.inject({ method: 'PUT', url: `/api/attempts/${a.id}/review`, payload: { scores: { 'G::part-3': 3.25 }, mastery: { 'G::part-1': 1, 'G::part-2': 3, 'G::part-3': 2 } } })); assert.equal(reviewed.totalScore, 3.25); const studyAfterReview = json(await app.inject('/api/questions/G')); assert.equal(studyAfterReview.study.mastery, null); assert.deepEqual(studyAfterReview.partStudies.map((s: any) => s.mastery), [1, 3, 2]);
+  const backup = json(await app.inject('/api/export')); assert.equal(backup.reviews.length, 3); assert.equal(backup.reviews[0].questionId, 'G'); assert.deepEqual(backup.reviews.map((r: any) => r.partId), ['part-1', 'part-2', 'part-3']);
   const tiny = json(await app.inject({ method: 'POST', url: '/api/papers', payload: { title: '分值舍入', mode: 'manual', questionIds: ['G'], scoring: { enabled: true, questionPoints: { G: 0.01 } } } }), 201); assert.deepEqual(tiny.questions.map((q: any) => q.points), [0.01, 0, 0]);
 });
 
@@ -157,6 +157,7 @@ test('legacy graded and draft snapshots without new source/time/scoring fields m
   const draft = json(await app.inject({ method: 'POST', url: `/api/papers/${p.id}/attempts` }), 201); json(await app.inject({ method: 'PUT', url: `/api/attempts/${draft.id}`, payload: { answers: { B: { value: '未完的旧答案' } } } }));
   const graded = json(await app.inject({ method: 'POST', url: `/api/papers/${p.id}/attempts` }), 201); json(await app.inject({ method: 'POST', url: `/api/attempts/${graded.id}/submit`, payload: { answers: { A: { value: 'true' }, B: { value: '已评旧答案' } } } })); json(await app.inject({ method: 'PUT', url: `/api/attempts/${graded.id}/review`, payload: { scores: { B: 2 } } }));
   const data = json(await app.inject('/api/export')); for (const p of data.papers) delete p.scoring; for (const a of data.attempts) for (const key of ['source', 'updatedAt', 'referenceViewedAt', 'scoring']) delete a[key];
+  delete data.learningResults; // A genuinely old backup predates independent evidence.
   data.questions.find((q: any) => q.id === 'B').answerMarkdown = '新版答案不能覆盖快照';
   const restored = await buildApp({ databasePath: ':memory:', seedPath: 'not-present-v3-legacy', staticRoot: 'not-present-v3' }); t.after(() => restored.close());
   json(await restored.inject({ method: 'POST', url: '/api/import', payload: { data, mode: 'merge' } }));

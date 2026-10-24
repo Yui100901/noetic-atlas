@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import { Store } from '../../server/core/store.js';
-import { ApiError } from '../../server/core/validation.js';
+import { ApiError, parse, questionSchema } from '../../server/core/validation.js';
 import { registerSettingsRoutes, ensureSettings, getSettings } from '../../server/modules/settings/routes.js';
 import { registerAiRoutes } from '../../server/modules/ai/routes.js';
 import { getPublicAiSettings, readPrivateSettings, saveAiSettings } from '../../server/modules/ai/settings.js';
@@ -26,7 +26,8 @@ async function fixture(t: test.TestContext, docs?: 'web' | 'native') {
   return { app, store, call, withAi };
 }
 function record(store: Store, id: string, status: string, timestamp: string, extra = {}) {
-  store.put('attempts', id, { id, paperId: 'P', source: 'paper', status, startedAt: timestamp, updatedAt: timestamp, ...(status === 'submitted' ? { submittedAt: timestamp } : {}), ...extra });
+  const question = { ...parse(questionSchema, { id: 'configuration-fixture', title: '保留策略测试题', type: 'true_false', stemMarkdown: '判断此题。', correctAnswers: ['true'] }), id: 'configuration-fixture' };
+  store.put('attempts', id, { id, paperId: 'P', paperTitle: '保留策略测试', paperVersion: 1, source: 'paper', status, questions: [question], answers: {}, startedAt: timestamp, updatedAt: timestamp, ...(status === 'submitted' ? { submittedAt: timestamp } : {}), ...extra });
 }
 function authoring(store: Store, id: string, timestamp: string) { store.put('paper_drafts', id, { id, context: 'manual', updatedAt: timestamp, state: { title: id } }); }
 const stamps = ['2026-10-01T00:00:00.000Z', '2026-10-02T00:00:00.000Z', '2026-10-03T00:00:00.000Z'];

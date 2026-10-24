@@ -60,12 +60,12 @@ test('explicit SQLite cleanup preserves IDs, timestamps, answers and collections
     paper_drafts:{id:'draft',state:{...draftState(),filters:{priority:'P0'},random:{priority:'P1'}},updatedAt:stamp},
   };
   for (const [table,value] of Object.entries(records)) store.db.prepare(`INSERT INTO ${table}(id,data) VALUES(?,?)`).run(value.id,JSON.stringify(value));
-  assert.deepEqual(cleanStoredLearningMetadata(store.db),{questions:1,papers:1,attempts:1,paper_drafts:1});
+  assert.deepEqual(cleanStoredLearningMetadata(store.db),{questions:1,papers:1,attempts:1,learning_results:0,paper_drafts:1});
   for (const [table,value] of Object.entries(records)) {
     const row = store.db.prepare(`SELECT data FROM ${table} WHERE id=?`).get(value.id) as {data:string};
     assert.deepEqual(JSON.parse(row.data), cleanLearningRecord(table,value));
   }
-  assert.deepEqual(cleanStoredLearningMetadata(store.db),{questions:0,papers:0,attempts:0,paper_drafts:0});
+  assert.deepEqual(cleanStoredLearningMetadata(store.db),{questions:0,papers:0,attempts:0,learning_results:0,paper_drafts:0});
 });
 
 test('SQLite cleanup rolls back all table changes if a later update fails', t => {

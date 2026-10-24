@@ -24,6 +24,8 @@ import { registerPracticeRoutes } from './modules/practice/routes.js';
 import { registerContextLearningRoutes } from './modules/practice/learning.js';
 import { registerGlobalLearningRoutes } from './modules/practice/global-learning.js';
 import { registerTransferRoutes } from './modules/transfer/routes.js';
+import { migrateLearningResults } from './modules/practice/learning-results.js';
+import { registerLearningResetRoutes } from './modules/study/reset.js';
 
 export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void }
 export async function buildApp(options: AppOptions = {}) {
@@ -31,7 +33,7 @@ export async function buildApp(options: AppOptions = {}) {
   // Normal installations start empty. A seed is an explicit test/operator input,
   // never an implicit lookup into a working directory containing personal data.
   const seedPath = options.seedPath || process.env.SEED_PATH;
-  const app = Fastify({ logger: options.logger ?? false, bodyLimit: 80 * 1024 * 1024 });
+  const app = Fastify({ logger: options.logger ?? false, bodyLimit: 80 * 1024 * 1024, routerOptions: { maxParamLength: 4096 } });
   await registerApiDocs(app, { native: options.native });
   const store = new Store(dbPath);
   app.addHook('onClose', async () => { store.db.close(); });
@@ -41,7 +43,7 @@ export async function buildApp(options: AppOptions = {}) {
       importData(store, JSON.parse(readFileSync(seedPath, 'utf8')));
       store.database.run(store.database.query.insertInto('metadata').values({key:'seed_initialized',value:now()}).onConflict(c=>c.column('key').doUpdateSet({value:now()})));
     }
-    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); validateAllAssetReferences(store); return migrated; });
+    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store); validateAllAssetReferences(store); return migrated || learning > 0; });
     if (migrated) options.onDataMigrated?.();
     store.database.projections.refreshAll();
   } catch (error) { store.db.close(); throw error; }
@@ -68,6 +70,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerTaxonomyRoutes(app, store);
 
   registerStudyRoutes(app, store);
+  registerLearningResetRoutes(app, store);
 
   registerExportRoutes(app, store);
 

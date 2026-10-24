@@ -19,7 +19,7 @@ function array(value: unknown, transform: (input: unknown) => unknown): unknown 
 }
 const question = (value: unknown) => without(value, 'resumePriority');
 const filters = (value: unknown) => without(value, 'priority');
-export const learningMetadataTables = ['questions', 'papers', 'attempts', 'paper_drafts'] as const;
+export const learningMetadataTables = ['questions', 'papers', 'attempts', 'learning_results', 'paper_drafts'] as const;
 
 export function cleanLearningRecord<T>(table: string, value: T): T {
   let next: unknown = value;
@@ -28,7 +28,7 @@ export function cleanLearningRecord<T>(table: string, value: T): T {
     next = field(next, 'filters', filters);
     next = field(next, 'snapshot', items => array(items, question));
   }
-  if (table === 'attempts') next = field(next, 'questions', items => array(items, question));
+  if (table === 'attempts' || table === 'learning_results') next = field(next, 'questions', items => array(items, question));
   if (table === 'paper_drafts') next = field(next, 'state', state => field(field(state, 'filters', filters), 'random', filters));
   return next as T;
 }
@@ -37,7 +37,7 @@ export function cleanLearningRecord<T>(table: string, value: T): T {
 export function cleanLearningEnvelope<T>(value: T): T {
   let next: unknown = value;
   for (const table of learningMetadataTables) {
-    const key = table === 'paper_drafts' ? 'paperDrafts' : table;
+    const key = table === 'paper_drafts' ? 'paperDrafts' : table === 'learning_results' ? 'learningResults' : table;
     next = field(next, key, items => array(items, item => cleanLearningRecord(table, item)));
   }
   return next as T;

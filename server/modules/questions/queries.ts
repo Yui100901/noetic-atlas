@@ -2,9 +2,9 @@ import type { Question, QuestionPage, StudyState } from '../../../shared/models/
 import { cleanLearningRecord } from '../../../shared/questions/learning-records.js';
 import type { DatabaseConnection } from '../../database/connection.js';
 import { QuestionOrder } from '../../database/question-order.js';
+import { emptyStudy, studyPartKey } from '../../../shared/questions/study-state.js';
 
 const enabled = (input:unknown) => input === true || input === 'true' || input === '1';
-const emptyStudy = (id:string):StudyState => ({questionId:id,favorite:false,mastery:null,notes:'',nextReviewAt:null,lastReviewedAt:null,wrongCount:0});
 export interface QuestionSelection { categories?:string[]; domainCategories?:string[]; paperQuestions?:string[]; tags:string[] }
 export type QuestionMetadata = Pick<Question,'id'|'title'|'type'|'status'|'collection'|'difficulty'|'depth'|'frequency'|'categoryIds'|'tagIds'>;
 
@@ -38,16 +38,28 @@ export class QuestionQueries {
     const search=String(query.search||'').toLowerCase().trim();
     if(search)result=result.where(eb=>expr.containsLiteral(eb.ref('q.search_text'),search));
     if(enabled(query.favorite))result=result.where(eb=>eb(eb.fn.coalesce(expr.field<number>('s.data','favorite'),eb.val(0)),'!=',0));
-    if(enabled(query.wrong))result=result.where(eb=>eb(eb.fn.coalesce(expr.field<number>('s.data','wrongCount'),eb.val(0)),'!=',0));
-    if(enabled(query.due))result=result.where(eb=>eb.and([
-      eb(eb.fn.coalesce(expr.field<string>('s.data','nextReviewAt'),eb.val('')),'!=',''),
-      eb.or([eb(expr.dateValue(expr.field('s.data','nextReviewAt')),'is',null),eb(expr.dateValue(expr.field('s.data','nextReviewAt')),'<=',expr.dateValue(eb.val(new Date().toISOString())))])
-    ]));
+    for (const kind of ['wrong', 'due'] as const) if(enabled(query[kind])) result=result.where(eb=>{
+      const condition=(alias:string)=>kind==='wrong'?eb(eb.fn.coalesce(expr.field<number>(`${alias}.data`,'wrongCount'),eb.val(0)),'!=',0):eb.and([
+        eb(eb.fn.coalesce(expr.field<string>(`${alias}.data`,'nextReviewAt'),eb.val('')),'!=',''),
+        eb.or([eb(expr.dateValue(expr.field(`${alias}.data`,'nextReviewAt')),'is',null),eb(expr.dateValue(expr.field(`${alias}.data`,'nextReviewAt')),'<=',expr.dateValue(eb.val(new Date().toISOString())))])
+      ]);
+      return eb.or([
+        eb.and([eb(expr.field('q.data','type'),'!=','group'),condition('s')]),
+        eb.and([eb(expr.field('q.data','type'),'=','group'),eb.exists(eb.selectFrom('study_parts as sp').select('sp.id').whereRef(expr.field<string>('sp.data','questionId'),'=','q.id').where(expr.objectArrayHas('q.data','parts','id',expr.field('sp.data','partId'))).where(condition('sp')))])
+      ]);
+    });
     return result;
   }
   private decode(row:{data:string;study:string|null}):Question {
     const question=cleanLearningRecord('questions',JSON.parse(row.data)) as Question;
     return {...question,study:row.study?JSON.parse(row.study):emptyStudy(question.id)} as Question;
+  }
+  private withParts(questions:Question[]):Question[] {
+    const groups=questions.filter(question=>question.type==='group'); if(!groups.length)return questions;
+    const db=this.database,expr=db.expressions;
+    const states=new Map(db.all(db.query.selectFrom('study_parts as sp').innerJoin('questions as q',join=>join.onRef('q.id','=',expr.field<string>('sp.data','questionId'))).select('sp.data').where(expr.idInJson('q.id',groups.map(question=>question.id)))).map(row=>{const state=JSON.parse(row.data) as StudyState;return [studyPartKey(state.questionId,state.partId!),state];}));
+    for(const group of groups)group.partStudies=(group.parts||[]).map(part=>states.get(studyPartKey(group.id,part.id))||emptyStudy(group.id,part.id));
+    return questions;
   }
   metadata(query:Record<string,any>,selection:QuestionSelection):QuestionMetadata[] {
     this.database.projections.ensure(['questions']);
@@ -73,7 +85,7 @@ export class QuestionQueries {
       .innerJoin('atlas_question_order as ordering','ordering.id','q.id').select('ordering.ordinal').orderBy('ordering.ordinal'))
       .selectFrom('chosen').innerJoin('questions as q','q.id','chosen.id').leftJoin('study as s','s.id','chosen.id')
       .select(['q.data','s.data as study']).orderBy('chosen.ordinal');
-    return this.database.all(builder).map(row=>this.decode(row));
+    return this.withParts(this.database.all(builder).map(row=>this.decode(row)));
   }
   page(query:Record<string,any>,selection:QuestionSelection):QuestionPage {
     const page=Number(query.page)||1,pageSize=Number(query.pageSize)||30;
@@ -92,7 +104,7 @@ export class QuestionQueries {
     // The count row remains present even when the requested page is empty.
     const rows=this.database.all(builder);
     const items=rows.flatMap(row=>row.data===null?[]:[this.decode({data:row.data,study:row.study})]);
-    return {items,total:Number(rows[0]?.total||0),page,pageSize};
+    return {items:this.withParts(items),total:Number(rows[0]?.total||0),page,pageSize};
   }
   explain(query:Record<string,any>,selection:QuestionSelection) {
     this.database.projections.ensure(['questions']);

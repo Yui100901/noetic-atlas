@@ -4,7 +4,7 @@ import { getObjectiveCorrect, isSubjectiveType } from '../../../shared/questions
 import { LEGACY_POINTS } from './scoring.js';
 
 export interface LearningJudgingItem {
-  id: string; type: QuestionType; sourceQuestionId?: string | null;
+  id: string; type: QuestionType; sourceQuestionId?: string | null; partId?: string | null;
   correctAnswers?: string[]; blanks?: Question['blanks'];
   answerValue?: string | string[] | null; selfScore?: number | null;
   scoringEnabled?: boolean | number; maximumPoints?: number | null;

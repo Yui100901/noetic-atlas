@@ -36,17 +36,35 @@ export class SqliteExpressions {
   }
   /** Draft/task progress never returns a student's answer or a reference
    * answer. Compute presence inside the driver with ECMAScript whitespace. */
-  attemptProgressItems(ref: string): RawBuilder<string> {
+  private attemptAnswered(ref:string):RawBuilder<SqlBool> {
     const data = sql.ref(ref), qid = sql`json_extract(item.value,'$.id')`;
     const answerPath = sql`'$.answers.' || json_quote(${qid})`;
     const whitespace = '\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
-    const answered = sql`case when json_type(${data},${answerPath} || '.value')='array' then exists(select 1 from json_each(${data},${answerPath} || '.value') as response where length(trim(cast(response.value as text),${whitespace}))>0) when json_type(${data},${answerPath} || '.value')='text' then length(trim(json_extract(${data},${answerPath} || '.value'),${whitespace}))>0 else 0 end`;
+    return sql<SqlBool>`case when json_type(${data},${answerPath} || '.value')='array' then exists(select 1 from json_each(${data},${answerPath} || '.value') as response where length(trim(cast(response.value as text),${whitespace}))>0) when json_type(${data},${answerPath} || '.value')='text' then length(trim(json_extract(${data},${answerPath} || '.value'),${whitespace}))>0 else 0 end`;
+  }
+  attemptProgressItems(ref: string): RawBuilder<string> {
+    const data = sql.ref(ref), qid = sql`json_extract(item.value,'$.id')`;
+    const answerPath = sql`'$.answers.' || json_quote(${qid})`;
+    const answered=this.attemptAnswered(ref);
     return sql<string>`(select coalesce(json_group_array(json_object(
       'id',${qid},'sourceQuestionId',coalesce(json_extract(item.value,'$.sourceQuestionId'),${qid}),
       'partId',json_extract(item.value,'$.partId'),'type',json_extract(item.value,'$.type'),
       'answered',${answered},'selfScore',json_extract(${data},${answerPath} || '.selfScore'),
       'verdict',json_extract(${data},${answerPath} || '.verdict'),
       'points',json_extract(${data},'$.scoring.questionPoints.' || json_quote(${qid}))
+    )),'[]') from json_each(${data},'$.questions') as item)`;
+  }
+  /** Analytics metadata only: presence, immutable classification and grades.
+   * Reuse the exact progress presence expression without exposing answer text. */
+  attemptAnalyticsItems(ref: string): RawBuilder<string> {
+    const data=sql.ref(ref),qid=sql`json_extract(item.value,'$.id')`,answerPath=sql`'$.answers.' || json_quote(${qid})`;
+    return sql<string>`(select coalesce(json_group_array(json_object(
+      'id',json_extract(item.value,'$.id'),'sourceQuestionId',json_extract(item.value,'$.sourceQuestionId'),
+      'partId',json_extract(item.value,'$.partId'),'type',json_extract(item.value,'$.type'),
+      'categoryIds',json_extract(item.value,'$.categoryIds'),'tagIds',json_extract(item.value,'$.tagIds'),
+      'difficulty',json_extract(item.value,'$.difficulty'),
+      'answered',${this.attemptAnswered(ref)},'selfScore',json_extract(${data},${answerPath} || '.selfScore'),
+      'verdict',json_extract(${data},${answerPath} || '.verdict'),'points',json_extract(${data},'$.scoring.questionPoints.' || json_quote(${qid}))
     )),'[]') from json_each(${data},'$.questions') as item)`;
   }
   /** Read-only fallback for old daily records, independent of dirty caches. */
@@ -87,6 +105,7 @@ export class SqliteExpressions {
     return sql<string>`(select coalesce(json_group_array(json(item.value)),'[]') from json_each(${sql.ref(ref)},${this.path(key)}) as item where json_extract(item.value,'$.id') in (select value from json_each(${JSON.stringify(ids)})))`;
   }
   idInJson(ref: string, values: readonly string[]): RawBuilder<SqlBool> { return sql<SqlBool>`${sql.ref(ref)} in (select value from json_each(${JSON.stringify(values)}))`; }
+  valueInJson(value:Expression<any>,values:readonly string[]):RawBuilder<SqlBool> {return sql<SqlBool>`${value} in (select value from json_each(${JSON.stringify(values)}))`;}
   unicodeContains(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`atlas_unicode_contains(${value},${needle})=1`; }
   containsLiteral(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`instr(${value},${needle})>0`; }
   jsonWithout(ref: string, keys: readonly string[]): RawBuilder<string> { return sql<string>`json_remove(${sql.ref(ref)},${sql.join(keys.map(key=>this.path(key)))})`; }

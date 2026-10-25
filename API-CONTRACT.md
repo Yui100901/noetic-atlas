@@ -85,6 +85,17 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 计分使用最多两位小数的分值。手动卷逐题分值之和必须等于总分。随机计分卷按总分、题型分值和目标客观占比寻找组合；目标比例不能保证完全命中，会显示实际组成。计分配置随卷及作答快照保存，后续默认值变化不重算历史成绩。无分练习仍核对客观题答案，但不产生数字成绩。
 
+## 学习统计与周报
+
+- `GET /api/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD&timeZone=Asia/Shanghai`：默认近30天，日期含首尾，一次最多366天；时区省略时取系统配置。返回`range、summary、daily、domains、types、recommendations、quality`。
+- `GET /api/analytics/weekly?week=YYYY-MM-DD&timeZone=Asia/Shanghai`：任意日期归到周一，默认本周；返回`weekStart、weekEnd、timeZone、generatedAt、isCurrentWeek、current、comparison`。当前周`matched_elapsed`对比上周相同已过秒数，已结束周`full_week`对比完整上周。
+
+summary及daily.metrics提供提交量、实际填答量、去重作答项／原题、correct／partial／incorrect／ungraded、漏答omitted和旧状态unknown、graded、accuracy、elapsedSeconds、可靠计时及缺时长提交数、复习动作与活跃天数。accuracy为0—100百分比或null，分母仅correct+partial+incorrect，部分正确不算完全正确。实际作答仅含非空回答的提交，空白交卷只增加提交量和漏答量；重复作答量与tuple原题／小题去重覆盖分开。时长只计真实答过且具有可靠计时的提交，不能等同专注时长。
+
+domains/types为作答表现分布，不分摊整卷时长；领域允许重叠，分项不能加总。quality包含未知作答、缺失题型／领域／时长、已重置排除量及说明。读取只投影学习摘要、相关提交元数据和复习时间，不加载题库、笔记或作答正文，不修复缓存、不写入历史；已有reset标记阻止保留旧卷面回灌。新增提交在learning_results保存可选elapsedSeconds与item的type/categoryIds/tagIds/difficulty；旧备份缺字段可只读核实，无法恢复的部分明确缺失，完整迁移保留新字段。
+
+comparison提供mode、对比日期及label、同口径summary，以及作答量、提交量、时长、活跃日绝对差和accuracyPoints百分点差；任一期间无已判样本时accuracyPoints为null。周报依据当前记录实时计算，后续判分会更新过去周的结果。两个接口都受考试锁定约束。
+
 ## 每日推荐与进度
 
 - `GET /api/daily-push`：返回配置、today、最近30条recent、未读数量和下次推荐日期；读取不生成题集、不改写记录或重建派生数据。

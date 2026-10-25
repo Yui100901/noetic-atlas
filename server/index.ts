@@ -30,6 +30,7 @@ import { registerLearningResetRoutes } from './modules/study/reset.js';
 import { migrateQuestionHistory } from './modules/questions/history-store.js';
 import { registerQuestionHistoryRoutes } from './modules/questions/history.js';
 import { registerDailyPushRoutes } from './modules/daily-push/routes.js';
+import { registerAnalyticsRoutes } from './modules/analytics/routes.js';
 import { checkDailyPush } from './modules/daily-push/service.js';
 import { createDailyPushScheduler, dailyPushRefreshesAfter, type DailyPushSchedulerClock } from './scheduling/daily-push.js';
 
@@ -94,6 +95,7 @@ export async function buildApp(options: AppOptions = {}) {
 
   registerTransferRoutes(app, store);
   registerDailyPushRoutes(app, store, { now: options.dailyPushNow || options.dailyPushSchedulerClock?.now.bind(options.dailyPushSchedulerClock) });
+  registerAnalyticsRoutes(app, store);
   if (scheduler) {
     app.addHook('onReady', async () => { scheduler.refresh(); });
     app.addHook('onResponse', async request => { if (dailyPushRefreshesAfter(request.method, request.url.split('?')[0]!)) scheduler.refresh(); });

@@ -139,9 +139,12 @@ try{
   await go('papers');await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).waitFor();checks.push('推荐题集可正常进入考试并交卷，考试作答页没有推荐卡片或全局提醒');
   await api('/api/papers/'+today.paperId,'DELETE');
   const archivedSettings=await api('/api/settings');await api('/api/settings','PUT',{settings:{...archivedSettings,dailyPush:{...archivedSettings.dailyPush,enabled:true}}});await go('');
-  await dashboardDaily().getByText('查看每日推荐',{exact:true}).waitFor();assert.equal(await dashboardDaily().getAttribute('href'),'#/papers');
-  await dashboardDaily().click();await page.waitForURL(/#\/papers$/);await recommendation().getByText('今日题集已归档或删除，往期推荐可在题集库查找。',{exact:true}).waitFor();
-  checks.push('今日推荐归档后总览快捷入口进入题集库，避免失效的直达链接');
+  const archivedProgress=(await api('/api/daily-push')).today.progress;
+  assert.ok(archivedProgress.resultAttemptId,'归档源题集仍可查看保留的提交卷面');
+  await dashboardDaily().getByText('查看今日结果',{exact:true}).waitFor();assert.equal(await dashboardDaily().getAttribute('href'),'#/attempts/'+archivedProgress.resultAttemptId);
+  await dashboardDaily().click();await page.waitForURL(new RegExp('#/attempts/'+archivedProgress.resultAttemptId+'$'));await page.getByLabel('本次作答时间').waitFor();
+  await go('papers');await recommendation().getByText('今日题集已归档或删除，往期推荐可在题集库查找。',{exact:true}).waitFor();assert.equal(await recommendation().locator('a[href="#/papers/'+today.paperId+'"]').count(),0);
+  checks.push('今日推荐归档后总览入口可查看保留结果，题集卡片不出现失效的源题集链接');
   assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[]);
   const report={passed:checks.length,checks,errors,externalRequests,isolated:true,databasePath:':memory:',actualDailyScore:52};await writeFile(resolve(output,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){await page?.screenshot({path:resolve(output,'failure.png'),fullPage:true}).catch(()=>{});console.error({url:page?.url(),checks,stderr});throw error;}

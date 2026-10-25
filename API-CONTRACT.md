@@ -85,6 +85,16 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 计分使用最多两位小数的分值。手动卷逐题分值之和必须等于总分。随机计分卷按总分、题型分值和目标客观占比寻找组合；目标比例不能保证完全命中，会显示实际组成。计分配置随卷及作答快照保存，后续默认值变化不重算历史成绩。无分练习仍核对客观题答案，但不产生数字成绩。
 
+## 每日推荐与进度
+
+- `GET /api/daily-push`：返回配置、today、最近30条recent、未读数量和下次推荐日期；读取不生成题集、不改写记录或重建派生数据。
+- `POST /api/daily-push/check`：到达配置时间后按日期幂等生成普通计分题集，返回`{generated,record,overview}`。生成时冻结`answerItems`的原题／小题身份、题型和满分，不存答案正文。
+- `POST /api/daily-push/:id/read`：标记已查看，不改变学习进度。
+
+today及recent的每条记录包含`paperAvailable`和`progress`。progress的status为`not_started|in_progress|submitted|completed|unavailable`；提供`totalQuestions、answeredQuestions、answeredPoints、totalPoints、percent、omittedQuestions、pendingGradingCount`，以及`resumeAttemptId、resultAttemptId、submittedAt、historyAvailable、detailsAvailable`。已答按保存的实际非空回答计算，组合题展开计数；answeredPoints为对应题目满分之和，percent为分值覆盖比例，与实际得分无关。全部填写且提交才completed，未判主观题另计；漏答提交为submitted。
+
+统计仅使用原推荐版本，取覆盖分值最高的一份提交，依次以已答数、提交时间打破相同覆盖；没有提交时取最近草稿，不能把多次练习叠加。resumeAttemptId独立指向最近保留草稿，已有完成记录后重练也可继续。历史裁剪后使用轻量learning_results保留进度，但resultAttemptId为null；主动重置学习进度会清除该摘要。缺少原始分母时status为unavailable，不猜测数值。查询按最近推荐批量读取身份／分值／作答存在性，不传题干、参考答案或个人回答正文；SQLite特有表达式封装在数据库适配层。
+
 ## 作答计时与考试模式
 
 - `POST /api/papers/:id/attempts`：可选 `{mode:'practice'|'exam',durationMinutes:1..1440,count?:1..500,selection?:'ordered'|'random'}`，创建一次独立作答。count 按父题／组合组选题，展开后仍不得超过500个作答项。大型题集必须显式指定本次题量，缺失返回 `QUESTION_SET_SESSION_LIMIT`；不能静默截取前500题。ordered 按题集顺序从头选题，random 不重复随机抽取，题集本身保持完整。普通练习默认顺计时；考试时长缺省取系统 examDurationMinutes，初始 120 分钟。

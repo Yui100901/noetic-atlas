@@ -3,10 +3,11 @@ import type { QuestionType } from '../../../shared/models/types.js';
 import { makeId, type Store } from '../../core/store.js';
 import { parse } from '../../core/validation.js';
 import { getSettings } from '../settings/service.js';
-import { buildPaper } from '../practice/service.js';
+import { buildPaper, expandPaper } from '../practice/service.js';
 import { dailyCalendar, isDailyPushDue, nextDateKey } from './calendar.js';
 import { dailyPushRecordSchema, validateDailyPushConfiguration } from './schema.js';
 import { selectDailyQuestions } from './selection.js';
+import { dailyPushProgress } from './progress.js';
 
 export function dailyPushOverview(store: Store, at = new Date()): DailyPushOverview {
   const config = getSettings(store).dailyPush, dateKey = dailyCalendar(at, config.timeZone).dateKey;
@@ -15,7 +16,8 @@ export function dailyPushOverview(store: Store, at = new Date()): DailyPushOverv
   const records = db.all(db.query.selectFrom('daily_pushes').select('data').orderBy(field('data', 'dateKey'), 'desc').limit(30)).map(row => JSON.parse(row.data) as DailyPushRecord);
   const paperIds = [...new Set([...records, ...(today ? [today] : [])].flatMap(record => record.paperId ? [record.paperId] : []))];
   const available = new Set(paperIds.length ? db.all(db.query.selectFrom('papers').select('id').where(db.expressions.idInJson('id', paperIds)).where(eb => eb.or([eb(field('data', 'archived'), 'is', null), eb(field('data', 'archived'), '=', 0)]))).map(row => row.id) : []);
-  const view = (record: DailyPushRecord): DailyPushView => ({ ...record, paperAvailable: !!record.paperId && available.has(record.paperId) });
+  const progress = dailyPushProgress(store, [...records, ...(today ? [today] : [])]);
+  const view = (record: DailyPushRecord): DailyPushView => ({ ...record, paperAvailable: !!record.paperId && available.has(record.paperId), progress: progress.get(record.id)! });
   const recent = records.map(view);
   const unreadCount = Number(db.one(db.query.selectFrom('daily_pushes').select(eb => eb.fn.countAll<number>().as('total')).where(field('data', 'readAt'), 'is', null))?.total || 0);
   return { config, today: today ? view(today) : null, recent, recentLimit: 30, unreadCount, nextDateKey: nextDateKey(config, at, !!today) };
@@ -43,13 +45,16 @@ export function checkDailyPush(store: Store, at = new Date()): DailyPushCheckRes
     const { answerSlots: _slots, available: _available, ...selection } = selected;
     const title = claim.title;
     let paperId: string | null = null;
+    let answerItems: DailyPushRecord['answerItems'] = [];
     if (selected.questionIds.length) {
       const metadata = new Map(store.questionMetadataByIds(selected.questionIds).items.map(question => [question.id, question.type]));
       const questionPoints = Object.fromEntries(selected.questionIds.map(id => [id, settings.pointsByType[metadata.get(id) as QuestionType]]));
       const paper = buildPaper(store, { id: makeId('daily-paper'), title, description: `每日推题：复习${selected.reviewPoints}分，新题${selected.newPoints}分；按生成时的系统默认题型分值计分。${selected.reason}`, mode: 'manual', organization: 'domain', domainId: active.domainId, questionIds: selected.questionIds, scoring: { enabled: true, totalPoints: selected.totalPoints, questionPoints, pointsByType: { ...settings.pointsByType } } });
       store.insert('papers', paper.id, paper); paperId = paper.id;
+      const expanded = expandPaper(paper);
+      answerItems = expanded.questions.map(question => ({ id: question.id, sourceQuestionId: question.sourceQuestionId || question.id, ...(question.partId ? { partId: question.partId } : {}), type: question.type as Exclude<QuestionType, 'group'>, points: expanded.scoring.questionPoints[question.id]! }));
     }
-    const record = parse(dailyPushRecordSchema, { ...claim, ...selection, title, paperId, domainId: active.domainId, categoryIds: [...active.categoryIds], targetReviewPoints: active.reviewPoints, baseNewPoints: active.newPoints, targetTotalPoints: Math.round((active.reviewPoints + active.newPoints) * 100) / 100, reviewCount: selected.reviewQuestionIds.length, newCount: selected.newQuestionIds.length, pointsByType: { ...settings.pointsByType } }) as DailyPushRecord;
+    const record = parse(dailyPushRecordSchema, { ...claim, ...selection, title, paperId, answerItems, domainId: active.domainId, categoryIds: [...active.categoryIds], targetReviewPoints: active.reviewPoints, baseNewPoints: active.newPoints, targetTotalPoints: Math.round((active.reviewPoints + active.newPoints) * 100) / 100, reviewCount: selected.reviewQuestionIds.length, newCount: selected.newQuestionIds.length, pointsByType: { ...settings.pointsByType } }) as DailyPushRecord;
     store.put('daily_pushes', id, record);
     return { generated: true, record };
   });

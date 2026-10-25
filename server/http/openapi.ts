@@ -14,6 +14,7 @@ import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuesti
 import { globalLearningSummaryQuerySchema, globalLearningQuestionsQuerySchema, learningCardSummariesInputSchema } from '../modules/practice/global-learning.js';
 import { learningResetInputSchema } from '../modules/study/reset.js';
 import { questionHistoryQuerySchema } from '../modules/questions/history.js';
+import { dailyPushRecordSchema, dailyPushSettingsSchema } from '../modules/daily-push/schema.js';
 
 interface RouteEntry { method: string; url: string; schema?: FastifySchema }
 type JsonSchema = Record<string, any>;
@@ -29,6 +30,10 @@ const streamingAiRoute = (method: string, url: string) => method === 'POST' && (
 const id = validation.id;
 const toJson = (schema: z.ZodType): JsonSchema => { const {$schema: _schema,...result} = z.toJSONSchema(schema,{io:'input',unrepresentable:'any'}) as JsonSchema; return result; };
 const paged = (item: JsonSchema): JsonSchema => ({ anyOf: [{type:'array',items:item},{type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}}] });
+const dailyProgressOutput:JsonSchema={type:'object',required:['status','totalQuestions','answeredQuestions','answeredPoints','totalPoints','percent','omittedQuestions','pendingGradingCount','resumeAttemptId','resultAttemptId','submittedAt','historyAvailable','detailsAvailable'],properties:{status:{enum:['not_started','in_progress','submitted','completed','unavailable']},...Object.fromEntries(['totalQuestions','answeredQuestions','omittedQuestions','pendingGradingCount'].map(key=>[key,{type:'integer',minimum:0}])),...Object.fromEntries(['answeredPoints','totalPoints','percent'].map(key=>[key,{type:'number',minimum:0}])),resumeAttemptId:{type:['string','null']},resultAttemptId:{type:['string','null']},submittedAt:{type:['string','null']},historyAvailable:{type:'boolean'},detailsAvailable:{type:'boolean'}},description:'已答题目的满分覆盖，非实际得分；提交、漏答及主观待判分别表示。'};
+const dailyRecordOutput=toJson(dailyPushRecordSchema);
+const dailyViewOutput:JsonSchema={...dailyRecordOutput,required:[...(dailyRecordOutput.required||[]),'paperAvailable','progress'],properties:{...dailyRecordOutput.properties,paperAvailable:{type:'boolean'},progress:dailyProgressOutput}};
+const dailyOverviewOutput:JsonSchema={type:'object',required:['config','today','recent','recentLimit','unreadCount','nextDateKey'],properties:{config:toJson(dailyPushSettingsSchema),today:{anyOf:[dailyViewOutput,{type:'null'}]},recent:{type:'array',items:dailyViewOutput},recentLimit:{type:'integer'},unreadCount:{type:'integer'},nextDateKey:{type:'string'}}};
 const questionStatisticsOutput:JsonSchema={type:'object',required:['answered','correct','partial','incorrect','ungraded','lastAnsweredAt','unknown'],properties:{...Object.fromEntries(['answered','correct','partial','incorrect','ungraded','unknown'].map(key=>[key,{type:'integer',minimum:0}])),lastAnsweredAt:{type:['string','null'],format:'date-time'}}};
 const questionHistoryOutput:JsonSchema={type:'object',required:['retention','items','total','page','pageSize'],properties:{summary:questionStatisticsOutput,retention:{type:'object',properties:{limit:{type:'integer',minimum:0},available:{type:'integer',minimum:0}}},total:{type:'integer',minimum:0},page:{type:'integer',minimum:1},pageSize:{type:'integer'},items:{type:'array',items:{type:'object',required:['id','attemptId','source','paperId','paperTitle','paperVersion','submittedAt','historyAvailable','question','answer','verdict','points','score'],properties:{id:{type:'string'},attemptId:{type:'string'},source:{enum:['paper','quick']},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},submittedAt:{type:'string',format:'date-time'},historyAvailable:{type:'boolean'},beforeReset:{type:'boolean'},question:toJson(validation.snapshotQuestionSchema.safeExtend({id:validation.leafId})),answer:toJson(validation.answerSchema),verdict:{enum:['correct','partial','incorrect','ungraded']},points:{type:['number','null']},score:{type:['number','null']}}}}}};
 const {key:_writeOnlyKey,clearKey:_clearKey,...aiPublicFields}=ai.aiSettingsSchema.shape;
@@ -147,6 +152,9 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/papers/:id/attempts'||url==='/api/quick-practice'||/^\/api\/attempts\/:id\/(?:sync|submit|review|reveal)$/.test(url))success=attemptOutput;
   if(url==='/api/papers/:id/drafts'||url==='/api/paper-drafts')success={type:'array',items:url.includes('/drafts')?attemptOutput:toJson(paperDraftSchema)};
   if(area==='document-drafts')success=url.endsWith('/publish')?toJson(validation.documentSchema):method==='GET'?{type:'array',items:toJson(documentDraftSchema)}:toJson(documentDraftSchema);
+  if(url==='/api/daily-push')success=dailyOverviewOutput;
+  if(url==='/api/daily-push/check')success={type:'object',required:['generated','record','overview'],properties:{generated:{type:'boolean'},record:{anyOf:[dailyRecordOutput,{type:'null'}]},overview:dailyOverviewOutput}};
+  if(url==='/api/daily-push/:id/read')success=dailyRecordOutput;
   if(method==='DELETE')success=object;
   schema.response={...(schema.response as Record<string,unknown>),200:success};
   const body=bodyFor(method,url); if(body)schema.body=body;

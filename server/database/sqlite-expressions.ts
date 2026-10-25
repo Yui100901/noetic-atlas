@@ -34,6 +34,25 @@ export class SqliteExpressions {
       'maximumPoints',json_extract(${data},'$.scoring.questionPoints.' || json_quote(${qid}))
     )),'[]') from json_each(${data},'$.questions') as item)`;
   }
+  /** Draft/task progress never returns a student's answer or a reference
+   * answer. Compute presence inside the driver with ECMAScript whitespace. */
+  attemptProgressItems(ref: string): RawBuilder<string> {
+    const data = sql.ref(ref), qid = sql`json_extract(item.value,'$.id')`;
+    const answerPath = sql`'$.answers.' || json_quote(${qid})`;
+    const whitespace = '\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
+    const answered = sql`case when json_type(${data},${answerPath} || '.value')='array' then exists(select 1 from json_each(${data},${answerPath} || '.value') as response where length(trim(cast(response.value as text),${whitespace}))>0) when json_type(${data},${answerPath} || '.value')='text' then length(trim(json_extract(${data},${answerPath} || '.value'),${whitespace}))>0 else 0 end`;
+    return sql<string>`(select coalesce(json_group_array(json_object(
+      'id',${qid},'sourceQuestionId',coalesce(json_extract(item.value,'$.sourceQuestionId'),${qid}),
+      'partId',json_extract(item.value,'$.partId'),'type',json_extract(item.value,'$.type'),
+      'answered',${answered},'selfScore',json_extract(${data},${answerPath} || '.selfScore'),
+      'verdict',json_extract(${data},${answerPath} || '.verdict'),
+      'points',json_extract(${data},'$.scoring.questionPoints.' || json_quote(${qid}))
+    )),'[]') from json_each(${data},'$.questions') as item)`;
+  }
+  /** Read-only fallback for old daily records, independent of dirty caches. */
+  paperProgressRoots(ref: string): RawBuilder<string> {
+    return sql<string>`(select coalesce(json_group_array(json_object('id',json_extract(member.value,'$.id'),'type',json_extract(member.value,'$.type'),'parts',case when json_extract(member.value,'$.type')='group' then (select coalesce(json_group_array(json_object('id',json_extract(part.value,'$.id'),'type',json_extract(part.value,'$.type'),'weight',coalesce(json_extract(part.value,'$.weight'),1))),'[]') from json_each(member.value,'$.parts') as part) else null end)),'[]') from json_each(${sql.ref(ref)},'$.snapshot') as member)`;
+  }
   /** Identity metadata only; summary reads never materialize question bodies. */
   questionLearningLeaves(ref:string):RawBuilder<string> {
     const data=sql.ref(ref),root=sql`json_extract(${data},'$.id')`;

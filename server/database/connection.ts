@@ -19,8 +19,9 @@ export class DatabaseConnection {
     this.maintenance = { exec: value=>this.client.exec(value), prepare: value=>this.client.prepare(value), function: this.client.function.bind(this.client) };
     this.client.function('atlas_unicode_contains',{deterministic:true},(value,needle)=>Number(String(value).toLowerCase().includes(String(needle))));
     this.projections=new RecordProjections(this);
-    this.schemaChanged = initialize && recordTables.some(table => !this.hasTable(table));
-    if (initialize) { this.initialize();this.projections.initialize(); }
+    const missingTables = initialize && recordTables.some(table => !this.hasTable(table));
+    this.schemaChanged = false;
+    if (initialize) { this.initialize(); this.schemaChanged = this.projections.initialize() || missingTables; }
   }
   private initialize() {
     // Single-user portable storage deliberately keeps one-file DELETE journals.

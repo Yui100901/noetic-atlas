@@ -108,6 +108,12 @@ export class SqliteExpressions {
   valueInJson(value:Expression<any>,values:readonly string[]):RawBuilder<SqlBool> {return sql<SqlBool>`${value} in (select value from json_each(${JSON.stringify(values)}))`;}
   unicodeContains(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`atlas_unicode_contains(${value},${needle})=1`; }
   containsLiteral(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`instr(${value},${needle})>0`; }
+  startsWithLiteral(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`instr(${value},${needle})=1`; }
+  /** Bound snippets are selected only for the requested result page. Normalized
+   * text supplies an approximate location; display text keeps its original case. */
+  searchExcerpt(content: Expression<any>, normalized: Expression<any>, needle: string): RawBuilder<string> {
+    return sql<string>`substr(${content},max(1,instr(${normalized},${needle})-60),220)`;
+  }
   jsonWithout(ref: string, keys: readonly string[]): RawBuilder<string> { return sql<string>`json_remove(${sql.ref(ref)},${sql.join(keys.map(key=>this.path(key)))})`; }
   rowOrder(alias: string): RawBuilder<number> { return sql<number>`${sql.ref(`${alias}.rowid`)}`; }
   dateValue(value: Expression<any>): RawBuilder<number | null> { return sql<number | null>`julianday(${value})`; }

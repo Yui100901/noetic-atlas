@@ -1,5 +1,6 @@
 import type { DatabaseConnection } from './connection.js';
 import { collectAssetReferences } from '../../shared/assets/asset-references.js';
+import { SearchProjections } from './search-projections.js';
 
 export const projectionSources=['questions','documents','papers','attempts','study','study_parts','reviews','learning_results','question_history','document_drafts'] as const;
 export type ProjectionSource=typeof projectionSources[number];
@@ -10,7 +11,8 @@ const searchFields=['id','title','stemMarkdown','answerMarkdown','explanationMar
  * authoritative. Bound writes and DB-side dirty markers keep CLI/other-connection
  * imports, deleted rows, nested rollbacks and WASM restores coherent. */
 export class RecordProjections {
-  constructor(private readonly database:DatabaseConnection) {}
+  readonly search: SearchProjections;
+  constructor(private readonly database:DatabaseConnection) { this.search = new SearchProjections(database); }
   initialize() {
     const d=this.database,q=d.query;
     const complete=['question_read_model','paper_read_model','projection_pending','asset_references'].every(table=>d.hasTable(table));
@@ -40,6 +42,7 @@ export class RecordProjections {
         d.run(q.insertInto('metadata').values({key:'read_projection_version',value:'5'}).onConflict(c=>c.column('key').doUpdateSet({value:'5'})));
       }
     });
+    return this.search.initialize();
   }
   ensure(sources:readonly ProjectionSource[]) {
     if(!sources.length)return;
@@ -86,7 +89,7 @@ export class RecordProjections {
       }
     });
   }
-  refreshAll() { this.ensure(projectionSources); }
+  refreshAll() { this.ensure(projectionSources); this.search.ensure(); }
   rebuild() {
     this.database.run(this.database.query.deleteFrom('metadata').where('key','=','read_projection_version'));
     this.initialize();this.refreshAll();

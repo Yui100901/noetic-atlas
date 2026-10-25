@@ -85,6 +85,14 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 计分使用最多两位小数的分值。手动卷逐题分值之和必须等于总分。随机计分卷按总分、题型分值和目标客观占比寻找组合；目标比例不能保证完全命中，会显示实际组成。计分配置随卷及作答快照保存，后续默认值变化不重算历史成绩。无分练习仍核对客观题答案，但不产生数字成绩。
 
+## 统一搜索
+
+`GET /api/search?q=关键词&type=all&sort=relevance&page=1&pageSize=20&includeUnpublished=false`。type可选`all|question|paper|document|note|domain|category|tag`，sort为`relevance|updatedAt`，pageSize为10／20／50／100。q最多100字符、8个空格分隔词，NFKC规范化、忽略大小写并取交集；SQL符号按字面匹配。空词返回零结果，不扫描或维护搜索投影；未知参数与非法值返回400。
+
+返回`query、type、sort、includeUnpublished、page、pageSize、total、totalAll、counts、items、scope`。counts按所有类型计算，不随所选type变化；total为当前类型命中量，totalAll为合计。items只含当前页的key/type/id/title/excerpt/href/description、matchIn、domainIds及可选状态、原题／小题、更新时间。matchIn为title/id/content/reference；reference可匹配答案解析，响应只提供安全题干摘要及匹配标识，不返回参考答案全文。组合小题归原题结果，笔记按整题和小题独立；领域、分类、标签href指向题库筛选。
+
+默认排除归档和未发布题目，显式includeUnpublished=true可加入pending/draft题及对应笔记，不加入archived。PDF仅元数据，Markdown可检索正文，scope说明覆盖范围；AI配置、密钥、历史作答、编辑草稿和附件字节不建索引。搜索使用独立可重建`search_read_model`和`search_projection_pending`，源变更触发脏标记，按现有投影规则更新派生数据；不修改源记录。完整JSON迁移从源内容重建，SQLite／Android恢复丢弃外来索引和触发器后重建，独立版本为`search_projection_version=1`。接口遵守考试访问锁定和统一安全头。
+
 ## 学习统计与周报
 
 - `GET /api/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD&timeZone=Asia/Shanghai`：默认近30天，日期含首尾，一次最多366天；时区省略时取系统配置。返回`range、summary、daily、domains、types、recommendations、quality`。

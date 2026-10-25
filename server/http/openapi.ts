@@ -17,6 +17,8 @@ import { questionHistoryQuerySchema } from '../modules/questions/history.js';
 import { dailyPushRecordSchema, dailyPushSettingsSchema } from '../modules/daily-push/schema.js';
 import { analyticsQuerySchema, weeklyQuerySchema } from '../modules/analytics/schema.js';
 import { analyticsReportOutputSchema, weeklyReportOutputSchema } from './analytics-schemas.js';
+import { searchQuerySchema } from '../modules/search/schema.js';
+import { searchResponseOutputSchema } from './search-schemas.js';
 
 interface RouteEntry { method: string; url: string; schema?: FastifySchema }
 type JsonSchema = Record<string, any>;
@@ -71,7 +73,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
   '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),documentDrafts:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
 };
-const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
+const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
   if(url==='/api/document-drafts'&&method==='POST')return toJson(createDocumentDraftSchema);
   if(url==='/api/document-drafts/:id')return method==='PUT'?toJson(updateDocumentDraftSchema):method==='DELETE'?toJson(deleteDocumentDraftSchema):undefined;
@@ -110,6 +112,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/questions/:id/statistics')schema.querystring=toJson(z.object({partId:id.optional()}).strict());
   if(url==='/api/analytics')schema.querystring=toJson(analyticsQuerySchema);
   if(url==='/api/analytics/weekly')schema.querystring=toJson(weeklyQuerySchema);
+  if(url==='/api/search')schema.querystring=toJson(searchQuerySchema);
   if(url==='/api/learning/reset-preview')schema.querystring=toJson(z.object({}).strict());
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
@@ -161,6 +164,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/daily-push/:id/read')success=dailyRecordOutput;
   if(url==='/api/analytics')success=toJson(analyticsReportOutputSchema);
   if(url==='/api/analytics/weekly')success=toJson(weeklyReportOutputSchema);
+  if(url==='/api/search')success=toJson(searchResponseOutputSchema);
   if(method==='DELETE')success=object;
   schema.response={...(schema.response as Record<string,unknown>),200:success};
   const body=bodyFor(method,url); if(body)schema.body=body;
@@ -176,6 +180,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   }
   if(url.startsWith('/api/learning/'))schema.description+=' 学习记录按题集或随机练习来源隔离。错误状态、必要题目快照及来源摘要独立于整卷历史保留；按交卷时间取最近已判结果，未判主观题不覆盖已有判定。历史已清理时historyAvailable=false，不提供失效的复盘链接。收藏属于整题，组合小题独立掌握、笔记与复习。读取只加载当前页正文，不写入缓存。重置学习进度另需预览指纹与显式确认，保留收藏、笔记、历史成绩和草稿。';
   if(area==='analytics')schema.description+=' 只读学习统计，按配置时区的提交日期和复习日期归属。真实已答次数、去重知识项、漏答、未判与旧记录未知状态分开；正确率为正确/(正确+部分正确+错误)，无已判时为null。时长仅汇总实际答过且具有计时记录的提交，包含可能的停留时间。周报周一至周日；本周对比上周相同已过时段。历史裁剪保留学习摘要，主动重置后不借旧卷面重新灌入统计。';
+  if(area==='search')schema.description+=' 统一检索题目、题集、资料、学习笔记、领域、分类和标签，NFKC规范化并忽略大小写，多词取交集，SQL特殊字符按字面匹配。counts为所有类型命中量，total为当前类型，totalAll为总量。默认排除归档及未发布题目，可显式包含待审核和草稿题；不检索未保存草稿、历史回答、AI配置或密钥。PDF仅元数据，Markdown可检索正文，题目答案解析仅用于匹配不返回原文。分页结果仅返回安全文本摘要，空词返回空结果；搜索派生索引可按需维护但不修改业务记录。考试期间受统一访问锁定。';
   if(url.startsWith('/api/learning/global/'))schema.description+=' 特殊题集是只读聚合视图，不创建实体题集。全部错题按原题和叶题合并，来源A答对不会清除来源B仍错的题；展示最近错误快照，完整origins记录各仍错来源及历史版本。全部收藏/待复习覆盖未入集或未练习的存活原题，展示当前内容，origins保留当前题集成员关系及各来源最近保留作答，无关联来源标记library。';
   if(url==='/api/learning/card-summaries')schema.description+=' 只读批量统计，最多100个不重复题集ID，返回顺序与请求一致。已删除题集按保留历史统计；完全不存在的ID返回零计数。';
   if(url==='/api/questions/metadata')schema.description+=' 只读批量查询题目元数据，最多50000个唯一题号；按输入顺序返回 id/title/type/status，含待审核与归档题。不存在的题号列入 missingIds，不查询题干、答案、笔记。';

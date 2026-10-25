@@ -37,6 +37,7 @@ export class DatabaseConnection {
       ['question_history_question_part_date_idx','question_history',['questionId','partId','submittedAt']],
       ['question_history_attempt_idx','question_history',['attemptId']],
       ['documents_archived_updated_idx','documents',['_archived','updatedAt']],
+      ['document_drafts_context_updated_idx','document_drafts',['documentId','updatedAt']],
       ['questions_type_title_idx','questions',['type','title']],
     ] as const) {
       this.run(this.query.schema.createIndex(name).ifNotExists().on(table).expression(sql.join(fields.map(key=>this.expressions.field('data',key)))));

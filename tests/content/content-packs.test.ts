@@ -45,7 +45,7 @@ test('vocabulary wordlists are unscored, archived pending review, and keep their
 });
 
 test('new-content validation rejects published or private records and broken cross-domain tags',()=>{
-  for(const mutate of [(p:any)=>{p.questions[0].status='published';},(p:any)=>{p.questions[0].sourceDocument='private.md';},(p:any)=>{p.questions[0].tagIds=['missing'];},(p:any)=>{p.categories[0].parentId=p.categories[0].id;},(p:any)=>{p.settings={key:'private'};}]){
+  for(const mutate of [(p:any)=>{p.questions[0].status='published';},(p:any)=>{p.questions[0].sourceDocument='private.md';},(p:any)=>{p.questions[0].tagIds=['missing'];},(p:any)=>{p.categories[0].parentId=p.categories[0].id;},(p:any)=>{p.settings={key:'private'};},(p:any)=>{p.documentDrafts=[{state:{bodyMarkdown:'私人草稿'}}];}]){
     const pack=driving();mutate(pack);assert.throws(()=>validatePack(pack));
   }
 });

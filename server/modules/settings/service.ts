@@ -8,12 +8,14 @@ import { preserveLearningResults } from '../practice/learning-results.js';
 import { archiveAttemptQuestionHistory, questionHistoryRetentionCandidates } from '../questions/history-store.js';
 import { DEFAULT_DAILY_PUSH } from '../../../shared/models/daily-push.js';
 import { dailyPushSettingsSchema, validateDailyPushConfiguration } from '../daily-push/schema.js';
+import { documentDraftRetentionCandidates } from '../library/document-draft-retention.js';
 
 export const settingsSchema = z.object({
   id: z.literal('system'), updatedAt: z.string().datetime({ offset: true }),
   theme: z.enum(THEMES).default('green'),
   maxDraftsPerPaper: z.number().int().min(1).max(100), maxQuickDrafts: z.number().int().min(1).max(100),
   maxPaperDrafts: z.number().int().min(1).max(100).default(3), examDurationMinutes: z.number().int().min(1).max(1440).default(120),
+  maxDocumentDrafts: z.number().int().min(1).max(100).default(3),
   maxHistoryPerPaper: z.number().int().min(0).max(10000), maxQuickHistory: z.number().int().min(0).max(10000),
   maxQuestionHistory:z.number().int().min(0).max(10000).default(10),
   randomQuestionCount: z.number().int().min(1).max(500), scoringEnabledByDefault: z.boolean(),
@@ -89,11 +91,13 @@ export function applyAttemptRetention(store: Store, attempt: StoredAttempt) {
 export function settingsRetentionPlan(store: Store, settings: SystemSettings) {
   const attempts = retentionCandidates(store, settings);
   const authoring = paperDraftRetentionCandidates(store, settings.maxPaperDrafts);
+  const documentDrafts = documentDraftRetentionCandidates(store, settings.maxDocumentDrafts);
   const retention = retentionPreview(attempts);
   const questionHistory=questionHistoryRetentionCandidates(store,settings.maxQuestionHistory);
   if(questionHistory.length){retention.questionHistory=questionHistory.length;retention.total+=questionHistory.length;}
   if (authoring.length) { retention.authoring = authoring.length; retention.total += authoring.length; }
-  return { attempts, authoring, questionHistory, retention };
+  if (documentDrafts.length) { retention.documentDrafts = documentDrafts.length; retention.total += documentDrafts.length; }
+  return { attempts, authoring, questionHistory, documentDrafts, retention };
 }
 
 /** Caller owns the transaction, so configuration import can atomically update both sections. */
@@ -101,13 +105,14 @@ export function saveSettings(store: Store, settings: SystemSettings, options: { 
   validateDailyPushConfiguration(store, settings.dailyPush);
   const previous = getSettings(store);
   if (settings.updatedAt !== previous.updatedAt) fail(409, 'SETTINGS_VERSION_CONFLICT', '配置已被修改，请刷新后重新编辑');
-  const { attempts, authoring, questionHistory, retention } = settingsRetentionPlan(store, settings);
+  const { attempts, authoring, questionHistory, documentDrafts, retention } = settingsRetentionPlan(store, settings);
   if (retention.total && !options.confirmedRetention) fail(409, 'RETENTION_CONFIRMATION_REQUIRED', '保存此配置会清理超过保留上限的草稿或已提交历史，请确认后再次保存', retention);
-  if (options.confirmedRetention && options.expectedRetention && (['drafts', 'history', 'total', 'authoring', 'questionHistory'] as const).some(key => (options.expectedRetention![key] || 0) !== (retention[key] || 0))) fail(409, 'RETENTION_CONFIRMATION_REQUIRED', '确认期间待清理记录数量已变化，请重新检查当前数量', retention);
+  if (options.confirmedRetention && options.expectedRetention && (['drafts', 'history', 'total', 'authoring', 'questionHistory', 'documentDrafts'] as const).some(key => (options.expectedRetention![key] || 0) !== (retention[key] || 0))) fail(409, 'RETENTION_CONFIRMATION_REQUIRED', '确认期间待清理记录数量已变化，请重新检查当前数量', retention);
   const saved = { ...settings, updatedAt: nextStamp(previous.updatedAt) };
   store.put('settings', 'system', saved);
   for(const old of questionHistory)store.remove('question_history',old);
   for (const old of attempts) { preserveLearningResults(store, old); archiveAttemptQuestionHistory(store,old); store.remove('attempts', old.id); }
   for (const old of authoring) store.remove('paper_drafts', old.id);
+  for (const old of documentDrafts) store.remove('document_drafts', old);
   return { settings: saved, retention };
 }

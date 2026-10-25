@@ -10,7 +10,7 @@ import './configuration-transfer.css';
 
 const labels: Record<string, string> = {
   theme:'外观主题',
-  maxDraftsPerPaper:'每卷草稿上限', maxQuickDrafts:'随机自测草稿上限', maxPaperDrafts:'组题草稿上限',
+  maxDraftsPerPaper:'每卷草稿上限', maxQuickDrafts:'随机自测草稿上限', maxPaperDrafts:'组题草稿上限', maxDocumentDrafts:'资料编辑草稿上限',
   examDurationMinutes:'默认考试时长（分钟）', maxHistoryPerPaper:'每卷历史上限', maxQuickHistory:'随机自测历史上限', maxQuestionHistory:'每题完整作答历史上限',
   randomQuestionCount:'默认随机题量', scoringEnabledByDefault:'默认计分', randomTotalPoints:'默认总分',
   objectivePercent:'客观题比例（%）', pointsByType:'题型分值', reviewIntervalsDays:'复习间隔（天）',
@@ -82,7 +82,7 @@ export function ConfigurationTransfer() {
     {data !== null && !preview && !busy && <button className="button" onClick={() => void inspectAgain()}>重新预览配置</button>}
     {preview && <div className="configuration-preview"><h3>配置导入预览：{filename}</h3><Changes title="常规配置差异" changes={preview.systemChanges} /><Changes title="AI配置差异" changes={preview.aiChanges} />
       <p>{preview.aiKey.message}</p>{preview.warnings.length > 0 && <ul>{preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
-      {preview.retention.total > 0 ? <div className="notice warning"><div><p>此配置将清理{preview.retention.drafts}份作答草稿、{preview.retention.history}份已交整卷历史、{preview.retention.authoring || 0}份组题草稿{preview.retention.questionHistory ? `、${preview.retention.questionHistory}份单题详细记录` : ''}，共{preview.retention.total}份记录。单题详细记录清理后，累计作答统计和仍保留的整卷继续保留。可先导出完整备份。</p><label className="check-row"><input type="checkbox" checked={confirmedRetention} disabled={busy} onChange={event => setConfirmedRetention(event.target.checked)} />我确认应用配置并清理上述超限记录</label></div></div> : <p className="muted">不会清理现有草稿与练习历史。</p>}
+      {preview.retention.total > 0 ? <div className="notice warning"><div><p>此配置将清理{preview.retention.drafts}份作答草稿、{preview.retention.history}份已交整卷历史、{preview.retention.authoring || 0}份组题草稿、{preview.retention.documentDrafts || 0}份资料草稿{preview.retention.questionHistory ? `、${preview.retention.questionHistory}份单题详细记录` : ''}，共{preview.retention.total}份记录。单题详细记录清理后，累计作答统计和仍保留的整卷继续保留。可先导出完整备份。</p><label className="check-row"><input type="checkbox" checked={confirmedRetention} disabled={busy} onChange={event => setConfirmedRetention(event.target.checked)} />我确认应用配置并清理上述超限记录</label></div></div> : <p className="muted">不会清理现有草稿与练习历史。</p>}
       <div className="form-actions"><button className="button" disabled={busy} onClick={() => { setData(null); setPreview(null); setError(''); }}>取消导入</button><button className="button primary" disabled={busy || preview.retention.total > 0 && !confirmedRetention} onClick={() => void apply()}>确认应用配置</button></div>
     </div>}
   </section>;

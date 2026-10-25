@@ -7,6 +7,7 @@ import { configurationSchema, configurationPreviewInputSchema, configurationImpo
 import { assetInputSchema } from '../modules/assets/schema.js';
 import * as ai from '../modules/ai/schema.js';
 import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/paper-drafts.js';
+import { documentDraftSchema, documentDraftQuerySchema, createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema } from '../modules/library/document-drafts.js';
 import { paginationFields } from '../core/pagination.js';
 import { vocabularyQuerySchema } from '../modules/questions/vocabulary.js';
 import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuestionsQuerySchema, learningContextsQuerySchema } from '../modules/practice/learning.js';
@@ -61,10 +62,13 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/sharing/export':shareSelection,'/api/sharing/export-document':shareSelection,'/api/sharing/preview':z.object({data:z.unknown()}).strict(),'/api/sharing/import':z.object({data:z.unknown(),confirmed:z.literal(true),expectedFingerprint:z.string().length(64).optional()}).strict(),
   '/api/import':z.object({data:z.unknown(),mode:z.literal('merge')}).strict(),
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
-  '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
+  '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),documentDrafts:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
 };
-const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料',papers:'题集',learning:'题集学习记录',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
+const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
+  if(url==='/api/document-drafts'&&method==='POST')return toJson(createDocumentDraftSchema);
+  if(url==='/api/document-drafts/:id')return method==='PUT'?toJson(updateDocumentDraftSchema):method==='DELETE'?toJson(deleteDocumentDraftSchema):undefined;
+  if(url==='/api/document-drafts/:id/publish'&&method==='POST')return toJson(publishDocumentDraftSchema);
   if(url==='/api/quick-practice')return toJson(z.object({questionId:id.optional(),excludeQuestionId:id.optional(),filters:validation.filtersSchema.optional()}).strict());
   if (!['POST','PUT','PATCH'].includes(method)) return undefined;
   if (/^\/api\/(?:exams\/sync|attempts\/:id\/(?:sync|reveal))$/.test(url)) return undefined;
@@ -105,6 +109,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(['/api/domains','/api/categories','/api/tags'].includes(url))schema.querystring=toJson(z.object({...paginationFields,search:z.string().max(1000).optional(),domainId:id.optional(),parentId:id.optional(),kind:z.string().max(40).optional()}));
   if(url==='/api/reviews')schema.querystring=toJson(z.object({...paginationFields,questionId:id.optional(),partId:id.optional(),whole:z.enum(['true','false']).optional()}));
   if(url==='/api/paper-drafts')schema.querystring=toJson(z.object({context:z.string().min(1).max(160).optional()}));
+  if(url==='/api/document-drafts')schema.querystring=toJson(documentDraftQuerySchema);
   if(url==='/api/attempts')schema.querystring=toJson(z.object({...paginationFields,paperId:id.optional(),source:z.enum(['paper','quick']).optional(),status:z.enum(['in_progress','submitted']).optional()}));
   if(url==='/api/ai/runs')schema.querystring=toJson(z.object({...paginationFields,kind:z.enum(['explain','grade','import','review','paper_plan']).optional(),questionId:validation.leafId.optional(),attemptId:id.optional()}));
   const outputs:Record<string,JsonSchema>={questions:toJson(validation.questionSchema),documents:toJson(validation.documentSchema),domains:toJson(validation.domainSchema),categories:toJson(validation.categorySchema),tags:toJson(validation.tagSchema),papers:paperOutput,attempts:attemptOutput,'paper-drafts':toJson(paperDraftSchema)};
@@ -130,7 +135,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/ai/test')success={type:'object',required:['ok','message','model'],properties:{ok:{const:true},message:{type:'string'},model:{type:'string'}}};
   if(url==='/api/ai/runs/:id/paper')success={type:'object',properties:{paper:paperOutput,run:aiRunOutput}};
   if(url==='/api/ai/settings')success=toJson(aiPublicSettingsSchema);
-  if(url==='/api/settings')success=method==='GET'?toJson(settingsSchema):{type:'object',properties:{settings:toJson(settingsSchema),retention:{type:'object',properties:{drafts:{type:'integer'},history:{type:'integer'},authoring:{type:'integer'},questionHistory:{type:'integer'},total:{type:'integer'}}}}};
+  if(url==='/api/settings')success=method==='GET'?toJson(settingsSchema):{type:'object',properties:{settings:toJson(settingsSchema),retention:{type:'object',properties:{drafts:{type:'integer'},history:{type:'integer'},authoring:{type:'integer'},documentDrafts:{type:'integer'},questionHistory:{type:'integer'},total:{type:'integer'}}}}};
   if(url==='/api/settings/export')success=toJson(configurationSchema);
   if(url==='/api/settings/import/preview')success=toJson(configurationPreviewSchema);
   if(url==='/api/settings/import')success=toJson(configurationImportResultSchema);
@@ -141,6 +146,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/exams/active'||url==='/api/exams/sync')success={type:'object',properties:{attempt:{anyOf:[attemptOutput,{type:'null'}]}}};
   if(url==='/api/papers/:id/attempts'||url==='/api/quick-practice'||/^\/api\/attempts\/:id\/(?:sync|submit|review|reveal)$/.test(url))success=attemptOutput;
   if(url==='/api/papers/:id/drafts'||url==='/api/paper-drafts')success={type:'array',items:url.includes('/drafts')?attemptOutput:toJson(paperDraftSchema)};
+  if(area==='document-drafts')success=url.endsWith('/publish')?toJson(validation.documentSchema):method==='GET'?{type:'array',items:toJson(documentDraftSchema)}:toJson(documentDraftSchema);
   if(method==='DELETE')success=object;
   schema.response={...(schema.response as Record<string,unknown>),200:success};
   const body=bodyFor(method,url); if(body)schema.body=body;

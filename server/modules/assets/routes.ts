@@ -31,13 +31,14 @@ export function validateAssetReferences(store: Store, record: unknown, limits?: 
 }
 export function validateAllAssetReferences(store: Store) {
   for (const table of ['questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'reviews', 'learning_results','question_history'] as const) for (const record of store.all(table)) validateAssetReferences(store, record);
+  for (const draft of store.all<any>('document_drafts')) validateAssetReferences(store, draft.state);
 }
 /** Derived references use the same structural collector as writes/migration;
  * a file page never scans source bodies or historical snapshots. */
 function referencedAssetIds(store: Store, wanted: Set<string>): Set<string> {
   if (!wanted.size) return new Set();
   const database = store.database;
-  database.projections.ensure(['questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'reviews', 'learning_results','question_history']);
+  database.projections.ensure(['questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'reviews', 'learning_results','question_history','document_drafts']);
   return new Set(database.all(database.query.selectFrom('asset_references').select('asset_id').distinct().where(database.expressions.idInJson('asset_id', [...wanted]))).map(row => row.asset_id));
 }
 export function assetIsReferenced(store: Store, aid: string): boolean {

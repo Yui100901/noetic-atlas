@@ -53,6 +53,13 @@
 - `GET /api/documents`：按 search、collection、kind、domainId、categoryId、tagIds、format 和分页查询。
 - `GET /api/documents/kinds`：去重后的有效资料类型，不读取正文供类型选择器使用。
 - `GET /api/documents/:id`、`POST /api/documents`、`PUT /api/documents/:id`、`DELETE /api/documents/:id`：管理资料，删除为归档。
+- `GET /api/document-drafts?documentId=...`：该资料最近的编辑草稿；省略documentId仅返回新增资料上下文，按更新时间倒序，默认每个上下文最多3份。
+- `POST /api/document-drafts`：`{documentId:null|string,baseDocumentUpdatedAt:null|string,state}`，允许未填标题／类型的独立草稿，返回201；不会写入正式资料。
+- `PUT /api/document-drafts/:id`：`{expectedUpdatedAt,state}`，覆盖同ID草稿，版本冲突返回409；已删除稿不能通过更新复活。
+- `DELETE /api/document-drafts/:id`：`{expectedUpdatedAt}`，仅删除匹配版本的草稿。
+- `POST /api/document-drafts/:id/publish`：`{expectedUpdatedAt,asNew?:boolean}`，在事务内校验当前草稿、来源资料版本及正式资料规则，再保存资料并删除对应草稿；原资料更新／归档／删除时保留草稿并返回409，asNew可显式另存。
+
+资料草稿保留完整可编辑字段及附件引用，支持SQLite和完整JSON的documentDrafts迁移。草稿不参与资料搜索、统计或内容分享；草稿引用的附件不能删除。只读取当前上下文的有界正文，保留裁剪读取轻量头部。配置maxDocumentDrafts默认3，自动保存等待复用autosaveDebounceMs。
 - 资料字段含 title、kind、domainIds、categoryIds、tagIds、author、publisher、publishedYear、description。Markdown 正文保存为 bodyMarkdown；PDF 通过 assetId 关联 PDF 资源，fileName 记录文件名。
 - `POST /api/assets`：`{filename,mimeType,dataBase64}`，验证字节、MIME、大小及图片尺寸，返回资源元信息。
 - `GET /api/assets`：资源列表及 referenced 状态，支持分页。
@@ -119,7 +126,7 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 单题详情由 maxQuestionHistory 独立控制，默认每个叶题10次，0关闭独立详情保留，不限制整卷历史。整卷存在时 question_history 仅引用原作答；整卷裁剪前只归档仍被单题保留的快照与回答。单题详情超限不清累计统计，也不清整卷；提高上限不会复活已裁剪详情。重评更新同一回答的分类，不增加作答次数。重置学习进度清累计统计，保留的旧详情标 beforeReset。旧备份仅能从尚存完整作答补建详情，已经清掉的回答不推算。
 
-降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring?,questionHistory?,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪不删除独立错题状态、错误快照、来源摘要、笔记及复习安排。旧库启动和旧备份导入时从尚存历史补建学习证据，已提前删除的历史无法追溯恢复。
+降低保留上限若会删除已有记录，首次返回 409 `RETENTION_CONFIRMATION_REQUIRED` 与 `{drafts,history,authoring?,documentDrafts?,questionHistory?,total}`。界面展示具体数量，用户确认后携带原 expectedRetention 再保存；确认期间数量改变再次要求确认。配置版本、记录裁剪与设置保存都在事务中处理。裁剪不删除独立错题状态、错误快照、来源摘要、笔记及复习安排。旧库启动和旧备份导入时从尚存历史补建学习证据，已提前删除的历史无法追溯恢复。
 
 ## AI 配置与任务
 

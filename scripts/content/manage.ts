@@ -70,7 +70,7 @@ export function validatePack(raw:any) {
   const banks=(raw.questionBanks||[]).map((b:any)=>({...questionBankSchema.parse(b),id:idSchema.parse(b.id)}));
   const bankIds=new Set<string>();for(const b of banks){if(bankIds.has(b.id)||b.questionIds.some((id:string)=>!ids.has(id)))throw new Error('Invalid bank');bankIds.add(b.id);}
   for(const q of questions)mapStrings(q,body=>{for(const link of body.matchAll(/(?:^|[\s("'<>])#\/questions\/([^/\s?#"'()<>\]]+)/g))if(!ids.has(decodeURIComponent(link[1])))throw new Error('Broken related-word link: '+q.id+' -> '+link[1]);return body;});
-  for(const key of ['documents','papers','study','reviews','attempts','settings','paperDrafts','dailyPushes','ai_settings','ai_runs'])if(raw[key]?.length||raw[key]&&!Array.isArray(raw[key]))throw new Error('Private state is forbidden: '+key);
+  for(const key of ['documents','papers','study','reviews','attempts','settings','paperDrafts','documentDrafts','dailyPushes','ai_settings','ai_runs'])if(raw[key]?.length||raw[key]&&!Array.isArray(raw[key]))throw new Error('Private state is forbidden: '+key);
   return enrichKnowledgePack({schemaVersion:1,generatedAt:raw.generatedAt,domains:domainRecords,categories:[...categories.values()],tags:[...tags.values()],questions,documents:[],papers:[],assets:(raw.assets||[]).map((a:any)=>assetRecordSchema.parse(a)),questionBanks:banks});
 }
 export function wordlistPapers(pack:any,size=100) {

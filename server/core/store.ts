@@ -7,9 +7,10 @@ import { fail } from './validation.js';
 import { cleanLearningRecord } from '../../shared/questions/learning-records.js';
 import { QuestionQueries, type QuestionSelection } from '../modules/questions/queries.js';
 import { emptyStudy, studyPartKey } from '../../shared/questions/study-state.js';
+import type { DocumentDraft } from '../../shared/models/document-drafts.js';
 
 export type Entity = Domain | Category | Tag | Question | QuestionBank | DocumentRecord | StudyState | Paper | Attempt;
-export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts', 'daily_pushes'] as const;
+export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'question_banks', 'settings', 'assets', 'paper_drafts', 'document_drafts', 'daily_pushes'] as const;
 export type Table = typeof tables[number];
 export const now = () => new Date().toISOString();
 export const nextStamp = (previous?: string) => new Date(Math.max(Date.now(), previous ? Date.parse(previous) + 1 : 0)).toISOString();
@@ -70,6 +71,7 @@ export class Store {
   validateTaxonomyReferences() {
     for (const tag of this.all<Tag>('tags')) this.validateTag(tag);
     for (const record of [...this.all<Question>('questions'), ...this.all<DocumentRecord>('documents')]) this.validateRefs(record);
+    for (const draft of this.all<DocumentDraft>('document_drafts')) this.validateRefs(draft.state);
   }
   validateCategory(category: Category) {
     if (!this.get('domains', category.domainId)) fail(400, 'INVALID_REFERENCE', '领域不存在');
@@ -94,6 +96,7 @@ export class Store {
     if (table === 'domains' && categories.some(c => c.domainId === id)) fail(409, 'IN_USE', '领域仍被分类引用');
     if (table === 'domains' && this.all<Tag>('tags').some(tag => tag.domainId === id)) fail(409, 'IN_USE', '领域仍被标签引用');
     if (table === 'domains' && this.all<DocumentRecord>('documents').some(document => document.domainIds?.includes(id))) fail(409, 'IN_USE', '领域仍被资料引用，包括已归档资料');
+    if (this.all<DocumentDraft>('document_drafts').some(draft => table === 'domains' ? draft.state.domainIds?.includes(id) : draft.state[table === 'tags' ? 'tagIds' : 'categoryIds'].includes(id))) fail(409, 'DOCUMENT_DRAFT_IN_USE', '资料草稿仍引用此项，请先修改或删除相关草稿');
     if (table === 'categories' && categories.some(c => c.parentId === id)) fail(409, 'IN_USE', '分类仍有子分类');
     if (table !== 'domains') {
       const key = table === 'tags' ? 'tagIds' : 'categoryIds';

@@ -11,7 +11,7 @@ import { paginationFields } from '../../core/pagination.js';
 export function normalizeDocument(store: Store, value: DocumentRecord, categories?: Category[]): DocumentRecord {
   return { ...value, format: value.format || 'markdown', assetId: value.assetId || null, fileName: value.fileName || null, domainIds: documentDomainIds(value, categories || store.all<Category>('categories')), author: value.author || '', publisher: value.publisher || '', publishedYear: value.publishedYear || '', description: value.description || '' };
 }
-function validateDocument(store: Store, document: DocumentRecord) {
+export function validateDocument(store: Store, document: DocumentRecord) {
   store.validateRefs(document);
   if (new TextEncoder().encode(document.bodyMarkdown).length > getSettings(store).maxDocumentMiB * 1024 * 1024) fail(413, 'DOCUMENT_TOO_LARGE', '资料内容超过系统配置允许的大小');
   validateAssetReferences(store, document, getSettings(store));

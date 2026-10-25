@@ -10,6 +10,7 @@ import { registerQuestionBankRoutes } from './modules/banks/routes.js';
 import { ensureSettings, getSettings, registerSettingsRoutes } from './modules/settings/routes.js';
 import { registerAssetRoutes, validateAllAssetReferences } from './modules/assets/routes.js';
 import { registerLibraryRoutes } from './modules/library/routes.js';
+import { registerDocumentDraftRoutes } from './modules/library/document-drafts.js';
 import { registerSharingRoutes } from './modules/sharing/routes.js';
 import { ensureAiStorage, registerAiRoutes, getPublicAiSettings } from './modules/ai/routes.js';
 import { registerPaperDraftRoutes } from './modules/practice/paper-drafts.js';
@@ -73,6 +74,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerSettingsRoutes(app, store);
   registerAssetRoutes(app, store);
   registerLibraryRoutes(app, store);
+  registerDocumentDraftRoutes(app, store);
   registerSharingRoutes(app, store);
   registerAiRoutes(app, store, { native: options.native });
   registerPaperDraftRoutes(app, store);

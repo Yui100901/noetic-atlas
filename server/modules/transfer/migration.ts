@@ -18,6 +18,7 @@ import { learningResultSchema, validateLearningResult, migrateLearningResults } 
 import { validateVocabularyPaperSnapshot } from '../practice/vocabulary-practice.js';
 import { questionHistorySchema,validateQuestionHistory,migrateQuestionHistory } from '../questions/history-store.js';
 import { dailyPushRecordSchema, validateDailyPushConfiguration } from '../daily-push/schema.js';
+import { documentDraftSchema, validateDocumentDraftState } from '../library/document-draft-schema.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
@@ -42,10 +43,11 @@ const envelopeSchema = z.object({
   questionBanks: z.array(questionBankSchema.safeExtend({ id })).default([]),
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
+  documentDrafts: z.array(documentDraftSchema).default([]),
   questionHistory:z.array(questionHistorySchema).default([]),
   dailyPushes:z.array(dailyPushRecordSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table;
+const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -125,6 +127,8 @@ export function importData(store: Store, raw: unknown) {
     result.papers!.added += store.all('papers').length - paperCountBefore;
     for (const draft of data.paperDrafts) validatePaperDraft(store, draft.state as PaperDraftState, { allowUnpublished: true });
     insert('paper_drafts', data.paperDrafts);
+    for (const draft of data.documentDrafts) if (!store.get('document_drafts', draft.id)) validateDocumentDraftState(store, draft.state, true);
+    insert('document_drafts', data.documentDrafts);
     for (const state of data.study) store.require('questions', state.questionId);
     insert('study', data.study, 'questionId');
     // Keep removed-part history in a backup without assigning it to another

@@ -21,7 +21,7 @@ export async function assertEmptyInstallation(api, configuration) {
   assert.deepEqual(bootstrap.stats.typeCounts, {});
   assert.equal((await api('/api/questions?status=all&page=1&pageSize=10')).total, 0, 'No hidden pending, draft or archived questions may ship');
   const exported = await api('/api/export');
-  for (const name of ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'questionBanks', 'study', 'reviews', 'attempts', 'assets', 'paperDrafts']) assert.deepEqual(exported[name], [], `Fresh ${name} must not contain user or question data`);
+  for (const name of ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'questionBanks', 'study', 'reviews', 'attempts', 'assets', 'paperDrafts', 'documentDrafts']) assert.deepEqual(exported[name], [], `Fresh ${name} must not contain user or question data`);
   assert.equal(exported.settings.length, 1, 'Exactly one basic system configuration is expected');
   const { id, updatedAt, ...system } = await api('/api/settings');
   assert.equal(id, 'system');

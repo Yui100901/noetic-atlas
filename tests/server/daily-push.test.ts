@@ -51,6 +51,7 @@ test('insufficient review points transfer to fresh questions; overshoot is allow
   const { record } = checkDailyPush(store, at); assert.ok(record); assert.equal(record!.reviewPoints, 6); assert.equal(record!.transferredPoints, 24); assert.equal(record!.targetNewPoints, 44); assert.equal(record!.newPoints, 45); assert.equal(record!.totalPoints, 51); assert.equal(record!.shortfall, 0);
   assert.equal(new Set(record!.questionIds).size, record!.questionIds.length); assert.ok(!record!.questionIds.includes('outside')); assert.ok(!record!.questionIds.includes('pending'));
   const paper = store.require<any>('papers', record!.paperId!); assert.equal(paper.scoring.enabled, true); assert.equal(paper.scoring.totalPoints, 51); assert.equal(paper.organization, 'domain');
+  assert.equal(record!.title, '2026-10-25 每日推荐'); assert.equal(paper.title, record!.title);
   const first = JSON.stringify(record); assert.equal(checkDailyPush(store, at).generated, false); assert.equal(store.all('papers').length, 1);
   store.put('settings', 'system', { ...getSettings(store), pointsByType: { ...getSettings(store).pointsByType, short_answer: 9 } });
   assert.equal(JSON.stringify(checkDailyPush(store, at).record), first); assert.equal(store.require<any>('papers', record!.paperId!).scoring.totalPoints, 51);
@@ -137,6 +138,7 @@ test('HTTP daily check/read endpoints are strict and OpenAPI declares them', asy
   assert.equal((await app.inject({ method: 'POST', url: '/api/import', payload: { data, mode: 'merge' } })).statusCode, 200);
   assert.equal((await app.inject('/api/daily-push')).json().today, null);
   const checked = (await app.inject({ method: 'POST', url: '/api/daily-push/check' })).json(); assert.equal(checked.generated, true); assert.equal(checked.overview.unreadCount, 1);
+  const papers = (await app.inject('/api/papers')).json(); assert.equal(papers.length, 1); assert.equal(papers[0].id, checked.record.paperId); assert.equal(papers[0].title, '2026-10-25 每日推荐');
   assert.equal((await app.inject({ method: 'POST', url: '/api/daily-push/check', payload: { now: '2099-01-01' } })).statusCode, 400);
   const read = await app.inject({ method: 'POST', url: '/api/daily-push/' + checked.record.id + '/read' }); assert.equal(read.statusCode, 200); assert.ok(read.json().readAt);
   assert.equal((await app.inject('/api/daily-push')).json().unreadCount, 0);

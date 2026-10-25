@@ -17,11 +17,16 @@ import { PaperLearningWorkspace, RetainedSetHistories } from './paper-learning';
 import { PaperCard, SpecialLearningSets, useLearningCardSummaries } from './learning-cards';
 import { ActionDropdown } from '../../shared/ui/action-dropdown';
 import { VocabularyDirectionFields, vocabularyDirectionLabel, type VocabularyDirection } from './vocabulary-practice';
+import { DailyPushCard, useDailyPush } from '../daily-push/daily-push';
 
 export function PapersPage() {
   const { bootstrap } = useApp();
   const [showArchived, setShowArchived] = useState(false);
   const { data, error, loading, refresh } = useResource<Paper[]>(`/api/papers${showArchived ? '?archived=true' : ''}`);
+  const { overview: dailyOverview } = useDailyPush();
+  // The scheduler can create a set while this page stays mounted. Observe its
+  // stable ID, so notification polling/mark-read never causes a reload loop.
+  useEffect(() => { if (dailyOverview?.today?.paperId) refresh(); }, [dailyOverview?.today?.paperId, refresh]);
   const [search, setSearch] = useState('');
   const [organization, setOrganization] = useState('all');
   const papers = data?.filter(paper => paper.title.toLowerCase().includes(search.toLowerCase()) && (organization === 'all' || (organization === 'other' ? paper.organization !== 'domain' : organization === 'domain' ? paper.organization === 'domain' : paper.organization === 'domain' && `domain:${paper.domainId}` === organization))) || [];
@@ -31,6 +36,7 @@ export function PapersPage() {
   for (const paper of paging.items) { const key = paper.organization === 'domain' ? `domain:${paper.domainId || ''}` : 'other'; groups.set(key, [...(groups.get(key) || []), paper]); }
   const orderedGroups = [...groups].sort(([left], [right]) => left === 'other' ? 1 : right === 'other' ? -1 : (bootstrap.domains.find(domain => `domain:${domain.id}` === left)?.sortOrder || 0) - (bootstrap.domains.find(domain => `domain:${domain.id}` === right)?.sortOrder || 0));
   return <><PageHeader eyebrow="QUESTION SETS" title="整理成题集，按自己的节奏学习。" description="手动选题、按标签随机选题或让 AI 推荐，将相关题目整理成题集。支持逐题学习、练习、考试、导出与分享。" actions={<><a className="button feature-entry" href="#/ai?tab=paper"><Sparkles size={17} />AI 推荐题集</a><a className="button" href="#/quick"><Shuffle size={16} />随机抽一题</a><a className="button" href="#/papers/new/random"><Shuffle size={16} />随机选题</a><a className="button primary" href="#/papers/new/manual"><Plus size={17} />手动选题</a></>} />
+    <DailyPushCard />
     <div className="paper-intro"><div><span className="section-label">按自己的节奏学习</span><p>每份题集内查看错题、复习建议、作答草稿和历史。</p></div><a className="button feature-entry" href="#/quick?tab=history"><Clock3 size={17} />随机与单题自测记录</a></div>
     <SpecialLearningSets />
     <RetainedSetHistories />

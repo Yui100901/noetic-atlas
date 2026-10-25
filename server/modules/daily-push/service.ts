@@ -30,7 +30,7 @@ export function checkDailyPush(store: Store, at = new Date()): DailyPushCheckRes
   const current = store.get<DailyPushRecord>('daily_pushes', id); if (current) return { generated: false, record: current };
   return store.transaction(() => {
     const config = initial.dailyPush;
-    const claim: DailyPushRecord = { id, dateKey, generatedAt: at.toISOString(), paperId: null, title: `${dateKey} 每日学习`, domainId: config.domainId!, categoryIds: [...config.categoryIds], targetReviewPoints: config.reviewPoints, baseNewPoints: config.newPoints, targetNewPoints: config.newPoints, targetTotalPoints: Math.round((config.reviewPoints + config.newPoints) * 100) / 100, transferredPoints: 0, reviewPoints: 0, newPoints: 0, totalPoints: 0, reviewCount: 0, newCount: 0, questionIds: [], reviewQuestionIds: [], newQuestionIds: [], pointsByType: { ...initial.pointsByType }, shortfall: Math.round((config.reviewPoints + config.newPoints) * 100) / 100, reason: '生成中', readAt: null };
+    const claim: DailyPushRecord = { id, dateKey, generatedAt: at.toISOString(), paperId: null, title: `${dateKey} 每日推荐`, domainId: config.domainId!, categoryIds: [...config.categoryIds], targetReviewPoints: config.reviewPoints, baseNewPoints: config.newPoints, targetNewPoints: config.newPoints, targetTotalPoints: Math.round((config.reviewPoints + config.newPoints) * 100) / 100, transferredPoints: 0, reviewPoints: 0, newPoints: 0, totalPoints: 0, reviewCount: 0, newCount: 0, questionIds: [], reviewQuestionIds: [], newQuestionIds: [], pointsByType: { ...initial.pointsByType }, shortfall: Math.round((config.reviewPoints + config.newPoints) * 100) / 100, reason: '生成中', readAt: null };
     const db = store.database;
     const inserted = db.run(db.query.insertInto('daily_pushes').values({ id, data: JSON.stringify(claim) }).onConflict(conflict => conflict.column('id').doNothing()));
     if (!Number(inserted.changes)) return { generated: false, record: store.require<DailyPushRecord>('daily_pushes', id) };
@@ -41,7 +41,7 @@ export function checkDailyPush(store: Store, at = new Date()): DailyPushCheckRes
     validateDailyPushConfiguration(store, active);
     const selected = selectDailyQuestions(store, active, settings.pointsByType, at);
     const { answerSlots: _slots, available: _available, ...selection } = selected;
-    const title = `${dateKey} 每日学习 · ${store.require<any>('domains', active.domainId!).name}`;
+    const title = claim.title;
     let paperId: string | null = null;
     if (selected.questionIds.length) {
       const metadata = new Map(store.questionMetadataByIds(selected.questionIds).items.map(question => [question.id, question.type]));

@@ -1,4 +1,4 @@
-/** Daily notifications and configuration use a disposable in-memory service. */
+/** Daily recommendation cards and configuration use a disposable service. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -54,41 +54,94 @@ try{
   await api('/api/daily-push/check','POST');assert.equal((await api('/api/daily-push')).today,null);
   checks.push('多选默认4分，未开启每日推题时不生成今天题集');
 
+  const recommendation=()=>page.getByRole('status',{name:'每日推荐',exact:true});
+  const noStandaloneEntry=async()=>{
+    assert.equal(await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'每日推题',exact:true}).count(),0);
+    assert.equal(await page.locator('.daily-push-topbar-link,.daily-push-banner').count(),0);
+  };
+  await go('papers');await recommendation().getByRole('link',{name:'开启每日推荐',exact:true}).waitFor();
+  await noStandaloneEntry();assert.equal(await page.locator('.paper-card').count(),0);
+  await capture('disabled-card-desktop');checks.push('每日推荐仅在题集页展示紧凑卡片，关闭时提供配置入口，主导航和顶部没有独立栏目或提醒');
+
+  const dashboardDaily=()=>page.locator('.learning-next .daily-push-quick-link');
+  await go('');await dashboardDaily().getByText('开启每日推荐',{exact:true}).waitFor();
+  assert.equal(await dashboardDaily().getAttribute('href'),'#/settings?tab=daily');
+  await dashboardDaily().click();await page.waitForURL(/#\/settings\?tab=daily/);
+  checks.push('知识总览今日学习建议在未开启时提供每日推荐配置入口');
+
   await go('settings?tab=daily');await page.getByRole('heading',{name:'每日推题',exact:true}).waitFor();
   assert.equal(await page.getByLabel('复习题目标分值',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('新题目标分值',{exact:true}).inputValue(),'20');
   await page.getByLabel('开启每日推题',{exact:true}).check();await page.getByRole('button',{name:'保存推题配置',exact:true}).click();
   assert.equal((await api('/api/settings')).dailyPush.enabled,false,'missing scope must not save');
   await page.getByLabel('推题领域',{exact:true}).selectOption('daily-domain');await page.getByRole('checkbox',{name:'每日测试分类',exact:true}).check();
+  // Save a future schedule so the set can be generated while the papers page
+  // is already mounted, exercising its list invalidation after generation.
+  await page.getByText('推题时间与时区',{exact:true}).click();await page.getByLabel('每日推题时间',{exact:true}).fill('23:59');
   await page.getByRole('button',{name:'保存推题配置',exact:true}).click();await page.getByText('每日推题配置已保存',{exact:true}).waitFor();
-  await page.getByRole('status',{name:'每日推题提醒',exact:true}).getByText('今日推题已就绪',{exact:true}).waitFor();
+  assert.equal((await api('/api/daily-push')).today,null);assert.equal(await recommendation().count(),0);await noStandaloneEntry();
+  await go('');await dashboardDaily().getByText('查看每日推荐',{exact:true}).waitFor();
+  assert.equal(await dashboardDaily().getAttribute('href'),'#/papers');
+  await go('papers');await recommendation().getByRole('button',{name:'检查今日推荐',exact:true}).waitFor();
+  assert.equal(await page.locator('.paper-card').count(),0);
+  const scheduled=await api('/api/settings');await api('/api/settings','PUT',{settings:{...scheduled,dailyPush:{...scheduled.dailyPush,scheduleTime:'00:00'}}});
+  await recommendation().getByRole('button',{name:'检查今日推荐',exact:true}).click();
+  await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).waitFor();
   overview=await api('/api/daily-push');const today=overview.today;assert.equal(today.reviewPoints,10);assert.equal(today.newPoints,42);assert.equal(today.totalPoints,52);assert.equal(today.transferredPoints,20);assert.equal(today.shortfall,0);assert.equal(today.questionIds.length,24);assert.ok(today.questionIds.every(id=>id!=='SHORTAGE-ONLY'));
+  assert.equal(today.title,'2026-10-25 每日推荐');
+  await page.getByRole('article',{name:'题集：2026-10-25 每日推荐',exact:true}).waitFor();
+  assert.ok(page.url().endsWith('#/papers'),'generating a recommendation must stay on the mounted set list');
+  assert.match(await recommendation().innerText(),/复习\s+10\s*分/);assert.match(await recommendation().innerText(),/新题\s+42\s*分/);assert.match(await recommendation().innerText(),/合计\s+52\s*分/);
+  await recommendation().getByText('新推送',{exact:true}).waitFor();assert.equal(await recommendation().locator('.daily-push-card-date').innerText(),'2026-10-25');
+  const bounds=await recommendation().boundingBox();assert.ok(bounds&&bounds.height<230,'desktop daily card should stay compact');
   checks.push('配置必须选择领域分类，父分类覆盖下级；复习10分不足部分补新题42分，总分52允许超额');
-  await capture('configured-desktop');
+  await capture('generated-card-desktop');checks.push('已挂载题集列表立即显示按日期命名的每日推荐，不离页或刷新；题集正常保存在题集库中');
 
-  await go('');const banner=page.getByRole('status',{name:'每日推题提醒',exact:true});await banner.getByRole('link',{name:'打开今日题集',exact:true}).waitFor();
-  assert.ok(await page.getByRole('link',{name:/每日推题通知/}).count());
-  await banner.getByRole('link',{name:'打开今日题集',exact:true}).click();await page.waitForURL(new RegExp(today.paperId));
+  await go('');await dashboardDaily().getByText('开始今日推荐',{exact:true}).waitFor();
+  assert.equal(await dashboardDaily().getAttribute('href'),'#/papers/'+today.paperId);
+  assert.equal((await api('/api/daily-push')).today.readAt,null);
+  await capture('dashboard-daily-desktop');await dashboardDaily().click();await page.waitForURL(new RegExp(today.paperId));
+  for(let i=0;i<30;i++){if((await api('/api/daily-push')).today.readAt)break;await delay(100);}
+  assert.ok((await api('/api/daily-push')).today.readAt);
+  checks.push('总览待生成时进入题集页，生成后直接打开今日推荐并标记已读');
+  await go('papers');await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).waitFor();
+
+  await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).click();await page.waitForURL(new RegExp(today.paperId));
   for(let i=0;i<30;i++){if((await api('/api/daily-push')).today.readAt)break;await delay(100);}
   assert.ok((await api('/api/daily-push')).today.readAt);const paper=await api('/api/papers/'+today.paperId);assert.equal(paper.scoring.totalPoints,52);assert.equal(paper.scoring.enabled,true);
+  assert.equal(paper.title,'2026-10-25 每日推荐');assert.equal(await recommendation().count(),0);
   const duplicate=await api('/api/daily-push/check','POST');assert.equal(duplicate.generated,false);assert.equal(duplicate.record.paperId,today.paperId);
-  checks.push('总览醒目通知和顶部铃铛可见，打开今日题集即标已读，同日重复检查不重复生成');
+  checks.push('小卡片打开今日题集并标已读，同日不重复生成，题集详情继续使用普通练习考试导出功能');
 
-  await go('daily-push');await page.getByRole('heading',{name:'最近30次推送',exact:true}).waitFor();
-  const shortage=page.locator('.daily-push-record').filter({hasText:'2026-10-24'});await shortage.getByText(/还差 49 分/).waitFor();assert.equal(await shortage.getByRole('link',{name:'打开题集',exact:true}).count(),0);await shortage.getByText('原题集已归档或删除，推送摘要继续保留。',{exact:true}).waitFor();
-  await page.getByLabel('每日推题记录每页数量',{exact:true}).selectOption('10');assert.equal(await page.locator('.daily-push-record').count(),2);
-  await capture('history-desktop');checks.push('最近推送分页可调整数量，题量不足和归档来源清晰展示且没有失效作答入口');
+  await go('');assert.equal(await recommendation().count(),0);await noStandaloneEntry();
+  await go('papers');await recommendation().waitFor();await page.getByLabel('显示已归档',{exact:true}).check();
+  await page.getByRole('article',{name:'题集：2026-10-24 每日推荐',exact:true}).waitFor();
+  checks.push('其他页面不展示推荐卡片，历史推荐通过题集库管理，归档推荐随显示已归档选项查看');
 
-  await page.setViewportSize({width:390,height:844});await go('settings?tab=daily');await capture('configuration-mobile');
+  const compactMobileCard=async()=>{
+    const card=await recommendation().boundingBox(),copy=await recommendation().locator('.daily-push-card-copy').boundingBox();
+    assert.ok(card&&card.height<=230,'mobile daily card must stay compact instead of stacking each character');
+    assert.ok(copy&&copy.width>=200,'mobile daily recommendation text must have a readable line width');
+  };
+  await page.setViewportSize({width:390,height:844});await go('');await dashboardDaily().getByText('开始今日推荐',{exact:true}).waitFor();
+  const quickBounds=await dashboardDaily().boundingBox();assert.ok(quickBounds&&quickBounds.width>=120&&quickBounds.height>=40);
+  await capture('dashboard-daily-mobile');checks.push('390px总览快捷入口正常换行，按钮尺寸可点击且页面无溢出');
+  await go('papers');await recommendation().waitFor();await compactMobileCard();await capture('recommendation-card-mobile');
+  await go('settings?tab=daily');await capture('configuration-mobile');
   await page.getByLabel('开启每日推题',{exact:true}).uncheck();await page.getByRole('button',{name:'保存推题配置',exact:true}).click();await page.getByText('每日推题配置已保存',{exact:true}).waitFor();
   overview=await api('/api/daily-push');assert.equal(overview.config.enabled,false);assert.equal(overview.today.paperId,today.paperId);
-  await go('daily-push');await page.getByText('每日推题未开启',{exact:true}).waitFor();await capture('history-mobile');
-  await page.getByRole('link',{name:/每日推题通知/}).waitFor();assert.equal((await api('/api/papers/'+today.paperId)).scoring.totalPoints,52);
-  checks.push('390px配置和记录无溢出，关闭后已有每日题集/分值和通知记录继续保留');
+  await go('papers');await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).waitFor();await compactMobileCard();await capture('disabled-existing-mobile');
+  await page.getByRole('article',{name:'题集：2026-10-25 每日推荐',exact:true}).waitFor();assert.equal((await api('/api/papers/'+today.paperId)).scoring.totalPoints,52);
+  checks.push('390px卡片和配置无溢出，关闭自动推题后已生成的题集及分值继续保留');
 
   await api('/api/exams/sync','POST');await go('papers/'+today.paperId);await page.getByRole('button',{name:'选择练习模式',exact:true}).click();await page.getByRole('menuitem',{name:/考试模式/}).click();const exam=page.getByRole('dialog',{name:'开始限时考试',exact:true});await exam.getByRole('button',{name:'开始考试',exact:true}).click();await page.waitForURL(/#\/attempts\//);
-  await page.getByLabel('考试倒计时').waitFor();assert.equal(await page.getByRole('status',{name:'每日推题提醒',exact:true}).isVisible(),false);assert.equal(await page.getByRole('link',{name:/每日推题通知/}).isVisible(),false);
+  await page.getByLabel('考试倒计时').waitFor();assert.equal(await recommendation().count(),0);await noStandaloneEntry();
   await page.getByRole('button',{name:'交卷并查看解析',exact:true}).first().click();await page.getByLabel('本次作答时间').waitFor();
-  await page.getByRole('link',{name:/每日推题通知/}).waitFor();checks.push('考试期间隐藏推题通知和铃铛，交卷后恢复正常入口');
+  await go('papers');await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).waitFor();checks.push('推荐题集可正常进入考试并交卷，考试作答页没有推荐卡片或全局提醒');
+  await api('/api/papers/'+today.paperId,'DELETE');
+  const archivedSettings=await api('/api/settings');await api('/api/settings','PUT',{settings:{...archivedSettings,dailyPush:{...archivedSettings.dailyPush,enabled:true}}});await go('');
+  await dashboardDaily().getByText('查看每日推荐',{exact:true}).waitFor();assert.equal(await dashboardDaily().getAttribute('href'),'#/papers');
+  await dashboardDaily().click();await page.waitForURL(/#\/papers$/);await recommendation().getByText('今日题集已归档或删除，往期推荐可在题集库查找。',{exact:true}).waitFor();
+  checks.push('今日推荐归档后总览快捷入口进入题集库，避免失效的直达链接');
   assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[]);
   const report={passed:checks.length,checks,errors,externalRequests,isolated:true,databasePath:':memory:',actualDailyScore:52};await writeFile(resolve(output,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){await page?.screenshot({path:resolve(output,'failure.png'),fullPage:true}).catch(()=>{});console.error({url:page?.url(),checks,stderr});throw error;}

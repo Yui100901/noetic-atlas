@@ -14,7 +14,10 @@ export function normalizeScoring(questions: Question[], input?: ScoringInput | P
   if ('scheme' in (input || {}) && (input as PaperScoring).scheme !== scheme) fail(400, 'INVALID_SCORING', '计分模式与启用状态不一致');
   const enabled = scheme !== 'none';
   if (scheme === 'legacy' && input && !input.enabled) fail(400, 'INVALID_SCORING', '旧版计分不能标记为禁用');
-  const pointsByType = { ...(scheme === 'legacy' ? LEGACY_POINTS : DEFAULT_POINTS), ...(scheme === 'custom' ? input?.pointsByType : {}) };
+  // Saved unscored papers also freeze their type defaults. These values do not
+  // award points, but must survive changes to installation defaults on reads,
+  // backup imports and history views. Only legacy scoring has a fixed scale.
+  const pointsByType = { ...(scheme === 'legacy' ? LEGACY_POINTS : DEFAULT_POINTS), ...(scheme !== 'legacy' ? input?.pointsByType : {}) };
   const questionPoints: Record<string, number> = {};
   const questionIds = new Set(questions.map(q=>q.id));
   if (input?.questionPoints && Object.keys(input.questionPoints).some(qid => !questionIds.has(qid))) fail(400, 'INVALID_QUESTION_POINTS', '分值表包含不在本卷中的题号');

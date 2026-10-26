@@ -28,6 +28,7 @@ export class LocalApp {
   get(path: string, options: RouteOptions | Handler, handler?: Handler) { this.route('GET', path, options, handler); }
   post(path: string, options: RouteOptions | Handler, handler?: Handler) { this.route('POST', path, options, handler); }
   put(path: string, options: RouteOptions | Handler, handler?: Handler) { this.route('PUT', path, options, handler); }
+  patch(path: string, options: RouteOptions | Handler, handler?: Handler) { this.route('PATCH', path, options, handler); }
   delete(path: string, options: RouteOptions | Handler, handler?: Handler) { this.route('DELETE', path, options, handler); }
   addHook(name: string, handle: Handler) { (this.hooks[name] ||= []).push(handle); }
   setErrorHandler(handle: typeof this.errorHandler) { this.errorHandler = handle; }

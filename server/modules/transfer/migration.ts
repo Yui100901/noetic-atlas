@@ -19,6 +19,8 @@ import { validateVocabularyPaperSnapshot } from '../practice/vocabulary-practice
 import { questionHistorySchema,validateQuestionHistory,migrateQuestionHistory } from '../questions/history-store.js';
 import { dailyPushRecordSchema, validateDailyPushConfiguration } from '../daily-push/schema.js';
 import { documentDraftSchema, validateDocumentDraftState } from '../library/document-draft-schema.js';
+import { ratingSchema, reviewCardSchema, reviewEventSchema } from '../review-scheduler/schema.js';
+import { mirrorReviewStudy, validateReviewImport } from '../review-scheduler/service.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
@@ -35,7 +37,7 @@ const attemptSchema = z.object({
 });
 const studySchema = z.object({ questionId: id, favorite: z.boolean(), mastery: z.number().int().min(0).max(3).nullable(), notes: z.string().max(500000), nextReviewAt: datetime.nullable(), lastReviewedAt: datetime.nullable(), wrongCount: z.number().int().nonnegative() });
 const partStudySchema = studySchema.extend({ partId: id, favorite: z.literal(false).default(false) });
-const reviewSchema = z.object({ id: id.optional(), questionId: id, partId: id.optional(), mastery: z.number().int().min(0).max(3), reviewedAt: datetime, source: z.string().max(100).default('manual'), attemptId: id.optional() });
+const reviewSchema = z.object({ id: id.optional(), questionId: id, partId: id.optional(), mastery: z.number().int().min(0).max(3), reviewedAt: datetime, source: z.string().max(100).default('manual'), attemptId: id.optional(), rating: ratingSchema.optional(), schedulerEventId: z.string().min(1).max(1600).optional() });
 const envelopeSchema = z.object({
   schemaVersion: z.literal(1), generatedAt: z.string().optional(), exportedAt: z.string().optional(),
   domains: z.array(domainSchema.extend({ id })), categories: z.array(categorySchema.extend({ id })), tags: z.array(tagSchema.extend({ id })), questions: z.array(questionSchema), documents: z.array(documentSchema.extend({ _archived: z.boolean().optional() })), papers: z.array(paperSchema),
@@ -46,8 +48,9 @@ const envelopeSchema = z.object({
   documentDrafts: z.array(documentDraftSchema).default([]),
   questionHistory:z.array(questionHistorySchema).default([]),
   dailyPushes:z.array(dailyPushRecordSchema).default([]),
+  reviewCards: z.array(reviewCardSchema).default([]), reviewEvents: z.array(reviewEventSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table;
+const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -166,6 +169,16 @@ export function importData(store: Store, raw: unknown) {
     // Reviews remain useful study events after retention removes their attempt.
     for (const r of data.reviews) store.require('questions', r.questionId);
     insert('reviews', data.reviews);
+    // A memory card and its complete event chain are one import unit. Keeping
+    // the local aggregate avoids mixing incompatible grades or replay baselines.
+    const adaptive = validateReviewImport(data.reviewCards, data.reviewEvents);
+    const localCards = new Set(adaptive.cards.filter(card => store.get('review_cards', card.id)).map(card => card.id));
+    const newEvents = adaptive.events.filter(event => !localCards.has(event.cardId));
+    for (const event of newEvents) if (store.get('review_events', event.id)) fail(409, 'REVIEW_EVENT_COLLISION', '导入复习事件与本机其他记忆卡冲突，请使用完整SQLite恢复或保留本机版本');
+    insert('review_cards', adaptive.cards);
+    insert('review_events', newEvents);
+    result.reviewEvents!.skipped += adaptive.events.length - newEvents.length;
+    if (getSettings(store).reviewScheduling.strategy === 'fsrs') for (const card of adaptive.cards) if (!localCards.has(card.id) && store.get('questions', card.questionId)) mirrorReviewStudy(store, card);
     validateAllAssetReferences(store);
     return { mode: 'merge', counts: result };
   });

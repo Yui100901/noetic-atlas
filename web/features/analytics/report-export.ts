@@ -1,4 +1,3 @@
-import { saveGeneratedFile } from '@platform';
 import type { AnalyticsMetrics, WeeklyReport } from '../../../shared/models/analytics';
 
 export const analyticsNumber = (value: number) => value.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
@@ -25,6 +24,30 @@ const metricRows = (summary: AnalyticsMetrics) => [
   ['已知作答计时', analyticsMeasuredDuration(summary)], ['有计时的提交', summary.timedSessions], ['缺少计时的提交', summary.missingTimeSessions],
   ['活跃天数', summary.activeDays], ['复习记录', summary.reviewEvents],
 ];
+function adaptiveMarkdown(report: WeeklyReport): string[] {
+  const adaptive = report.current.adaptive, previous = report.comparison.adaptive;
+  if (!adaptive) return [];
+  const ratings = [['again', '重学 Again'], ['hard', '困难 Hard'], ['good', '良好 Good'], ['easy', '轻松 Easy']] as const;
+  const timing = [['new', '首次反馈'], ['due', '已到期'], ['early', '提前复习'], ['overdue', '逾期复习'], ['unknown', '计划未知']] as const;
+  return ['## FSRS 自适应复习', '',
+    `统计截止：${cell(report.current.range.asOf)}。反馈按原始发生时刻归属；更正判分或反馈不增加次数。`, '',
+    `| 指标 | 本周 | ${cell(report.comparison.label)} |`, '| --- | ---: | ---: |',
+    `| FSRS 反馈次数 | ${adaptive.feedbackEvents} | ${previous?.feedbackEvents ?? '—'} |`,
+    `| 去重复习卡 | ${adaptive.uniqueCards} | ${previous?.uniqueCards ?? '—'} |`,
+    `| 回忆成功次数 | ${adaptive.recallSuccesses} | ${previous?.recallSuccesses ?? '—'} |`,
+    `| 回忆成功率 | ${analyticsPercent(adaptive.recallSuccessRate)} | ${analyticsPercent(previous?.recallSuccessRate ?? null)} |`,
+    ...ratings.map(([key, label]) => `| ${label} | ${adaptive.ratings[key]} | ${previous?.ratings[key] ?? '—'} |`), '',
+    '回忆成功率＝（Hard＋Good＋Easy）÷全部反馈；Again 计回忆失败。该指标与答题严格正确率分别统计。小题与词汇方向各自作为复习卡，重复复习分别计次。', '',
+    '| 复习时机 | 反馈次数 | 回忆成功 | 回忆成功率 |', '| --- | ---: | ---: | ---: |',
+    ...timing.map(([key, label]) => `| ${label} | ${adaptive.timing[key].feedbackEvents} | ${adaptive.timing[key].recallSuccesses} | ${analyticsPercent(adaptive.timing[key].recallSuccessRate)} |`), '',
+    '时机按事件前的 FSRS 记忆计划判定：计划时刻前为提前，到期后同一统计时区日期为已到期，跨日期为逾期。首次反馈尚无 FSRS 复习周期；历史手工改期与旧固定计划未保留在事件记忆中，不据此推断准时率。', '',
+    `本时段到期处理比例：${analyticsPercent(adaptive.dueProcessing.rate)}；已完成到期周期 ${adaptive.dueProcessing.completedDueCycles} 个。`, '',
+    adaptive.queue
+      ? `当前队列（${cell(adaptive.queue.asOf)}）：到期 ${adaptive.queue.due} 项，其中今日到期 ${adaptive.queue.today} 项、逾期 ${adaptive.queue.overdue} 项；短期重学 ${adaptive.queue.relearning} 项，暂停 ${adaptive.queue.suspended} 项。短期重学为已到期的学习／重学状态，可能同时属于逾期。`
+      : '截止时刻队列：—；缺少可靠快照，未展示积压。', '',
+    cell(adaptive.dueProcessing.reason), '',
+  ];
+}
 export function weeklyReportMarkdown(report: WeeklyReport): string {
   const current = report.current, summary = current.summary, comparison = report.comparison;
   const asOfDay = analyticsDateKey(current.range.asOf, report.timeZone);
@@ -42,7 +65,8 @@ export function weeklyReportMarkdown(report: WeeklyReport): string {
     `| 活跃天数 | ${summary.activeDays} | ${comparison.summary.activeDays} | ${comparison.deltas.activeDays > 0 ? '+' : ''}${comparison.deltas.activeDays} |`,
     `| 已知作答计时 | ${analyticsMeasuredDuration(summary)} | ${analyticsMeasuredDuration(comparison.summary)} | ${summary.missingTimeSessions || comparison.summary.missingTimeSessions ? '计时记录不全' : `${comparison.deltas.elapsedSeconds >= 0 ? '+' : '-'}${analyticsDuration(Math.abs(comparison.deltas.elapsedSeconds))}`} |`,
     `| 严格正确率 | ${analyticsPercent(summary.accuracy)} | ${analyticsPercent(comparison.summary.accuracy)} | ${comparison.deltas.accuracyPoints == null ? '不可比较' : `${comparison.deltas.accuracyPoints > 0 ? '+' : ''}${analyticsNumber(comparison.deltas.accuracyPoints)}个百分点`} |`, '',
-    '## 每日学习', '', '| 日期 | 实际作答 | 去重作答项 | 正确 | 部分正确 | 错误 | 未判 | 复习 | 已知计时 |', '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
+    ...adaptiveMarkdown(report),
+    '## 每日学习', '', '| 日期 | 实际作答 | 去重作答项 | 正确 | 部分正确 | 错误 | 未判 | 复习 | 已知计时 |', '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
     ...current.daily.map(({ date, metrics: day }) => date > asOfDay ? `| ${date}（未到日期） | — | — | — | — | — | — | — | — |` : `| ${date} | ${day.answers} | ${day.uniqueItems} | ${day.correct} | ${day.partial} | ${day.incorrect} | ${day.ungraded} | ${day.reviewEvents} | ${analyticsMeasuredDuration(day)} |`), '',
   ];
   for (const [title, breakdown] of [['领域分布', current.domains], ['题型分布', current.types]] as const) {
@@ -59,5 +83,6 @@ export function weeklyReportMarkdown(report: WeeklyReport): string {
   return lines.join('\n');
 }
 export async function downloadWeeklyReport(report: WeeklyReport): Promise<void> {
+  const { saveGeneratedFile } = await import('@platform');
   await saveGeneratedFile(`认知星图-学习周报-${report.weekStart}.md`, new Blob([weeklyReportMarkdown(report)], { type: 'text/markdown;charset=utf-8' }), 'text/markdown');
 }

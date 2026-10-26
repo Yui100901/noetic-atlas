@@ -106,7 +106,7 @@ test('configured draft and submitted-history limits apply per paper and quick so
 
 test('new paper defaults and review scheduling read settings while saved snapshots remain stable', async t => {
   const app = await fixture(t);
-  await configure(app, { randomQuestionCount: 1, reviewIntervalsDays: [0, 4, 10, 30] });
+  await configure(app, { randomQuestionCount: 1, reviewIntervalsDays: [0, 4, 10, 30], reviewScheduling: { ...DEFAULT_SETTINGS.reviewScheduling, strategy: 'fixed' } });
   const unscored = json(await app.inject({ method: 'POST', url: '/api/papers', payload: { title: '缺省随机卷', mode: 'random' } }), 201);
   assert.equal(unscored.questionCount, 1); assert.equal(unscored.scoring.enabled, false);
   await configure(app, { scoringEnabledByDefault: true, randomTotalPoints: 4, objectivePercent: 85, pointsByType: { ...DEFAULT_SETTINGS.pointsByType, true_false: 4 } });

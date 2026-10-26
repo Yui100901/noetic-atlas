@@ -5,6 +5,7 @@ import {fail} from '../../core/validation.js';
 import {getSettings} from '../settings/service.js';
 import {learningQuestionKey} from '../practice/learning-state.js';
 import {addDays,calendar,daysBetween,monday,validateRange} from './calendar.js';
+import {adaptiveAnalytics} from './adaptive.js';
 
 interface Item {
   id:string;sourceQuestionId?:string|null;partId?:string|null;answered?:boolean|number;
@@ -76,6 +77,7 @@ function breakdown(id:string,label:string,acc:Accumulator):AnalyticsBreakdown{co
 function report(store:Store,range:{from:string;to:string;timeZone:string},now:Date,untilOverride?:number):AnalyticsReport {
   validateRange(range.from,range.to);const clock=calendar(range.timeZone),today=clock.date(now);
   const start=clock.start(range.from),end=clock.start(addDays(range.to,1)),until=Math.min(end,now.getTime()+1,untilOverride??Infinity);
+  const adaptive=adaptiveAnalytics(store,start,Math.max(start,until),range.timeZone,now,range.from<=today&&range.to>=today&&until===now.getTime()+1);
   const activity=readActivity(store,start,Math.max(start,until)),total=new Accumulator();
   const daily=new Map<string,Accumulator>();for(let date=range.from;date<=range.to;date=addDays(date,1))daily.set(date,new Accumulator());
   const db=store.database,field=db.expressions.field.bind(db.expressions);
@@ -103,13 +105,13 @@ function report(store:Store,range:{from:string;to:string;timeZone:string},now:Da
   const types=[...typeBuckets].map(([id,bucket])=>breakdown(id,id==='unknown'?'未知题型':typeLabels[id as QuestionType],bucket)).sort((a,b)=>b.answers-a.answers||a.id.localeCompare(b.id));
   const domainRows=[...domainBuckets].map(([id,bucket])=>breakdown(id,domains.get(id)||'未分类或领域已删除',bucket)).sort((a,b)=>b.answers-a.answers||a.id.localeCompare(b.id));
   const recommendations:AnalyticsReport['recommendations']=[];
-  if(!summary.answers&&!summary.reviewEvents)recommendations.push({id:'start',title:'从一次小练习开始',description:'当前范围尚无实际作答或复习记录。选择一个题集，先完成少量题目。',href:'#/papers'});
+  if(!summary.answers&&!summary.reviewEvents&&!adaptive.feedbackEvents)recommendations.push({id:'start',title:'从一次小练习开始',description:'当前范围尚无实际作答或复习记录。选择一个题集，先完成少量题目。',href:'#/papers'});
   if(summary.ungraded)recommendations.push({id:'grade',title:'核对尚未判定的回答',description:`${summary.ungraded}次实际回答尚未判定，暂不参与正确率。核对后再判断掌握情况。`,href:'#/papers'});
   for(const weak of domainRows.filter(row=>row.id!==UNCLASSIFIED&&row.graded>=3&&row.accuracy!==null&&row.accuracy<70).sort((a,b)=>a.accuracy!-b.accuracy!).slice(0,2))recommendations.push({id:'domain-'+weak.id,title:`优先巩固${weak.label}`,description:`样本${weak.graded}次已判作答，完全正确率${weak.accuracy}%；其中部分正确${weak.partial}次、错误${weak.incorrect}次。先复盘原因，再少量重练。`,href:'#/questions?domainId='+encodeURIComponent(weak.id)});
-  if(summary.answers&&summary.reviewEvents===0)recommendations.push({id:'review',title:'留一次复习时间',description:'本时段有作答但没有记录复习动作，可从到期题目中挑选少量回顾。',href:'#/questions?due=true'});
+  if(summary.answers&&summary.reviewEvents===0&&!adaptive.feedbackEvents)recommendations.push({id:'review',title:'留一次复习时间',description:'本时段有作答但没有记录复习动作，可从到期题目中挑选少量回顾。',href:'#/questions?due=true'});
   if(summary.answers&&summary.activeDays<Math.min(3,Math.max(1,daysBetween(range.from,range.to)+1)))recommendations.push({id:'rhythm',title:'把练习分散到几天',description:`本时段记录到${summary.activeDays}个活跃日。可安排短时练习与回顾，逐步形成自己的节奏。`,href:'#/papers'});
   if(!recommendations.length)recommendations.push({id:'steady',title:'继续保持当前节奏',description:'结合错题原因与到期复习安排下一步；作答次数和耗时只描述活动量，不直接代表掌握程度。',href:'#/papers'});
-  return {range:{...range,asOf:now.toISOString(),partial:range.to>=today},summary,daily:[...daily].map(([date,acc])=>({date,metrics:acc.finish()})),domains:domainRows,types,recommendations,quality};
+  return {range:{...range,asOf:new Date(Math.min(now.getTime(),until-1)).toISOString(),partial:range.to>=today},summary,adaptive,daily:[...daily].map(([date,acc])=>({date,metrics:acc.finish()})),domains:domainRows,types,recommendations,quality};
 }
 
 export function learningAnalytics(store:Store,query:{from?:string;to?:string;timeZone?:string}={},now=new Date()):AnalyticsReport {
@@ -123,5 +125,5 @@ export function weeklyReport(store:Store,query:{week?:string;timeZone?:string}={
   const current=report(store,{from:weekStart,to:weekEnd,timeZone},now),previousStart=addDays(weekStart,-7),previousEnd=addDays(weekStart,-1);
   const elapsed=now.getTime()+1-clock.start(weekStart),matchedUntil=isCurrentWeek?clock.start(previousStart)+elapsed:undefined;
   const previous=report(store,{from:previousStart,to:previousEnd,timeZone},now,matchedUntil),a=current.summary,b=previous.summary;
-  return {weekStart,weekEnd,timeZone,generatedAt:now.toISOString(),isCurrentWeek,current,comparison:{mode:isCurrentWeek?'matched_elapsed':'full_week',from:previousStart,to:previousEnd,label:isCurrentWeek?'上周同期':'上周整周',summary:b,deltas:{answers:a.answers-b.answers,sessions:a.sessions-b.sessions,elapsedSeconds:a.elapsedSeconds-b.elapsedSeconds,activeDays:a.activeDays-b.activeDays,accuracyPoints:a.accuracy===null||b.accuracy===null?null:round(a.accuracy-b.accuracy)}}};
+  return {weekStart,weekEnd,timeZone,generatedAt:now.toISOString(),isCurrentWeek,current,comparison:{mode:isCurrentWeek?'matched_elapsed':'full_week',from:previousStart,to:previousEnd,label:isCurrentWeek?'上周同期':'上周整周',summary:b,adaptive:previous.adaptive,deltas:{answers:a.answers-b.answers,sessions:a.sessions-b.sessions,elapsedSeconds:a.elapsedSeconds-b.elapsedSeconds,activeDays:a.activeDays-b.activeDays,accuracyPoints:a.accuracy===null||b.accuracy===null?null:round(a.accuracy-b.accuracy)}}};
 }

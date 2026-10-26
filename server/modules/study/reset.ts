@@ -18,8 +18,10 @@ function plan(store: Store) {
     field<'in_progress' | 'submitted'>('data', 'status').as('status'), field<string>('data', 'startedAt').as('startedAt'), field<string | null>('data', 'submittedAt').as('submittedAt'), field<string | null>('data', 'updatedAt').as('updatedAt'),
   ]).orderBy('id'));
   const questionHistory=db.all(db.query.selectFrom('question_history').select(['id','data']).orderBy('id'));
-  const fingerprint = createHash('sha256').update(JSON.stringify({ states: states.sort((a, b) => a.questionId.localeCompare(b.questionId)), partStates: partStates.sort((a, b) => JSON.stringify([a.questionId, a.partId]).localeCompare(JSON.stringify([b.questionId, b.partId]))), reviews, results, attempts,questionHistory })).digest('hex');
-  const preview = { fingerprint, counts: { states: states.length, partStates: partStates.length, reviews: reviews.length, results: results.filter(row => !row.reset).length }, retained: { attempts: attempts.filter(row => row.status === 'submitted').length, drafts: attempts.filter(row => row.status === 'in_progress').length } };
+  const cards = db.all(db.query.selectFrom('review_cards').select(['id', 'data']).orderBy('id'));
+  const events = db.all(db.query.selectFrom('review_events').select(['id', 'data']).orderBy('id'));
+  const fingerprint = createHash('sha256').update(JSON.stringify({ states: states.sort((a, b) => a.questionId.localeCompare(b.questionId)), partStates: partStates.sort((a, b) => JSON.stringify([a.questionId, a.partId]).localeCompare(JSON.stringify([b.questionId, b.partId]))), reviews, results, attempts, questionHistory, cards, events })).digest('hex');
+  const preview = { fingerprint, counts: { states: states.length, partStates: partStates.length, reviews: reviews.length, results: results.filter(row => !row.reset).length, reviewCards: cards.length, reviewEvents: events.length }, retained: { attempts: attempts.filter(row => row.status === 'submitted').length, drafts: attempts.filter(row => row.status === 'in_progress').length } };
   return { states, partStates, attempts, questionHistory, preview };
 }
 
@@ -33,6 +35,8 @@ export function resetLearningProgress(store: Store, fingerprint: string) {
     if (current.preview.fingerprint !== fingerprint) fail(409, 'LEARNING_RESET_PREVIEW_STALE', '预览后学习记录已变化，请重新预览后确认');
     for (const state of [...current.states, ...current.partStates]) store.putStudy({ ...state, mastery: null, lastReviewedAt: null, nextReviewAt: null, wrongCount: 0 });
     store.database.run(store.database.query.deleteFrom('reviews'));
+    store.database.run(store.database.query.deleteFrom('review_cards'));
+    store.database.run(store.database.query.deleteFrom('review_events'));
     store.database.run(store.database.query.deleteFrom('learning_results'));
     for(const row of current.questionHistory)store.put('question_history',row.id,{...JSON.parse(row.data),beforeReset:true});
     for (const row of current.attempts) if (row.status === 'submitted') {

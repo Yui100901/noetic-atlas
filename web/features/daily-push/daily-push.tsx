@@ -130,7 +130,7 @@ export function DailyPushCard() {
       ? `每天 ${overview.config.scheduleTime} 生成 · 复习 ${points(overview.config.reviewPoints)} 分，新题 ${points(overview.config.newPoints)} 分`
       : '尚未开启 · 默认每天复习30分、新题20分';
   const unavailable = today && !today.paperAvailable
-    ? today.paperId ? '今日题集已归档或删除，往期推荐可在题集库查找。' : '所选范围暂无可练习题目，请调整领域或分类。'
+    ? today.paperId ? '今日题集已归档或删除，往期推荐可在题集库查找。' : today.reason || '所选范围暂无可练习题目，请调整领域或分类。'
     : null;
   return <section className={`card daily-push-card ${today && !today.readAt ? 'unread' : ''} ${today?.shortfall ? 'has-shortfall' : ''}`} role="status" aria-label="每日推荐">
     <span className="daily-push-card-icon"><CalendarDays size={21} /></span>

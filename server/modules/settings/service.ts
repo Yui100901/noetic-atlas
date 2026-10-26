@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_SETTINGS, THEMES, type RetentionPreview, type SystemSettings } from '../../../shared/models/settings.js';
+import { DEFAULT_SETTINGS, DEFAULT_REVIEW_SCHEDULING, THEMES, type RetentionPreview, type SystemSettings } from '../../../shared/models/settings.js';
 import { nextStamp, type Store } from '../../core/store.js';
 import { fail, typePointsSchema } from '../../core/validation.js';
 import type { StoredAttempt } from '../practice/service.js';
@@ -9,6 +9,8 @@ import { archiveAttemptQuestionHistory, questionHistoryRetentionCandidates } fro
 import { DEFAULT_DAILY_PUSH } from '../../../shared/models/daily-push.js';
 import { dailyPushSettingsSchema, validateDailyPushConfiguration } from '../daily-push/schema.js';
 import { documentDraftRetentionCandidates } from '../library/document-draft-retention.js';
+import { reviewSchedulingSettingsSchema } from './review-scheduling.js';
+import { mirrorReviewStudy } from '../review-scheduler/service.js';
 
 export const settingsSchema = z.object({
   id: z.literal('system'), updatedAt: z.string().datetime({ offset: true }),
@@ -26,11 +28,12 @@ export const settingsSchema = z.object({
   autosaveDebounceMs: z.number().int().min(100).max(10000),
   maxDocumentMiB: z.number().int().min(1).max(50), maxImageMiB: z.number().int().min(1).max(20),
   dailyPush: dailyPushSettingsSchema,
+  reviewScheduling: reviewSchedulingSettingsSchema,
 }).strict();
 
 export function getSettings(store: Store): SystemSettings {
   const value = store.get<SystemSettings>('settings', 'system');
-  return structuredClone({ ...DEFAULT_SETTINGS, ...value, dailyPush: { ...DEFAULT_DAILY_PUSH, ...value?.dailyPush } });
+  return structuredClone({ ...DEFAULT_SETTINGS, ...value, dailyPush: { ...DEFAULT_DAILY_PUSH, ...value?.dailyPush }, reviewScheduling: { ...DEFAULT_REVIEW_SCHEDULING, ...value?.reviewScheduling } });
 }
 
 export function ensureSettings(store: Store) {
@@ -110,6 +113,17 @@ export function saveSettings(store: Store, settings: SystemSettings, options: { 
   if (options.confirmedRetention && options.expectedRetention && (['drafts', 'history', 'total', 'authoring', 'questionHistory', 'documentDrafts'] as const).some(key => (options.expectedRetention![key] || 0) !== (retention[key] || 0))) fail(409, 'RETENTION_CONFIRMATION_REQUIRED', '确认期间待清理记录数量已变化，请重新检查当前数量', retention);
   const saved = { ...settings, updatedAt: nextStamp(previous.updatedAt) };
   store.put('settings', 'system', saved);
+  if (previous.reviewScheduling.strategy !== 'fsrs' && settings.reviewScheduling.strategy === 'fsrs') {
+    const db = store.database, field = db.expressions.field.bind(db.expressions);
+    const identities = db.all(db.query.selectFrom('review_cards').select([field<string>('data', 'questionId').as('questionId'), field<string | null>('data', 'partId').as('partId')]));
+    const ids = [...new Set(identities.map(item => item.questionId))];
+    const sources = new Map(ids.length ? db.all(db.query.selectFrom('questions').select('id').select(db.expressions.questionLearningLeaves('data').as('leaves')).where(db.expressions.idInJson('id', ids))).map(row => [row.id, JSON.parse(row.leaves) as Array<{ partId?: string }>]) : []);
+    const seen = new Set<string>();
+    for (const identity of identities) {
+      const key = JSON.stringify([identity.questionId, identity.partId]); if (seen.has(key)) continue; seen.add(key);
+      if (sources.get(identity.questionId)?.some(leaf => (leaf.partId || null) === identity.partId)) mirrorReviewStudy(store, { questionId: identity.questionId, ...(identity.partId ? { partId: identity.partId } : {}) });
+    }
+  }
   for(const old of questionHistory)store.remove('question_history',old);
   for (const old of attempts) { preserveLearningResults(store, old); archiveAttemptQuestionHistory(store,old); store.remove('attempts', old.id); }
   for (const old of authoring) store.remove('paper_drafts', old.id);

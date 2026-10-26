@@ -133,6 +133,8 @@ test('paper exports default to question-only content and explicitly opt into sol
 
 test('study notes, favorites, review intervals and documents persist as separate resources', async t => {
   const { app } = await fixture(t);
+  const settings = json(await app.inject('/api/settings'));
+  json(await app.inject({ method: 'PUT', url: '/api/settings', payload: { settings: { ...settings, reviewScheduling: { ...settings.reviewScheduling, strategy: 'fixed' } } } }));
   json(await app.inject({ method: 'PUT', url: '/api/study/Q-1', payload: { favorite: true, notes: '边界待巩固', nextReviewAt: stamp } }));
   assert.equal(json(await app.inject('/api/questions?favorite=true')).total, 1); assert.equal(json(await app.inject('/api/questions?due=true')).total, 1);
   const state = json(await app.inject({ method: 'POST', url: '/api/study/Q-1/review', payload: { mastery: 3 } })); assert.equal(state.mastery, 3); assert.ok(Date.parse(state.nextReviewAt) > Date.now() + 20 * 86400000);

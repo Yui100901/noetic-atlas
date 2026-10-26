@@ -5,6 +5,8 @@ import type { Store } from '../../core/store.js';
 import { learningMetadata } from '../practice/learning-results.js';
 import { dailyCalendar } from './calendar.js';
 import { cents, fromCents } from '../practice/scoring.js';
+import { getSettings } from '../settings/service.js';
+import { adaptiveDailyPlans } from './adaptive.js';
 
 interface Metadata { id: string; type: QuestionType; categoryIds: string[]; parts?: Array<{ id: string }> }
 interface Candidate { id: string; points: number; slots: number; learned: boolean; priority: number; lastAt: number }
@@ -41,7 +43,14 @@ export function selectDailyQuestions(store: Store, config: DailyPushSettings, po
   const history = db.all(db.query.selectFrom('question_history').select([field<string>('data', 'questionId').as('questionId'), field<string | null>('data', 'partId').as('partId'), field<string>('data', 'submittedAt').as('submittedAt')]).where(eb => eb.or([eb(field('data', 'beforeReset'), 'is', null), eb(field('data', 'beforeReset'), '=', 0)])));
   for (const record of history) { const question = pool.get(record.questionId); if (!question || record.partId && (question.type !== 'group' || !question.parts?.some(part => part.id === record.partId))) continue; mark(record.questionId, record.submittedAt); }
   const candidates: Candidate[] = metadata.map(question => ({ id: question.id, points: cents(pointsByType[question.type]), slots: question.type === 'group' ? question.parts?.length || 0 : 1, learned: learned.has(question.id), priority: ([...judgments.get(question.id)?.values() || []].some(value => ['incorrect', 'partial', 'unanswered'].includes(value)) ? 2 : 0) + (due.has(question.id) ? 1 : 0), lastAt: latest.get(question.id) || 0 })).filter(question => question.slots > 0 && question.slots <= 500 && question.points > 0);
-  const review = shuffle(candidates.filter(question => question.learned)).sort((a, b) => b.priority - a.priority || a.lastAt - b.lastAt), fresh = shuffle(candidates.filter(question => !question.learned));
+  const adaptive = getSettings(store).reviewScheduling;
+  const plans = adaptive.strategy === 'fsrs' ? adaptiveDailyPlans(store, pool, at, config.timeZone) : null;
+  for (const candidate of candidates) if (plans?.has(candidate.id)) candidate.learned = true;
+  const review = shuffle(candidates.filter(question => question.learned && (!plans || plans.get(question.id)?.due))).sort((a, b) => {
+    if (!plans) return b.priority - a.priority || a.lastAt - b.lastAt;
+    const left = plans.get(a.id)!, right = plans.get(b.id)!;
+    return Number(right.shortTerm) - Number(left.shortTerm) || Number(right.overdue) - Number(left.overdue) || left.dueAt - right.dueAt || b.priority - a.priority;
+  }), fresh = shuffle(candidates.filter(question => !question.learned));
   const chosen = new Set<string>(), reviewIds: string[] = [], newIds: string[] = []; let reviewCents = 0, newCents = 0, answerSlots = 0;
   const take = (question: Candidate): boolean => {
     if (chosen.has(question.id) || answerSlots + question.slots > 500 || reviewCents + newCents + question.points > 1_000_000) return false;
@@ -49,14 +58,17 @@ export function selectDailyQuestions(store: Store, config: DailyPushSettings, po
     if (question.learned) { reviewIds.push(question.id); reviewCents += question.points; } else { newIds.push(question.id); newCents += question.points; }
     return true;
   };
-  const reviewTarget = cents(config.reviewPoints), baseNewTarget = cents(config.newPoints), target = reviewTarget + baseNewTarget;
+  const baseReviewTarget = cents(config.reviewPoints), baseNewTarget = cents(config.newPoints), target = baseReviewTarget + baseNewTarget;
+  const availableReview = review.reduce((sum, question) => sum + question.points, 0);
+  const reallocated = plans && adaptive.reduceNewWhenOverdue ? Math.min(baseNewTarget, Math.max(0, availableReview - baseReviewTarget)) : 0;
+  const reviewTarget = baseReviewTarget + reallocated;
   for (const question of review) { if (reviewCents >= reviewTarget) break; take(question); }
-  const transferred = Math.max(0, reviewTarget - reviewCents), effectiveNewTarget = baseNewTarget + transferred;
+  const transferred = Math.max(0, reviewTarget - reviewCents), effectiveNewTarget = baseNewTarget - reallocated + transferred;
   for (const question of fresh) { if (newCents >= effectiveNewTarget) break; take(question); }
   // If new material is exhausted, remaining learned questions can still make
   // a useful complete daily set. No question is repeated to manufacture points.
   for (const question of [...fresh, ...review]) { if (reviewCents + newCents >= target) break; take(question); }
   const total = reviewCents + newCents, shortfall = Math.max(0, target - total);
-  const reason = !chosen.size ? '所选范围没有可用的已发布题目。' : shortfall ? `可用题目、每次500个作答项或10000分上限限制，本次比目标少${fromCents(shortfall)}分。` : transferred ? `复习题不足，已将${fromCents(transferred)}分目标补给新题。` : newCents < baseNewTarget ? '受可用新题、分值粒度或整卷上限影响，实际配比有调整，总分已达到目标。' : '';
-  return { questionIds: [...reviewIds, ...newIds], reviewQuestionIds: reviewIds, newQuestionIds: newIds, reviewPoints: fromCents(reviewCents), newPoints: fromCents(newCents), totalPoints: fromCents(total), transferredPoints: fromCents(transferred), targetNewPoints: fromCents(effectiveNewTarget), answerSlots, shortfall: fromCents(shortfall), reason, available: candidates.length };
+  const reason = (!chosen.size ? plans ? '所选范围暂无新题或已到期复习题，尚未到期的题目保留原计划。' : '所选范围没有可用的已发布题目。' : shortfall ? `可用题目${plans ? '（新题与到期复习）' : ''}、每次500个作答项或10000分上限限制，本次比目标少${fromCents(shortfall)}分。` : transferred ? `${plans ? '到期' : ''}复习题不足，已将${fromCents(transferred)}分目标补给新题。` : '') + (reallocated ? `复习任务积压，将${fromCents(reallocated)}分新题额度用于到期复习。` : '');
+  return { questionIds: [...reviewIds, ...newIds], reviewQuestionIds: reviewIds, newQuestionIds: newIds, reviewPoints: fromCents(reviewCents), newPoints: fromCents(newCents), totalPoints: fromCents(total), transferredPoints: fromCents(transferred), targetNewPoints: fromCents(effectiveNewTarget), ...(reallocated ? { reallocatedPoints: fromCents(reallocated) } : {}), answerSlots, shortfall: fromCents(shortfall), reason, available: candidates.length };
 }

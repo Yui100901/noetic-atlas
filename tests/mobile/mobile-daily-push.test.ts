@@ -25,6 +25,9 @@ test('mobile daily pushing uses durable serialized writes, catches up only today
     const value = await response.json(); assert.equal(response.status, expected, JSON.stringify(value)); return value;
   };
   const initial = await api('/api/settings'); assert.equal(initial.pointsByType.multiple_choice, 4); assert.equal(initial.dailyPush.enabled, false);
+  assert.equal(initial.reviewScheduling.strategy, 'fsrs');
+  // The historical learned-pool contract remains available in fixed mode.
+  await api('/api/settings', 'PUT', { settings: { ...initial, reviewScheduling: { ...initial.reviewScheduling, strategy: 'fixed' } } });
   assert.equal((await api('/api/daily-push')).today, null);
   for (let index = 0; index < 6; index++) await api(`/api/study/MOBILE-DAILY-${index}`, 'PUT', { mastery: 1 });
   await api('/api/study/MOBILE-DAILY-7', 'PUT', { notes: '只有笔记不算已学', favorite: true });

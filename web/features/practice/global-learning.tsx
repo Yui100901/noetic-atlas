@@ -3,10 +3,12 @@ import { ArrowLeft, CalendarCheck2, ChevronLeft, ChevronRight, Star, Target } fr
 import type { GlobalLearningKind, GlobalLearningQuestion, GlobalLearningSummary } from '../../../shared/practice/global-learning';
 import type { Paged } from '../../../shared/utils/pagination';
 import { localDate, qs, useResource } from '../../shared/lib/api';
-import { Empty, ErrorNotice, Loading, Modal, PageHeader, Pagination, QuestionMeta } from '../../shared/ui/components';
+import { Empty, ErrorNotice, Loading, Modal, PageHeader, Pagination, QuestionMeta, useApp } from '../../shared/ui/components';
 import { QuestionViewer, type QuestionViewerHandle } from '../questions/question-viewer';
 import { LearningOrigins, snapshotDescription } from './learning-origins';
 import './global-learning.css';
+import { AdaptiveReviewQueue } from '../review-scheduler/review-queue';
+import { DEFAULT_REVIEW_SCHEDULING } from '../../../shared/models/settings';
 
 const views = [
   { kind: 'wrong', title: '全部错题', Icon: Target, empty: '当前没有错题', description: '汇总各题集、随机抽题与单题自测中最近已判错误或客观题漏答的题目。重新答对后，从对应来源的错题中移出。' },
@@ -15,10 +17,12 @@ const views = [
 ] as const;
 
 export function GlobalLearningPage({ kind }: { kind: GlobalLearningKind }) {
+  const { bootstrap } = useApp();
+  const adaptive = kind === 'due' && (bootstrap.settings?.reviewScheduling || DEFAULT_REVIEW_SCHEDULING).strategy === 'fsrs';
   const view = views.find(value => value.kind === kind)!;
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(20);
   const summary = useResource<GlobalLearningSummary>('/api/learning/global/summary');
-  const questions = useResource<Paged<GlobalLearningQuestion>>(`/api/learning/global/questions?${qs({ kind, page, pageSize })}`);
+  const questions = useResource<Paged<GlobalLearningQuestion>>(adaptive ? null : `/api/learning/global/questions?${qs({ kind, page, pageSize })}`);
   const [selected, setSelected] = useState<{ item: GlobalLearningQuestion; index: number; page: number; total: number } | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<'first' | 'last' | null>(null);
   const viewer = useRef<QuestionViewerHandle>(null);
@@ -61,6 +65,8 @@ export function GlobalLearningPage({ kind }: { kind: GlobalLearningKind }) {
     <PageHeader eyebrow="SMART QUESTION SET" title={view.title} description={view.description} actions={<button type="button" className="button" onClick={refresh}>刷新题集</button>} />
     <nav className="global-learning-tabs" aria-label="系统汇总题集">{views.map(({ kind: value, title, Icon }) => <a key={value} href={`#/learning/${value}`} className={value === kind ? 'selected' : ''} aria-current={value === kind ? 'page' : undefined}><Icon size={17} /><span>{title}</span><strong>{!summary.loading && !summary.error && summary.data ? summary.data.counts[value].toLocaleString() : '—'}</strong></a>)}</nav>
     {summary.error && <ErrorNotice message={`汇总题数刷新失败：${summary.error}`} retry={summary.refresh} />}
+    {adaptive && <AdaptiveReviewQueue />}
+    {!adaptive && <>
     <p className="global-learning-rule">{kind === 'wrong' ? '每题阅读最近一次错误的题目快照，保留当时的共用材料；清理整卷历史、修改或删除原题不影响错误内容与来源摘要。' : '每题展示当前原题内容。收藏共享原题；组合小题分别记录笔记、掌握程度和复习日期。关联来源不代表收藏或复习发生的位置。'} 这是动态汇总视图，同一原题的同一小题只列一次，来源可展开查看。</p>
     {questions.loading ? <Loading text={`正在读取${view.title}…`} /> : questions.error ? <ErrorNotice message={questions.error} retry={questions.refresh} /> : questions.data?.items.length ? <div className="global-learning-questions">{questions.data.items.map((item, index) => <article className="card global-learning-question" key={item.key}>
       <QuestionMeta question={item.question} /><button type="button" className="text-button global-question-title" onClick={() => setSelected({ item, index, page, total: questions.data!.total })}>{item.question.title}</button>
@@ -80,5 +86,6 @@ export function GlobalLearningPage({ kind }: { kind: GlobalLearningKind }) {
         <QuestionViewer key={`${selected.item.key}:${selected.item.attemptId || 'current'}`} ref={viewer} question={selected.item.question} contentSource={selected.item.snapshotSource === 'library' ? 'current' : 'snapshot'} onStudyChange={summary.refresh} />
       </div>
     </Modal>}
+    </>}
   </section>;
 }

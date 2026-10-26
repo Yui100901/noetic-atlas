@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Activity, ArrowRight, BarChart3, CalendarDays, ChartNoAxesCombined, CheckCheck, ChevronLeft, ChevronRight, Clock3, Download, Info, RefreshCw, Target } from 'lucide-react';
-import type { AnalyticsBreakdown, AnalyticsMetrics, AnalyticsReport, WeeklyReport } from '../../../shared/models/analytics';
+import type { AdaptiveAnalytics, AnalyticsBreakdown, AnalyticsMetrics, AnalyticsReport, WeeklyReport } from '../../../shared/models/analytics';
 import { qs, useResource } from '../../shared/lib/api';
 import { Empty, ErrorNotice, Field, Loading, PageHeader, Pagination, useApp } from '../../shared/ui/components';
 import { analyticsDateKey, analyticsDuration, analyticsMeasuredDuration, analyticsNumber, analyticsPercent, downloadWeeklyReport } from './report-export';
@@ -44,6 +44,29 @@ function ResultDistribution({ summary }: { summary: AnalyticsMetrics }) {
   return <section className="card analytics-section" aria-label="作答判定分布"><div className="analytics-section-heading"><div><h2>作答后的反馈</h2><p>完全正确才计入正确率分子，未判题单独保留。</p></div></div><div className="analytics-result-bar" role="img" aria-label={states.map(item => `${item.label}${item.count}次`).join('，')}>{states.map(item => <i key={item.key} className={`analytics-state-${item.key}`} style={{ width: `${summary.answers ? item.count / summary.answers * 100 : 0}%` }} />)}</div><div className="analytics-result-list">{states.map(item => <div key={item.key}><i className={`analytics-state-${item.key}`} /><span>{item.label}</span><strong>{item.count}</strong></div>)}</div><div className="analytics-activity-summary"><span>漏答 <strong>{summary.omitted}</strong> 项</span><span>旧数据未知 <strong>{summary.unknown}</strong> 项</span><span>题集 <strong>{summary.paperSessions}</strong> 次</span><span>随机／单题 <strong>{summary.quickSessions}</strong> 次</span></div><p className="analytics-help" style={{ marginTop: 14 }}>漏答、未知与未判均不进入正确率分母。正确率无已判样本时显示“—”。</p></section>;
 }
 
+function AdaptiveReviewMetrics({ adaptive, comparison }: { adaptive: AdaptiveAnalytics; comparison?: WeeklyReport['comparison'] }) {
+  const previous = comparison?.adaptive;
+  const ratings = [
+    { key: 'again', label: '重学 Again', color: 'incorrect' }, { key: 'hard', label: '困难 Hard', color: 'partial' },
+    { key: 'good', label: '良好 Good', color: 'correct' }, { key: 'easy', label: '轻松 Easy', color: 'easy' },
+  ] as const;
+  const timing = [{ key: 'new', label: '首次反馈' }, { key: 'due', label: '已到期' }, { key: 'early', label: '提前复习' }, { key: 'overdue', label: '逾期复习' }, { key: 'unknown', label: '计划未知' }] as const;
+  return <section className="analytics-adaptive" aria-label="FSRS 自适应复习统计">
+    <div className="analytics-section-heading"><div><h2>复习如何转化为记忆</h2><p>FSRS 反馈按原始发生时刻归属；再次判分或修改反馈会更正原记录。</p></div><span className="badge">FSRS-6</span></div>
+    <div className="analytics-metrics">
+      <article className="card analytics-metric"><div className="analytics-metric-label"><span>FSRS 反馈</span><RefreshCw size={18} /></div><strong>{analyticsNumber(adaptive.feedbackEvents)}<small>次</small></strong><p>覆盖 {adaptive.uniqueCards} 张去重卡 · 方向与小题独立</p>{previous && <p className="analytics-change">{comparison.label} {previous.feedbackEvents} 次 · {previous.uniqueCards} 张卡</p>}</article>
+      <article className="card analytics-metric"><div className="analytics-metric-label"><span>回忆成功率</span><Target size={18} /></div><strong>{analyticsPercent(adaptive.recallSuccessRate)}</strong><p>Hard／Good／Easy {adaptive.recallSuccesses} 次成功</p>{previous && <p className="analytics-change">{comparison.label} {analyticsPercent(previous.recallSuccessRate)}</p>}</article>
+      <article className="card analytics-metric"><div className="analytics-metric-label"><span>本时段到期处理比例</span><CheckCheck size={18} /></div><strong>{analyticsPercent(adaptive.dueProcessing.rate)}</strong><p>{adaptive.queue ? `完成 ${adaptive.dueProcessing.completedDueCycles} 个到期周期 · 仍待处理 ${adaptive.queue.due} 项` : '缺少截止时刻的可靠队列快照，暂不计算'}</p></article>
+      <article className="card analytics-metric"><div className="analytics-metric-label"><span>当前队列积压</span><Clock3 size={18} /></div><strong>{adaptive.queue ? analyticsNumber(adaptive.queue.due) : '—'}<small>{adaptive.queue ? '项' : ''}</small></strong><p>{adaptive.queue ? `逾期 ${adaptive.queue.overdue} · 短期重学 ${adaptive.queue.relearning} · 暂停 ${adaptive.queue.suspended}` : '统计截止时刻无可靠队列快照'}</p>{adaptive.queue && <a className="analytics-queue-link" href="#/questions?due=true">查看到期任务<ArrowRight size={12} /></a>}</article>
+    </div>
+    <div className="analytics-layout equal">
+      <article className="card analytics-section"><div className="analytics-section-heading"><div><h2>四档记忆反馈</h2><p>Again 表示未能回忆，其他三档计回忆成功；与答题严格正确率分别统计。</p></div></div><div className="analytics-result-bar" role="img" aria-label={ratings.map(item => `${item.label}${adaptive.ratings[item.key]}次`).join('，')}>{ratings.map(item => <i key={item.key} className={`analytics-state-${item.color}`} style={{ width: `${adaptive.feedbackEvents ? adaptive.ratings[item.key] / adaptive.feedbackEvents * 100 : 0}%` }} />)}</div><div className="analytics-result-list">{ratings.map(item => <div key={item.key}><i className={`analytics-state-${item.color}`} /><span>{item.label}</span><strong>{adaptive.ratings[item.key]}</strong></div>)}</div><p className="analytics-help" style={{ marginTop: 18 }}>首次接触也可产生反馈；同一张卡的重复复习会分别计次。无反馈样本时，回忆成功率显示“—”。</p></article>
+      <article className="card analytics-section"><div className="analytics-section-heading"><div><h2>复习时机与回忆表现</h2><p>以事件前的 FSRS 记忆计划判定；到期后跨统计时区的日期计逾期。</p></div></div><div className="analytics-table-scroll"><table className="analytics-table"><caption className="sr-only">各复习时机的反馈和回忆成功率</caption><thead><tr><th>时机</th><th>反馈次数</th><th>回忆成功</th><th>成功率</th></tr></thead><tbody>{timing.filter(item => item.key !== 'unknown' || adaptive.timing.unknown.feedbackEvents).map(item => <tr key={item.key}><td>{item.label}</td><td>{adaptive.timing[item.key].feedbackEvents}</td><td>{adaptive.timing[item.key].recallSuccesses}</td><td>{analyticsPercent(adaptive.timing[item.key].recallSuccessRate)}</td></tr>)}</tbody></table></div><p className="analytics-help" style={{ marginTop: 14 }}>首次反馈尚无 FSRS 复习周期。历史手工改期或旧固定计划未保留在事件记忆中，不据此推断准时率。</p></article>
+    </div>
+    <p className="analytics-help analytics-adaptive-method">{adaptive.dueProcessing.reason}{adaptive.queue ? '短期重学为当前已到期的学习／重学状态任务，可能同时属于逾期。' : ''}</p>
+  </section>;
+}
+
 function Breakdown({ title, items, domain = false }: { title: string; items: AnalyticsBreakdown[]; domain?: boolean }) {
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10);
   const maximum = Math.max(1, ...items.map(item => item.answers));
@@ -54,7 +77,8 @@ function AnalysisBody({ report, today, comparison }: { report: AnalyticsReport; 
   return <>
     {!!report.quality.warnings.length && <div className="analytics-notice" role="note"><Info size={17} /><p>{report.quality.warnings.join(' ')}</p></div>}
     <OverviewMetrics summary={report.summary} comparison={comparison} />
-    {!report.summary.sessions && !report.summary.reviewEvents && <div className="card" style={{ marginBottom: 18 }}><Empty title="这段时间还没有学习记录" description="完成一次练习或记录一次复习后，这里会逐步形成你的学习画像。" actions={<a className="button primary" href="#/papers">去题集练习<ArrowRight size={16} /></a>} /></div>}
+    {!report.summary.sessions && !report.summary.reviewEvents && !report.adaptive?.feedbackEvents && <div className="card" style={{ marginBottom: 18 }}><Empty title="这段时间还没有学习记录" description="完成一次练习或记录一次复习后，这里会逐步形成你的学习画像。" actions={<a className="button primary" href="#/papers">去题集练习<ArrowRight size={16} /></a>} /></div>}
+    {report.adaptive && <AdaptiveReviewMetrics adaptive={report.adaptive} comparison={comparison} />}
     <div className="analytics-layout"><DailyTrend key={`${report.range.from}:${report.range.to}`} report={report} today={today} /><ResultDistribution summary={report.summary} /></div>
     <div className="analytics-layout equal"><Breakdown key={`domain:${report.range.from}:${report.range.to}`} title="领域分布" items={report.domains} domain /><Breakdown key={`types:${report.range.from}:${report.range.to}`} title="题型分布" items={report.types} /></div>
     <section className="card analytics-section analytics-insights" aria-label="学习建议"><div className="analytics-section-heading"><div><h2>下一步，练得更有方向</h2><p>根据当前保留记录生成的规则建议，可随学习和判分更新。</p></div></div><div className="analytics-insight-list">{report.recommendations.map(item => <article className="analytics-insight" key={item.id}><h3><Target size={14} />{item.title}</h3><p>{item.description}</p>{item.href?.startsWith('#/') && <a className="button feature-entry" href={item.href} aria-label={`${item.title}：开始行动`}>开始行动<ArrowRight size={13} /></a>}</article>)}</div>{!report.recommendations.length && <p className="analytics-help">积累更多实际作答后，会在这里提供巩固建议。</p>}</section>

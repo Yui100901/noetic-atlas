@@ -103,9 +103,12 @@ test('settings history cleanup preserves wrong snapshots, source identity, revie
   await call(app, `/api/attempts/${old.id}/review`, 'PUT', { mastery: { [q.id]: 1 } });
   await call(app, `/api/study/${q.id}`, 'PUT', { favorite: true, notes: '清理历史后保留此笔记', nextReviewAt: '2000-01-01T00:00:00.000Z' });
   const wrongB = await submit(app, b, { [q.id]: { value: 'false' } });
-  const beforeStudy = await call(app, '/api/study');
+  const beforeOtherReview = (await call(app, `/api/questions/${other.id}`)).study;
   a = await replacePaper(app, a, [other.id]);
   await submit(app, a, { [other.id]: { value: 'true' } });
+  const afterOtherReview = (await call(app, `/api/questions/${other.id}`)).study;
+  assert.ok(Date.parse(afterOtherReview.nextReviewAt) > Date.parse(beforeOtherReview.nextReviewAt), 'a new correct FSRS review advances its own schedule before history cleanup');
+  const beforeStudy = await call(app, '/api/study');
   const current = await call(app, `/api/questions/${q.id}`);
   await call(app, `/api/questions/${q.id}`, 'PUT', { ...current, study: undefined, title: '后来编辑的标题', stemMarkdown: '后来编辑的题干', answerMarkdown: '后来编辑的答案' });
   const applied = await prune(app); assert.equal(applied.retention.history, 1);
@@ -181,7 +184,7 @@ test('reset preview detects same-count edits and reset preserves favorites, note
   await call(app, `/api/attempts/${draft.id}`, 'PUT', { answers: { [`${q.id}::a`]: { value: 'true' } } });
   const history = await call(app, `/api/attempts/${old.id}`), draftBefore = await call(app, `/api/attempts/${draft.id}`);
   const stale = await call(app, '/api/learning/reset-preview');
-  assert.deepEqual(stale.counts, { states: 1, partStates: 2, reviews: 2, results: 1 }); assert.deepEqual(stale.retained, { attempts: 1, drafts: 1 });
+  assert.deepEqual(stale.counts, { states: 1, partStates: 2, reviews: 2, results: 1, reviewCards: 2, reviewEvents: 2 }); assert.deepEqual(stale.retained, { attempts: 1, drafts: 1 });
   await call(app, `/api/study/${q.id}`, 'PUT', { notes: '预览后改动但数量未变' });
   const rejected = await call(app, '/api/learning/reset', 'POST', { confirmed: true, fingerprint: stale.fingerprint }, 409);
   assert.equal(rejected.error.code, 'LEARNING_RESET_PREVIEW_STALE'); assert.equal((await wrong(app, saved.id)).total, 1);

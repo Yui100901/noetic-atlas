@@ -31,6 +31,16 @@
       7,
       21
     ],
+    "reviewScheduling": {
+      "strategy": "fsrs",
+      "desiredRetention": 0.9,
+      "maximumIntervalDays": 36500,
+      "learningStepsMinutes": [1, 10],
+      "relearningStepsMinutes": [10],
+      "enableFuzz": false,
+      "autoRateObjective": true,
+      "reduceNewWhenOverdue": true
+    },
     "autosaveDebounceMs": 1000,
     "maxDocumentMiB": 20,
     "maxImageMiB": 5,

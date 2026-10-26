@@ -22,7 +22,7 @@ staging.put('categories','progress-category',{id:'progress-category',domainId:'p
 for(let index=0;index<7;index++){
  const id='PROGRESS-'+index,type=index===6?'short_answer':'true_false';
  staging.put('questions',id,questionSchema.parse({id,title:index===6?'解释每日进度':'进度判断 '+index,type,stemMarkdown:index===6?'请说明一个概念。':'判断这个独立命题。',answerMarkdown:index===6?'说明概念及其边界。':'正确',explanationMarkdown:'隔离进度验收',correctAnswers:type==='true_false'?['true']:[],categoryIds:['progress-category'],tagIds:[],status:'published'}));
- if(index<6)staging.putStudy({questionId:id,favorite:false,notes:'',mastery:1,lastReviewedAt:'2026-10-01T00:00:00Z',nextReviewAt:null,wrongCount:0});
+ if(index<6)staging.putStudy({questionId:id,favorite:false,notes:'',mastery:1,lastReviewedAt:'2026-10-01T00:00:00Z',nextReviewAt:'2026-10-24T00:00:00Z',wrongCount:0});
 }
 staging.put('settings','system',{...structuredClone(DEFAULT_SETTINGS),updatedAt:'2026-10-25T00:00:00Z',pointsByType:{...DEFAULT_SETTINGS.pointsByType,true_false:5,short_answer:20},dailyPush:{...DEFAULT_SETTINGS.dailyPush,enabled:true,domainId:'progress-domain',categoryIds:['progress-category']}});
 const record=checkDailyPush(staging,at).record;assert.ok(record&&record.totalPoints===50&&record.questionIds.length===7);

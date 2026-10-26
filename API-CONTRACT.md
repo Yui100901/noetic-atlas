@@ -4,7 +4,7 @@
 
 - [交互式接口文档](http://127.0.0.1:4317/api/docs/)：Swagger UI，可查看参数并在本机试用。
 - [OpenAPI JSON](http://127.0.0.1:4317/api/openapi.json)：由当前注册路由及共用 Zod 校验器自动生成；Android 本地 API 也提供此 JSON。
-- [数据类型](shared/models/types.ts)、[系统配置](shared/models/settings.ts)、[AI 类型](shared/ai/ai.ts)、[分享封包](shared/models/sharing.ts)。
+- [数据类型](shared/models/types.ts)、[系统配置](shared/models/settings.ts)、[自适应复习](shared/models/adaptive-review.ts)、[学习统计](shared/models/analytics.ts)、[AI 类型](shared/ai/ai.ts)、[分享封包](shared/models/sharing.ts)。
 - [使用说明书](docs/使用说明书.md)、[README](README.md)。
 
 服务为单用户本地应用，默认没有多用户鉴权。写操作限制同源，远程部署应在受保护的入口后使用。接口文档只生成说明，不安装额外业务校验器，也不改变响应序列化。返回错误统一为 `{error:{code,message,details?}}`；批量写入先验证后以事务提交。
@@ -37,7 +37,7 @@
 - `GET /api/vocabulary?word=...`：按NFKC及大小写规范化后的英语词头精确查找，返回`{word,matches:[{id,title,status}]}`。英文领域或题号经分享重映射后仍按实际领域及词头查询；缺词返回空数组，不自动新增或改变审核状态。多份词卡保留各自状态供选择。网页引用为`#/vocabulary/<词头>`，考试期间此接口同样受锁定。
 - `POST /api/questions`：新增题目。显式 draft 保存为草稿，其他状态统一进入 pending；新题不能直接发布。
 - `PUT /api/questions/:id`：修改题目，可携带 updatedAt 校验版本；未发布题不能借编辑直接变为 published。
-- `DELETE /api/questions/:id`：永久删除。源题集仍引用时返回 `QUESTION_IN_PAPER`；删除清理该题学习状态及复习事件，保留历史作答快照。
+- `DELETE /api/questions/:id`：永久删除。源题集仍引用时返回 `QUESTION_IN_PAPER`；删除清理该题学习状态及旧复习动作，保留历史作答快照与独立 FSRS 卡片／事件。原题不可用后不进入可复习队列，已有 FSRS 反馈仍可统计和迁移。
 - `POST /api/questions/metadata`：严格接收 `{ids}`，1—50,000个不重复题号，返回 `{items,missingIds}`；按输入顺序提供 `id/title/type/status`，包含未发布状态，不读取正文或学习笔记。用于大型题集编辑与草稿恢复的只读批量核对。
 - `POST /api/questions/review`：`{ids,action:'approve'|'return_to_draft',confirmed:true,expectedUpdatedAt}`。最多 500 道 pending 题，版本 map 恰好覆盖选题，整批校验后原子处理。
 - `GET /api/questions/import-template`：新题 JSON 模板。
@@ -95,7 +95,7 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 ## 学习统计与周报
 
-- `GET /api/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD&timeZone=Asia/Shanghai`：默认近30天，日期含首尾，一次最多366天；时区省略时取系统配置。返回`range、summary、daily、domains、types、recommendations、quality`。
+- `GET /api/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD&timeZone=Asia/Shanghai`：默认近30天，日期含首尾，一次最多366天；时区省略时取系统配置。返回`range、summary、daily、domains、types、recommendations、quality`，以及可选的`adaptive`自适应复习统计。
 - `GET /api/analytics/weekly?week=YYYY-MM-DD&timeZone=Asia/Shanghai`：任意日期归到周一，默认本周；返回`weekStart、weekEnd、timeZone、generatedAt、isCurrentWeek、current、comparison`。当前周`matched_elapsed`对比上周相同已过秒数，已结束周`full_week`对比完整上周。
 
 summary及daily.metrics提供提交量、实际填答量、去重作答项／原题、correct／partial／incorrect／ungraded、漏答omitted和旧状态unknown、graded、accuracy、elapsedSeconds、可靠计时及缺时长提交数、复习动作与活跃天数。accuracy为0—100百分比或null，分母仅correct+partial+incorrect，部分正确不算完全正确。实际作答仅含非空回答的提交，空白交卷只增加提交量和漏答量；重复作答量与tuple原题／小题去重覆盖分开。时长只计真实答过且具有可靠计时的提交，不能等同专注时长。
@@ -110,6 +110,8 @@ comparison提供mode、对比日期及label、同口径summary，以及作答量
 - `POST /api/daily-push/check`：到达配置时间后按日期幂等生成普通计分题集，返回`{generated,record,overview}`。生成时冻结`answerItems`的原题／小题身份、题型和满分，不存答案正文。
 - `POST /api/daily-push/:id/read`：标记已查看，不改变学习进度。
 
+默认FSRS模式的复习候选仅含有效到期计划，优先短期重学、逾期及更早日期；暂停和未到期旧题不能用于补足复习分值。分钟步骤按准确时刻进入日计划，普通间隔复习可覆盖当天稍晚到期任务，实时队列则始终要求已到当前时刻。`reduceNewWhenOverdue`开启时，到期复习可用分值超过复习目标的部分可占用新题额度，结果以`reallocatedPoints`和`reason`说明；不足仍可补新题。组合小题任一到期可选择整组，但不将其他小题标为已完成复习。固定模式保持原学习证据与优先级。
+
 today及recent的每条记录包含`paperAvailable`和`progress`。progress的status为`not_started|in_progress|submitted|completed|unavailable`；提供`totalQuestions、answeredQuestions、answeredPoints、totalPoints、percent、omittedQuestions、pendingGradingCount`，以及`resumeAttemptId、resultAttemptId、submittedAt、historyAvailable、detailsAvailable`。已答按保存的实际非空回答计算，组合题展开计数；answeredPoints为对应题目满分之和，percent为分值覆盖比例，与实际得分无关。全部填写且提交才completed，未判主观题另计；漏答提交为submitted。
 
 统计仅使用原推荐版本，取覆盖分值最高的一份提交，依次以已答数、提交时间打破相同覆盖；没有提交时取最近草稿，不能把多次练习叠加。resumeAttemptId独立指向最近保留草稿，已有完成记录后重练也可继续。历史裁剪后使用轻量learning_results保留进度，但resultAttemptId为null；主动重置学习进度会清除该摘要。缺少原始分母时status为unavailable，不猜测数值。查询按最近推荐批量读取身份／分值／作答存在性，不传题干、参考答案或个人回答正文；SQLite特有表达式封装在数据库适配层。
@@ -122,7 +124,7 @@ today及recent的每条记录包含`paperAvailable`和`progress`。progress的st
 - `GET /api/attempts/:id`：作答快照；未交卷隐藏答案、解析和填空标准答案。
 - `PUT /api/attempts/:id`：`{answers:Record<questionId,{value}>}`，合并并持久化本次传入答案，不新建草稿。
 - `POST /api/attempts/:id/submit`：可选 `{answers}`，交卷并计算客观题得分，固定 elapsedSeconds；重复交卷不重复累计错题。
-- `PUT /api/attempts/:id/review`：`{scores?,mastery?,verdicts?}`，交卷后保存主观评分、掌握自评或 correct／partial／incorrect 判定；数字评分限主观题 0 至快照满分，null 撤销评分。计分题判定必须与分值一致；不计分题可以只判对错。不能修改客观得分。
+- `PUT /api/attempts/:id/review`：`{scores?,mastery?,verdicts?,ratings?}`，交卷后保存主观评分、掌握自评、correct／partial／incorrect 判定或本次回忆反馈；`ratings`按叶题ID传入`again|hard|good|easy|null`。数字评分限主观题 0 至快照满分，null 撤销评分。计分题判定必须与分值一致；不计分题可以只判对错。不能修改客观得分。
 - `GET /api/exams/active`：`{attempt:Attempt|null}`，查询当前考试。
 - `POST /api/exams/sync`：同步到期状态，返回当前考试；`POST /api/attempts/:id/sync` 同步一份作答并返回 Attempt。
 - `POST /api/quick-practice`：指定 questionId，或使用 filters 与 excludeQuestionId 随机单题自测；`POST /api/attempts/:id/reveal` 仅允许随机／单题会话提前查看解析。
@@ -132,6 +134,29 @@ today及recent的每条记录包含`paperAvailable`和`progress`。progress的st
 作答页不挂载学习笔记编辑器，也不为展示学习控件额外请求原题内容或历史统计。笔记在题库和题集查阅组件中编辑；随机自测仍允许显式调用 reveal 查看参考解析，交卷后才展示阅卷与本次掌握自评。
 
 答题卡的状态由共用规则计算：提交前为未作答／已作答；提交后为未作答／正确／部分正确／错误／未判定。主观题满分、部分得分和零分分别对应三种判定，不计分题使用已确认的判定；未判题保留未判定。
+
+## FSRS 自适应复习
+
+默认使用 FSRS-6，由固定版本`ts-fsrs@5.4.2`在本地计算；掌握程度0—3、判分和回忆评级分别记录。卡片身份为`[questionId,partId|null,direction]`，普通题为`standard`，词汇为`word_to_meaning|meaning_to_word`，组合题必须指定有效小题。不会把掌握程度0—3当作 FSRS 四档评级。
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/review-scheduler/card` | 必填`questionId`，可选`partId、direction`；返回卡片记忆、到期、暂停状态、四档下次安排预览、事件数与最近评级。携带`attemptId、leafId`时按原提交时刻预览该事件的更正。 |
+| `POST /api/review-scheduler/review` | `{questionId,partId?,direction?,rating,requestId}`，记录一次独立手工回忆；相同请求标识和相同内容重试不新增事件，不同内容复用标识返回`REVIEW_REQUEST_CONFLICT`。固定模式返回`REVIEW_FIXED_MODE`。 |
+| `PATCH /api/review-scheduler/card` | `{questionId,partId?,direction?,suspended?,dueAt?}`，暂停／恢复或修改到期；`dueAt:null`恢复算法日期。这些操作不增加反馈次数。 |
+| `GET /api/review-scheduler/queue` | 始终分页；支持`page、pageSize、domainId、categoryId、kind=all|overdue|relearning|today、direction`，返回`items、total、page、pageSize、summary`。短期重学先于普通任务，再按到期时刻排序。 |
+| `GET /api/review-scheduler/attempts/:id` | 批量返回已提交作答各叶题的资格、原因、事件及卡片，不读取题目正文。 |
+| `POST /api/review-scheduler/attempts/:id/rating` | `{leafId,rating}`，更正原事件；`rating:null`恢复自动评级，客观自动记录原本关闭时可撤销手工评级。固定模式返回`REVIEW_FIXED_MODE`。 |
+
+四档为`again`重学（未能回忆、错误或关键遗漏）、`hard`困难（独立完整答对但费力）、`good`良好、`easy`轻松。默认客观题交卷后正确记 Good、错误记 Again；主观题实际填写且已判定后，完全正确记 Good、部分正确或错误记 Again。提前查看过参考解析的作答，即使答案正确也按 Again 处理。错误、部分正确或辅助作答不能强行改为 Hard／Good／Easy，返回`REVIEW_RATING_CONFLICT`。漏答、空白主观题、未判主观题、草稿和单纯查看解析均不创建遗忘事件。关闭客观自动记录后，可在交卷后显式确认评级。
+
+同一提交、叶题和方向对应一个稳定事件，时间始终归属原`submittedAt`。人工或 AI 应用评分、更正评级会在同一事务中更新原事件，并以保存的参数按时间顺序重放卡片；不把改分时间当作新的回忆。撤销主观判定会移除相应事件；新一次实际作答才新增事件。`before/after`保存 FSRS 记忆状态，`parameters`保存当次调度参数及算法／库版本，供重放和迁移校验。
+
+队列仅包含当前已到期且源题／小题可用的任务，已暂停和未到期任务不进入`items`；`summary`保留暂停数量，短期重学可与逾期重叠。旧整题／小题日期在第一次有效 FSRS 复习前保留；同一叶题已有任意方向卡片时不再从旧学习状态重复补任务。旧组合父题日期仅由尚无卡片和显式小题状态的有效小题继承，显式空日期、未来日期和暂停卡片均阻断该继承。
+
+`SystemSettings.reviewScheduling`默认`strategy:'fsrs'、desiredRetention:0.9、maximumIntervalDays:36500、learningStepsMinutes:[1,10]、relearningStepsMinutes:[10]、enableFuzz:false、autoRateObjective:true、reduceNewWhenOverdue:true`。步骤单位分钟，每组1—10步，每步1—1440分钟；目标记忆率范围0.7—0.99。更改参数只影响后续有效反馈，历史事件仍保留原参数；不批量改写已有排期。`strategy:'fixed'`使用`reviewIntervalsDays`兼容旧固定间隔，保留 FSRS 历史；切回 FSRS 时由保留卡片的有效方向恢复兼容到期镜像。
+
+统计的`adaptive`包含反馈次数、去重卡、四档分布、回忆成功次数／率、`timing`各时机表现、`queue`与`dueProcessing`；周报`comparison.adaptive`使用同一对比截止口径。回忆成功率＝（Hard＋Good＋Easy）÷全部反馈，Again为失败，与严格答题正确率分别计算；零样本返回null。时机按事件前 FSRS 记忆计划判定，首次尚无复习周期；历史手工改期及旧固定计划不能据此推断准时率。反馈按`occurredAt`与精确截止时刻统计，历史区间`range.asOf`为该区间实际截止时刻。本时段到期处理比例仅在包含今天且具有可靠当前队列时提供，定义为本时段完成的到期／逾期周期÷（这些周期＋当前仍到期的可复习任务，含旧计划），不等于历史计划完成率；历史终点缺少快照时`queue`和比例均为null并附说明。GET只读取 Kysely 元数据，不补写卡片、事件或题库正文。
 
 ## 题集学习记录与系统配置
 
@@ -143,8 +168,8 @@ today及recent的每条记录包含`paperAvailable`和`progress`。progress的st
 - `GET /api/learning/global/questions?kind=wrong|favorite|due`：分页返回汇总题目、复合 `key`、完整 `origins` 及 `snapshotSource`。错题合并各来源仍待巩固的错误，默认返回最近错误快照；收藏与到期采用存活原题，包含没有题集或作答关联的题目。来源可含题集、版本、是否已删除、具体作答ID与时间；不截断来源列表。
 - `POST /api/learning/card-summaries`：严格接收 `{paperIds}`，1—100个不重复题集ID，返回 `{items:[{paperId,counts:{wrong,favorite,due,drafts,submitted}}]}`。只读批量统计，不写学习状态；移动运行时不触发落盘。
 - `GET /api/study`：`items`整题状态、`partItems`小题状态和复习记录；`GET /api/reviews` 可按 questionId、partId 与分页查询，`whole=true`仅查询整题旧记录。
-- `PUT /api/study/:id`：`{partId?,favorite?,mastery?,notes?,nextReviewAt?}`；`POST /api/study/:id/review`：`{partId?,mastery:0..3}`。指定partId时掌握、日期和笔记仅作用于该小题，收藏仍在整题记录操作。题目详情返回`partStudies`，旧整组状态不克隆为各小题状态。
-- `GET /api/learning/reset-preview`：读取影响数量及新鲜度指纹；`POST /api/learning/reset`接收`{confirmed:true,fingerprint}`，事务内重新核对。清除掌握、复习安排、错误状态与复习事件，保留收藏、笔记、卷面历史成绩和草稿。过期返回`LEARNING_RESET_PREVIEW_STALE`，必须重新预览。
+- `PUT /api/study/:id`：`{partId?,favorite?,mastery?,notes?,nextReviewAt?}`；`POST /api/study/:id/review`兼容`{partId?,mastery:0..3}`，也接收`rating、direction、requestId`，其中`mastery`与`rating`至少一个。显式 FSRS 评级须附`requestId`；旧掌握自评调用在 FSRS 下以0／1→Again、2／3→Good兼容，保留StudyState响应，不按四档一一映射。整组公共材料自评不广播为各小题记忆事件。指定partId时掌握、日期和笔记仅作用于该小题，收藏仍在整题记录操作。题目详情返回`partStudies`，旧整组状态不克隆为各小题状态。
+- `GET /api/learning/reset-preview`：读取影响数量及新鲜度指纹，含`reviewCards、reviewEvents`；`POST /api/learning/reset`接收`{confirmed:true,fingerprint}`，事务内重新核对。清除掌握、复习安排、错误状态、旧复习动作及 FSRS 卡片／事件，保留收藏、笔记、卷面历史成绩和草稿。过期返回`LEARNING_RESET_PREVIEW_STALE`，必须重新预览。
 - `GET /api/settings`：SystemSettings；`PUT /api/settings`：`{settings,confirmedRetention?,expectedRetention?}`。
 
 `SystemSettings.theme`为`green|dark|pink|sky|mint`，默认`green`；旧配置缺少该字段时补默认值。主题属于可迁移的外观偏好，配置导出、完整备份及Android本地持久化均保留，未知主题拒绝写入。
@@ -229,6 +254,8 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 - `GET /api/backup.sqlite`：可迁移 SQLite 下载副本，清除 AI 密钥，保留本机源库。JSON 备份／分享不包含 AI 凭据；附件较多时优先 SQLite。
 
 Android通过原生平台接口接收SQLite二进制进行完整恢复，不通过HTTP JSON传输。预览先检查原始文件头、完整性、版本、应用表结构及记录主键，再在隔离副本验证数据和引用，剥除输入触发器及派生缓存并由可信代码重建。确认绑定已校验文件、本机写入版本及磁盘基线；本机有活动考试时拒绝。替换前写入并回读独立原库副本，落盘失败回退原连接和原文件；成功后刷新应用，旧页面写入被拒绝。恢复后的AI密钥清除且AI关闭，需重新填写启用；原库私有副本仍含原配置，对外导出时脱敏。JSON完整备份包含`studyParts`、`learningResults`及`questionHistory`，与同包作答不一致的学习证据整批拒绝。合并时同ID保留本地记录，不用旧备份覆盖本地较新判题。
+
+FSRS完整备份另含`reviewCards、reviewEvents`及`reviewScheduling`配置。卡片与完整事件链作为一个导入单元：核对身份、算法／版本、参数、事件前后状态和最终重放结果；不一致整批回滚。本机已有同ID卡片时同时跳过其导入事件链，不混用两个版本；新卡事件ID与本机其他卡片冲突时拒绝。旧备份缺少两数组时视为空，不从旧掌握或判分捏造 FSRS 回忆史，旧日期继续兼容。内容分享不携带卡片和私人反馈，独立配置文件仅携带调度设置。
 
 旧数据库启动、可信 JSON 导入及旧分享包导入时，会把 questionBanks／question_banks 自动转为题集，保留名称、说明、顺序与完整题目快照；ID冲突使用迁移标记和新ID处理，重复导入不重复创建。含未发布题或空集合先归档。旧 bankId 筛选被清理，已有题目、笔记和作答历史不改写。
 

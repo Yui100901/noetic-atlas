@@ -37,13 +37,14 @@ export const dailyPushRecordSchema = z.object({
   questionIds: z.array(id).max(500), reviewQuestionIds: z.array(id).max(500), newQuestionIds: z.array(id).max(500), pointsByType: typePointsSchema.required(),
   shortfall: points, reason: z.string().max(1000), readAt: stamp.nullable(),
   answerItems: z.array(dailyPushAnswerItemSchema).max(500).optional(),
+  reallocatedPoints: points.optional(),
 }).strict().superRefine((record, context) => {
   const same = (a: number, b: number) => Math.round(a * 100) === Math.round(b * 100);
   const unique = new Set(record.questionIds);
   const calendarDate = new Date(record.dateKey + 'T00:00:00Z');
   if (!Number.isFinite(calendarDate.getTime()) || calendarDate.toISOString().slice(0, 10) !== record.dateKey) context.addIssue({ code: 'custom', path: ['dateKey'], message: '每日推题日期不是有效日历日期' });
   if (record.id !== `daily-${record.dateKey}` || unique.size !== record.questionIds.length || record.reviewCount !== record.reviewQuestionIds.length || record.newCount !== record.newQuestionIds.length || record.reviewCount + record.newCount !== record.questionIds.length || new Set([...record.reviewQuestionIds, ...record.newQuestionIds]).size !== unique.size || [...record.reviewQuestionIds, ...record.newQuestionIds].some(id => !unique.has(id))) context.addIssue({ code: 'custom', message: '每日推题日期或题目身份不一致' });
-  if (!same(record.reviewPoints + record.newPoints, record.totalPoints) || !same(record.targetReviewPoints + record.baseNewPoints, record.targetTotalPoints) || !same(record.baseNewPoints + record.transferredPoints, record.targetNewPoints) || !same(Math.max(0, record.targetTotalPoints - record.totalPoints), record.shortfall) || (!!record.paperId !== !!record.questionIds.length)) context.addIssue({ code: 'custom', message: '每日推题分值或题集引用不一致' });
+  if (!same(record.reviewPoints + record.newPoints, record.totalPoints) || !same(record.targetReviewPoints + record.baseNewPoints, record.targetTotalPoints) || (record.reallocatedPoints || 0) > record.baseNewPoints || !same(record.baseNewPoints - (record.reallocatedPoints || 0) + record.transferredPoints, record.targetNewPoints) || !same(Math.max(0, record.targetTotalPoints - record.totalPoints), record.shortfall) || (!!record.paperId !== !!record.questionIds.length)) context.addIssue({ code: 'custom', message: '每日推题分值或题集引用不一致' });
   if (record.answerItems) {
     const keys = record.answerItems.map(item => JSON.stringify([item.sourceQuestionId, item.id]));
     const roots = new Set(record.answerItems.map(item => item.sourceQuestionId));

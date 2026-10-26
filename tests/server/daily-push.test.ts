@@ -17,6 +17,8 @@ import { buildApp } from '../../server/index.js';
 const at = new Date('2026-10-25T00:00:00+08:00');
 function fixture(t: test.TestContext) {
   const store = new Store(':memory:'); t.after(() => store.db.close());
+  // These legacy selection tests intentionally cover fixed-interval behavior.
+  store.put('settings', 'system', { ...structuredClone(DEFAULT_SETTINGS), reviewScheduling: { ...structuredClone(DEFAULT_SETTINGS.reviewScheduling), strategy: 'fixed' } });
   store.put('domains', 'd', { id: 'd', name: '学习领域', description: '', sortOrder: 0 });
   store.put('domains', 'outside', { id: 'outside', name: '其他领域', description: '', sortOrder: 1 });
   for (const [id, parentId] of [['c', null], ['child', 'c'], ['elsewhere', null]] as const) store.put('categories', id, { id, parentId, domainId: 'd', name: id, description: '', sortOrder: 0 });

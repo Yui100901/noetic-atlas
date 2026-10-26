@@ -7,9 +7,11 @@ import { getObjectiveCorrect, isSubjectiveType } from '../../../shared/questions
 import { distributeGroupPoints, flattenQuestions, validatePaperAnswers, type StoredLeafQuestion } from '../questions/structure.js';
 import { applyAttemptRetention, getSettings } from '../settings/routes.js';
 import { validateAssetReferences } from '../assets/routes.js';
-import { answerState, attemptElapsedSeconds, examExpired } from '../../../shared/practice/attempt-timing.js';
+import { answerState, attemptElapsedSeconds, examExpired, isAnswerPresent } from '../../../shared/practice/attempt-timing.js';
 import { isVocabularyQuestion, resolveVocabularyQuestion, reverseVocabularyQuestion, validateVocabularyPaperSnapshot } from './vocabulary-practice.js';
 import { preserveLearningResults } from './learning-results.js';
+import type { ReviewRating } from '../../../shared/models/adaptive-review.js';
+import { syncAttemptReviewEvents } from '../review-scheduler/service.js';
 
 export interface StoredPaper extends Paper { snapshot: Question[] }
 export interface StoredAttempt extends Omit<Attempt, 'questions'> { questions: StoredLeafQuestion[] }
@@ -250,6 +252,7 @@ export function submitAttempt(store: Store, attempt: StoredAttempt, answers?: Re
   attempt.elapsedSeconds = attemptElapsedSeconds(attempt);
   const scoring = normalizeScoring(attempt.questions, attempt.scoring);
   attempt.scoring = scoring;
+  const settings = getSettings(store);
   store.transaction(() => {
     attempt.status = 'submitted'; attempt.submittedAt = expired ? attempt.deadlineAt! : draftStamp(store, attempt.source || 'paper', attempt.paperId); attempt.updatedAt = nextStamp(attempt.updatedAt);  attempt.objectiveScore = 0;
     const wrongSources = new Set<string>();
@@ -261,17 +264,28 @@ export function submitAttempt(store: Store, attempt: StoredAttempt, answers?: Re
         if (!source || wrongSources.has(key) || (q.partId !== undefined ? source.type !== 'group' || !source.parts?.some(part => part.id === q.partId && part.type === q.type) : source.type === 'group')) continue;
         wrongSources.add(key);
         const state = store.study(sourceId, q.partId); state.wrongCount += 1;
-        state.nextReviewAt = now(); store.putStudy(state);
+        // Fixed scheduling keeps its legacy immediate wrong-answer queue.
+        // FSRS owns its due date, including when automatic rating is disabled.
+        if (settings.reviewScheduling.strategy === 'fixed') state.nextReviewAt = now();
+        store.putStudy(state);
       }
     }
     store.put('attempts', attempt.id, attempt);
+    syncAttemptReviewEvents(store, attempt);
     preserveLearningResults(store, attempt);
     applyAttemptRetention(store, attempt);
   }); return attempt;
 }
-export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Record<string, number | null> = {}, mastery: Record<string, number> = {}, verdicts:Record<string,AnswerVerdict|null> = {}) {
+export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Record<string, number | null> = {}, mastery: Record<string, number> = {}, verdicts:Record<string,AnswerVerdict|null> = {}, ratings: Record<string, ReviewRating | null> = {}) {
   if (attempt.status !== 'submitted') fail(409, 'NOT_SUBMITTED', '请先交卷，再进行主观题自评');
   const scoring = normalizeScoring(attempt.questions, attempt.scoring); attempt.scoring = scoring;
+  const settings = getSettings(store);
+  const learningWasReset = !!store.get<{ reset?: boolean }>('learning_results', attempt.id)?.reset;
+  for (const id of Object.keys(ratings)) {
+    if (!attempt.questions.some(question => question.id === id)) fail(400, 'INVALID_REVIEW_QUESTION', '回忆评级题号不属于本次练习');
+    if (!isAnswerPresent(attempt.answers[id])) fail(400, 'REVIEW_ANSWER_REQUIRED', '只有实际填写并提交的回答可以评价回忆质量');
+  }
+  if (Object.keys(ratings).length && settings.reviewScheduling.strategy !== 'fsrs') fail(409, 'FSRS_DISABLED', '当前使用固定复习间隔，请先开启自适应复习再评价回忆质量');
   store.transaction(() => {
     for (const [id, score] of Object.entries(scores)) {
       const q = attempt.questions.find(q => q.id === id);
@@ -296,18 +310,26 @@ export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Reco
       attempt.answers[id] = { ...old, value: old?.value || '', mastery: level };
     }
     for (const id of changedMastery) {
+      // A later score correction edits the retained historical sheet only;
+      // explicit progress reset must not be undone by its old auto-self-rating.
+      if (learningWasReset) continue;
       const q = attempt.questions.find(q => q.id === id)!, sourceId = q.sourceQuestionId || id;
       const source = store.get<Question>('questions', sourceId);
       if (!source || (q.partId !== undefined ? source.type !== 'group' || !source.parts?.some(part => part.id === q.partId && part.type === q.type) : source.type === 'group')) continue;
       const level = mastery[id]!;
-      const state = store.study(sourceId, q.partId); state.mastery = level; state.lastReviewedAt = now();
-      state.nextReviewAt = new Date(Date.now() + getSettings(store).reviewIntervalsDays[level]! * 86400000).toISOString();
+      const state = store.study(sourceId, q.partId); state.mastery = level;
+      if (settings.reviewScheduling.strategy === 'fixed') {
+        state.lastReviewedAt = now();
+        state.nextReviewAt = new Date(Date.now() + settings.reviewIntervalsDays[level]! * 86400000).toISOString();
+      }
       store.putStudy(state);
       const reviewId = makeId('review');
       store.put('reviews', reviewId, { id: reviewId, questionId: sourceId, ...(q.partId === undefined ? {} : { partId: q.partId }), mastery: level, reviewedAt: now(), source: 'attempt', attemptId: attempt.id });
     }
     attempt.subjectiveScore = fromCents(Object.values(attempt.answers).reduce((n, a) => n + cents(a.selfScore ?? 0), 0));
     attempt.updatedAt = nextStamp(attempt.updatedAt || attempt.startedAt); store.put('attempts', attempt.id, attempt);
+    const reviewedLeaves = [...new Set([...Object.keys(scores), ...Object.keys(verdicts), ...Object.keys(ratings)])];
+    if (reviewedLeaves.length) syncAttemptReviewEvents(store, attempt, ratings, reviewedLeaves);
     preserveLearningResults(store, attempt);
   }); return attempt;
 }

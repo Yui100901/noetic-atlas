@@ -29,6 +29,10 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   }
   const boot = await call('/api/bootstrap'); assert.equal(boot.stats.totalQuestions, publishedCount);
   assert.equal(boot.stats.favoriteCount, 0);
+  assert.equal(boot.settings.reviewScheduling.strategy, 'fsrs');
+  // This legacy runtime regression keeps explicit fixed-date behavior. The
+  // adaptive-review runtime suite exercises the default FSRS strategy.
+  await call('/api/settings', 'PUT', { settings: { ...boot.settings, reviewScheduling: { ...boot.settings.reviewScheduling, strategy: 'fixed' } } });
   assert.deepEqual((await call('/api/vocabulary?word=dependency')).matches,[],'portable word references resolve gracefully without an English pack in WASM SQLite');
   await call('https://attacker.invalid/api/questions', 'GET', undefined, 400);
   const rejectedOrigin = await runtime.fetch('/api/domains', { method: 'POST', headers: { Origin: 'https://attacker.invalid' }, body: JSON.stringify({ name: '不应写入' }) });

@@ -31,6 +31,8 @@ export interface DailyPushRecord {
   pointsByType: Record<QuestionType, number>;
   shortfall: number; reason: string; readAt: string | null;
   answerItems?: DailyPushAnswerItem[];
+  /** New-question budget moved to due reviews when adaptive scheduling is on. */
+  reallocatedPoints?: number;
 }
 export interface DailyPushView extends DailyPushRecord { paperAvailable: boolean; progress: DailyPushProgress }
 export interface DailyPushOverview { config: DailyPushSettings; today: DailyPushView | null; unreadCount: number; recent: DailyPushView[]; recentLimit: number; nextDateKey: string }

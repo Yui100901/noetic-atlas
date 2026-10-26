@@ -42,7 +42,7 @@ export function ExamNavigationGuard({ children }: { children: ReactNode }) {
     const lockedHref = href('attempts', active.id);
     const restore = () => {
       if (window.location.hash !== lockedHref) {
-        setBlocked(true); window.history.replaceState(null, '', lockedHref);
+        setBlocked(true); window.history.replaceState(window.history.state, '', lockedHref);
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       }
     };

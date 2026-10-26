@@ -1,6 +1,6 @@
 import { ExamNavigationGuard } from '../features/practice/exam-guard';
 import { isNativeApp } from '@platform';
-import React, { useEffect, useState, type ReactNode } from 'react';
+import React, { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowRight, BarChart3, BookOpen, CalendarCheck2, CalendarDays, ChevronRight, CircleHelp, Settings2, ClipboardList, Command, Database, Files, FolderTree, GraduationCap, LayoutDashboard, LibraryBig, Menu, Plus, Sparkles, X } from 'lucide-react';
 import type { Bootstrap } from '../../shared/models/types';
@@ -9,6 +9,9 @@ import { navigate, useResource } from '../shared/lib/api';
 import { AppContext, Empty, ErrorNotice, Loading, PageHeader, useApp } from '../shared/ui/components';
 import { QuestionDetail, QuestionEditor, QuestionsPage } from '../features/questions/questions';
 import { PaperDetailPage, PapersPage } from '../features/papers/papers';
+import { PaperQuestionPage } from '../features/papers/paper-question';
+import { readPaperContentsContext } from '../features/papers/reader-navigation';
+import { allowHashNavigation, markNavigationEntry, replaceHashRoute } from '../shared/lib/navigation-guard';
 import { PaperEditor } from '../features/papers/paper-editor';
 import { AttemptPage } from '../features/practice/attempt';
 import { TaxonomyPage } from '../features/taxonomy/taxonomy';
@@ -41,13 +44,13 @@ function Dashboard() {
 }
 
 const nav = [{ key: 'overview', label: '知识总览', icon: LayoutDashboard, path: '#/' }, { key: 'questions', label: '知识题库', icon: LibraryBig, path: '#/questions' }, { key: 'papers', label: '题集与练习', icon: ClipboardList, path: '#/papers' }, { key: 'analytics', label: '学习统计', icon: BarChart3, path: '#/analytics' }, { key: 'documents', label: '资料库', icon: Files, path: '#/documents' }, { key: 'taxonomy', label: '分类与标签', icon: FolderTree, path: '#/taxonomy' }, { key: 'ai', label: 'AI工作台', icon: Sparkles, path: '#/ai' }, { key: 'sharing', label: '分享与导入', icon: ArrowRight, path: '#/sharing' }];
-function useHash() { const [hash, setHash] = useState(window.location.hash || '#/'); useEffect(() => { const listener = () => { setHash(window.location.hash || '#/'); window.scrollTo({ top: 0 }); }; window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []); return hash; }
+function useHash() { const [hash, setHash] = useState(window.location.hash || '#/'); const index = useRef(0); useEffect(() => { index.current = markNavigationEntry(0); const listener = (event: HashChangeEvent) => { if (!allowHashNavigation(event)) return; index.current = markNavigationEntry(index.current + 1); setHash(window.location.hash || '#/'); window.scrollTo({ top: 0 }); }; window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []); return hash; }
 function LegacyBankRedirect() {
-  useEffect(() => { window.location.replace('#/papers'); }, []);
+  useEffect(() => { replaceHashRoute('#/papers'); }, []);
   return <Loading text="正在打开题集…" />;
 }
 function LegacyStudyRedirect({ tab }: { tab: string }) {
-  useEffect(() => { window.location.replace(['due','favorite','wrong'].includes(tab) ? `#/questions?${tab}=true` : '#/papers'); }, [tab]);
+  useEffect(() => { replaceHashRoute(['due','favorite','wrong'].includes(tab) ? `#/questions?${tab}=true` : '#/papers'); }, [tab]);
   return <Loading text="正在打开学习内容…" />;
 }
 function Router({ hash }: { hash: string }) {
@@ -59,7 +62,7 @@ function Router({ hash }: { hash: string }) {
   if (section === 'questions') { if (id === 'import') return <QuestionImportPage key={key} />; if (id === 'review') return <QuestionReviewPage key={key} />; if (id === 'new') return <QuestionEditor key={key} />; if (id && action === 'edit') return <QuestionEditor key={key} id={id} />; if (id) return <QuestionDetail key={key} id={id} showAnswer={params.get('answer') === '1'} />; return <QuestionsPage key={key} initial={{...Object.fromEntries(['search', 'domainId', 'categoryId', 'frequency', 'collection', 'status'].map(name => [name, params.get(name) || ''])),...Object.fromEntries(['due','favorite','wrong'].map(name=>[name,['true','1'].includes(params.get(name)||'')])),tagIds:(params.get('tagIds')||'').split(',').filter(Boolean),tagMode:params.get('tagMode')==='any'?'any':'all'}} />; }
   if (section === 'banks') return <LegacyBankRedirect />;
   if (section === 'analytics') return <AnalyticsPage key={key} initialTab={params.get('tab') || 'analysis'} />;
-  if (section === 'papers') { if (id === 'new') return <PaperEditor key={key} mode={action === 'random' ? 'random' : 'manual'} />; if (id && action === 'activity') return <DeletedSetActivityPage key={key} paperId={id} initialTab={params.get('tab') || 'history'} />; if (id && action === 'edit') return <PaperEditor key={key} id={id} />; if (id) return <PaperDetailPage key={key} id={id} initialTab={params.get('tab') || 'content'} />; return <PapersPage />; }
+  if (section === 'papers') { if (id === 'new') return <PaperEditor key={key} mode={action === 'random' ? 'random' : 'manual'} />; if (id && action === 'questions') { let questionId = ''; try { questionId = decodeURIComponent(pathname.split('/')[3] || ''); } catch { return <Empty title="题目链接格式不正确" actions={<a href={`#/papers/${encodeURIComponent(id)}`}>返回题集</a>} />; } return questionId && pathname.split('/').length === 4 ? <PaperQuestionPage key={key} paperId={id} questionId={questionId} context={readPaperContentsContext(params)} /> : <Empty title="请从题集中选择题目" actions={<a href={`#/papers/${encodeURIComponent(id)}`}>返回题集</a>} />; } if (id && action === 'activity') return <DeletedSetActivityPage key={key} paperId={id} initialTab={params.get('tab') || 'history'} />; if (id && action === 'edit') return <PaperEditor key={key} id={id} />; if (id) return <PaperDetailPage key={key} id={id} initialTab={params.get('tab') || 'content'} initialContents={readPaperContentsContext(params)} />; return <PapersPage />; }
   if (section === 'learning' && (id === 'wrong' || id === 'favorite' || id === 'due')) return <GlobalLearningPage key={key} kind={id} />;
   if (section === 'quick') return <QuickPracticePage key={key} initialTab={params.get('tab') || undefined} />;
   if (section === 'attempts' && id) return <AttemptPage key={key} id={id} />;

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Archive, ArrowLeft, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
 import type { Attempt, Paper, PaperDetail } from '../../../shared/models/types';
 import { href, idPath, localDate, navigate, request, send, useResource } from '../../shared/lib/api';
 import { Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Pagination, QuestionMeta, SearchBox, useApp } from '../../shared/ui/components';
@@ -12,7 +12,8 @@ import './paper-organization.css';
 import { ShareButton } from '../sharing/sharing';
 import { notifyExamState } from '../practice/exam-guard';
 import { usePagination } from '../../shared/lib/pagination';
-import { QuestionSetQuestionViewer, type QuestionViewerHandle } from '../questions/question-viewer';
+import { normalizePaperContentsContext, paperContentsHref, paperQuestionHref, type PaperContentsContext } from './reader-navigation';
+import '../questions/question-viewer.css';
 import { PaperLearningWorkspace, RetainedSetHistories } from './paper-learning';
 import { PaperCard, SpecialLearningSets, useLearningCardSummaries } from './learning-cards';
 import { ActionDropdown } from '../../shared/ui/action-dropdown';
@@ -45,7 +46,7 @@ export function PapersPage() {
     {loading ? <Loading /> : error ? <ErrorNotice message={error} retry={refresh} /> : papers.length ? <><div className="paper-groups">{orderedGroups.map(([domainId, items]) => <section className="paper-organization-group" key={domainId}><h2>{domainId === 'other' ? '其他题集' : `${bootstrap.domains.find(domain => `domain:${domain.id}` === domainId)?.name || '未识别领域'}专项`} <span className="muted">{items.length}</span></h2><div className="paper-grid">{items.map((paper, index) => <PaperCard paper={paper} index={index} counts={cardSummaries.items.get(paper.id)} loading={cardSummaries.loading} key={paper.id} />)}</div></section>)}</div><Pagination {...paging} label="题集" /></> : <Empty title={search || organization !== 'all' ? '没有符合条件的题集' : '创建第一套题集'} description="挑选自己的薄弱点，或按标签生成一套练习。" actions={<a className="button primary" href="#/papers/new/manual"><Plus size={16} />创建题集</a>} />}</>;
 }
 
-export function PaperDetailPage({ id, initialTab = 'content' }: { id: string; initialTab?: string }) {
+export function PaperDetailPage({ id, initialTab = 'content', initialContents = normalizePaperContentsContext() }: { id: string; initialTab?: string; initialContents?: PaperContentsContext }) {
   const { data: paper, loading, error, refresh } = useResource<PaperDetail>(`/api/papers/${idPath(id)}?summary=true`);
   const { toast, reload, bootstrap } = useApp(); const settings = bootstrap.settings || DEFAULT_SETTINGS; const [busy, setBusy] = useState(false); const [drafts, setDrafts] = useState<Attempt[] | null>(null);
   const [vocabularyDirection, setVocabularyDirection] = useState<VocabularyDirection>('word_to_meaning');
@@ -90,30 +91,27 @@ export function PaperDetailPage({ id, initialTab = 'content' }: { id: string; in
     <div className="paper-summary"><div><strong>{paper.questionCount}</strong><span>个选题单位 · {paper.answerCount ?? paper.questions.length} 个作答项</span></div><div><strong>{paper.questions.filter(question => !isSubjectiveType(question.type)).length}</strong><span>{scoring.enabled ? '客观题 · 提交后自动判分' : '客观题 · 提交后核对正误'}</span></div><div><strong>{paper.questions.filter(question => isSubjectiveType(question.type)).length}</strong><span>{scoring.enabled ? '主观题 · 交卷后人工阅卷' : '主观题 · 按解析自测掌握度'}</span></div><div><span>最近更新</span><p>{localDate(paper.updatedAt)}</p></div></div>
     <PaperLearningWorkspace paperId={id} initialTab={initialTab}>
       <div className="notice info"><ClipboardList size={17} />点击题目可在当前题集中查看完整内容与解析，使用上一题、下一题连续学习。{scoring.enabled ? '练习或考试提交后，客观题自动判分。' : '也可通过无分练习记录正误和掌握程度。'}</div>
-      <QuestionSetContents paper={paper} />
+      <QuestionSetContents paper={paper} initial={initialContents} />
     </PaperLearningWorkspace>
     </>;
 }
 
-/** Keep the set and its page mounted while reading a question. Neither opening
- * the dialog nor moving between questions changes the router/hash. */
-function QuestionSetContents({ paper }: { paper: PaperDetail }) {
-  const [search, setSearch] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const viewer = useRef<QuestionViewerHandle>(null);
+/** Keep list state in the URL before leaving for the independent reader. */
+function QuestionSetContents({ paper, initial }: { paper: PaperDetail; initial: PaperContentsContext }) {
+  const [search, setSearch] = useState(initial.search);
+  const [page, setPage] = useState(initial.page), [pageSize, setPageSize] = useState(initial.pageSize);
   const visible = useMemo(() => { const term = search.trim().toLowerCase(); return term ? paper.questions.filter(question => `${question.title} ${question.id}`.toLowerCase().includes(term)) : paper.questions; }, [paper.questions, search]);
-  const paging = usePagination(visible, `${paper.id}|${search}`);
-  const scoring = paperScoring(paper);
-  const selected = selectedIndex === null ? null : visible[selectedIndex];
-  const close = () => { if (viewer.current?.confirmLeave() !== false) setSelectedIndex(null); };
-  const move = (offset: number) => {
-    if (selectedIndex === null || viewer.current?.confirmLeave() === false) return;
-    setSelectedIndex(Math.max(0, Math.min(visible.length - 1, selectedIndex + offset)));
-    document.querySelector('.question-viewer-navigation')?.closest('.modal')?.scrollTo({ top: 0 });
+  const safePage = Math.min(page, Math.max(1, Math.ceil(visible.length / pageSize)));
+  const context = { search, page: safePage, pageSize };
+  const remember = (value: PaperContentsContext = context) => { window.history.replaceState(window.history.state, '', paperContentsHref(paper.id, value)); };
+  const paging = { page: safePage, pageSize, total: visible.length,
+    items: visible.slice((safePage - 1) * pageSize, safePage * pageSize),
+    onPage: (value: number) => { setPage(value); remember({ ...context, page: value }); },
+    onPageSize: (value: number) => { setPageSize(value); setPage(1); remember({ ...context, page: 1, pageSize: value }); },
   };
-  return <section className="question-set-contents"><div className="list-toolbar question-set-question-tools"><h2>题集内容 <span className="muted">{visible.length.toLocaleString()}</span></h2><SearchBox value={search} onChange={setSearch} placeholder="在本题集中查找标题或题号" /></div>
-    <div className="question-set-question-list">{paging.items.map((question, localIndex) => { const index = (paging.page - 1) * paging.pageSize + localIndex; return <section className="card question-set-question-row" key={question.id}><div className="exam-heading"><span className="number-label">{String(index + 1).padStart(2, '0')}</span><div><QuestionMeta question={question} /><button type="button" className="text-button question-set-question-title" onClick={() => setSelectedIndex(index)}>{question.title}</button>{question.groupTitle && <p className="muted">共用材料 · {question.groupTitle}</p>}{scoring.enabled && <span className="question-points">本题 {pointText(scoring.questionPoints[question.id] ?? question.points ?? 0)} 分</span>}</div><button type="button" className="button" aria-label={`查看题目：${question.title}`} onClick={() => setSelectedIndex(index)}><Eye size={15} />查看题目</button></div></section>; })}</div>
+  const scoring = paperScoring(paper);
+  return <section className="question-set-contents"><div className="list-toolbar question-set-question-tools"><h2>题集内容 <span className="muted">{visible.length.toLocaleString()}</span></h2><SearchBox value={search} onChange={value => { setSearch(value); setPage(1); remember({ ...context, search: value, page: 1 }); }} placeholder="在本题集中查找标题或题号" /></div>
+    <div className="question-set-question-list">{paging.items.map((question, localIndex) => { const index = (paging.page - 1) * paging.pageSize + localIndex; const readerHref = paperQuestionHref(paper.id, question.id, context); return <section className="card question-set-question-row" key={question.id}><div className="exam-heading"><span className="number-label">{String(index + 1).padStart(2, '0')}</span><div><QuestionMeta question={question} /><a className="text-button question-set-question-title" href={readerHref} onClick={() => remember()}>{question.title}</a>{question.groupTitle && <p className="muted">共用材料 · {question.groupTitle}</p>}{scoring.enabled && <span className="question-points">本题 {pointText(scoring.questionPoints[question.id] ?? question.points ?? 0)} 分</span>}</div><a className="button" aria-label={`查看题目：${question.title}`} href={readerHref} onClick={() => remember()}><Eye size={15} />查看题目</a></div></section>; })}</div>
     {!visible.length && <Empty title="没有符合条件的题目" description="尝试其他标题或题号。" />}<Pagination {...paging} label="题集题目" />
-    {selected && selectedIndex !== null && <Modal title="题集内看题" wide onClose={close}><div className="question-viewer-navigation"><button type="button" className="button" disabled={selectedIndex === 0} onClick={() => move(-1)}><ChevronLeft size={16} />上一题</button><span role="status">第 {selectedIndex + 1} / {visible.length} 题{search ? ' · 当前筛选' : ''}</span><button type="button" className="button" disabled={selectedIndex === visible.length - 1} onClick={() => move(1)}>下一题<ChevronRight size={16} /></button></div><p className="muted">查看题集保存的题目快照，关闭后保留当前列表和页码。</p><QuestionSetQuestionViewer key={selected.id} ref={viewer} paperId={paper.id} questionId={selected.id} /></Modal>}
   </section>;
 }

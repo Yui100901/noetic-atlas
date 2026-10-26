@@ -11,6 +11,7 @@ const model=createServer(async(request,response)=>{for await(const _chunk of req
 await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
 const app=await buildApp({databasePath:':memory:',seedPath:'no-study-parts-qa',staticRoot:'dist/web'});
 const call=async(method,url,payload)=>{const r=await app.inject({method,url,...(payload===undefined?{}:{payload})});if(r.statusCode>=400)throw Error(r.body);return r.json();};
+const system=await call('GET','/api/settings');await call('PUT','/api/settings',{settings:{...system,reviewScheduling:{...system.reviewScheduling,strategy:'fixed'}}});
 const settings=await call('GET','/api/ai/settings');const {hasKey,...configuration}=settings;await call('PUT','/api/ai/settings',{...configuration,enabled:true,baseUrl:'http://127.0.0.1:'+model.address().port+'/v1',model:'local-study-parts-fixture'});
 const parts=['first','second'].map((id,index)=>({id,title:index?'第二小题':'第一小题',type:'true_false',stemMarkdown:index?'第二小题单独理解':'第一小题单独理解',options:[],correctAnswers:['true'],answerMarkdown:index?'第二小题参考答案':'第一小题参考答案',explanationMarkdown:''}));
 await call('POST','/api/import',{mode:'merge',data:{schemaVersion:1,domains:[],categories:[],tags:[],documents:[],papers:[],questions:[{id:'GROUP-QA',title:'小题学习验收材料',type:'group',stemMarkdown:'一直保留的公共材料：同一情景，两道独立小题。',parts,status:'published'}]}});
@@ -88,25 +89,25 @@ try {
   checks.push('本地模拟AI追加前先保存小题草稿，追加后刷新笔记且不覆盖相邻小题或整组笔记');
 
   await page.goto(origin + '/#/papers/' + encodeURIComponent(state.paperId));
-  await page.getByRole('button', { name: '查看题目：第一小题', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '题集内看题', exact: true });
-  await dialog.getByText('一直保留的公共材料：同一情景，两道独立小题。', { exact: true }).waitFor();
-  await page.waitForFunction(expected => document.querySelector('[role="dialog"] textarea')?.value === expected, firstAfterAi);
-  await save(dialog, '题集里更新的第一小题笔记');
-  await dialog.getByRole('button', { name: '下一题', exact: true }).click();
-  await dialog.getByRole('heading', { name: '第二小题', exact: true }).waitFor();
-  await page.waitForFunction(() => document.querySelector('[role="dialog"] textarea')?.value === '题库中第二小题的笔记');
-  await dialog.getByText('一直保留的公共材料：同一情景，两道独立小题。', { exact: true }).waitFor();
-  const date = '2031-04-12'; await dialog.getByLabel('调整复习日期', { exact: true }).fill(date);
-  await dialog.getByRole('button', { name: '更新日期', exact: true }).click();
+  await page.getByLabel('查看题目：第一小题', { exact: true }).click();
+  const reader = page.locator('main');
+  await reader.getByText('一直保留的公共材料：同一情景，两道独立小题。', { exact: true }).waitFor();
+  await page.waitForFunction(expected => document.querySelector('main .question-viewer textarea')?.value === expected, firstAfterAi);
+  await save(reader, '题集里更新的第一小题笔记');
+  await reader.getByRole('link', { name: '下一题', exact: true }).click();
+  await reader.getByRole('heading', { name: '第二小题', exact: true }).first().waitFor();
+  await page.waitForFunction(() => document.querySelector('main .question-viewer textarea')?.value === '题库中第二小题的笔记');
+  await reader.getByText('一直保留的公共材料：同一情景，两道独立小题。', { exact: true }).waitFor();
+  const date = '2031-04-12'; await reader.getByLabel('调整复习日期', { exact: true }).fill(date);
+  await reader.getByRole('button', { name: '更新日期', exact: true }).click();
   await page.waitForFunction(async expected => { const r = await fetch('/api/questions/GROUP-QA'); return (await r.json()).partStudies.find(item => item.partId === 'second').nextReviewAt?.startsWith(expected); }, date);
   q = await current(); assert.equal(partState(q, 'first').notes, '题集里更新的第一小题笔记'); assert.equal(partState(q, 'second').notes, '题库中第二小题的笔记'); assert.ok(!partState(q, 'first').nextReviewAt.startsWith(date));
   checks.push('题集快照始终保留公共材料，前后切换绑定对应小题笔记与复习日期');
 
   await page.setViewportSize({ width: 390, height: 844 });
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); assert.ok(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); assert.ok(await reader.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
   await page.screenshot({ path: output + '/part-reader-mobile.png', animations: 'disabled' });
-  await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+  await reader.getByRole('link', { name: /^返回题集(?:\s|$)/ }).click();
   const beforeQuickReads = questionReads.length;
   await page.goto(origin + '/#/attempts/' + encodeURIComponent(state.quickId));
   await page.locator('.exam-question').nth(1).waitFor(); await page.waitForLoadState('networkidle');

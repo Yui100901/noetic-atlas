@@ -159,10 +159,11 @@ try {
   await page.locator('.answer-content').waitFor();
   await geometry('question-expanded-answer');
   await go('papers/' + state.paperId);
-  await page.getByRole('button', { name: /^查看题目：/ }).first().click();
-  await page.getByRole('dialog').waitFor(); await geometry('paper-question-dialog'); await capture('paper-question-dialog');
-  await page.getByRole('button', { name: '关闭', exact: true }).click();
-  checks.push('展开解析和题集原地看题弹窗可用，操作栏、分隔及滚动边界保持正常');
+  await page.getByLabel(/^查看题目：/).first().click();
+  await page.waitForURL(/#\/papers\/[^/]+\/questions\//); assert.equal(await page.getByRole('dialog').count(), 0);
+  await page.locator('.question-viewer').waitFor(); await geometry('paper-question-page'); await capture('paper-question-page');
+  await page.getByRole('link', { name: /^返回题集(?:\s|$)/ }).click();
+  checks.push('展开解析和题集独立看题页面可用，操作栏、分隔及滚动边界保持正常');
   assert.deepEqual(errors, [], 'browser errors'); assert.deepEqual(externalRequests, [], 'unexpected external request');
   const report = { passed: checks.length, checks, samples: samples.length, findings, errors, externalRequests, baseline, isolated: true, databasePath: ':memory:' };
   await writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2));

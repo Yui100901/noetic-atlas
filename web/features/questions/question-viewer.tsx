@@ -20,11 +20,11 @@ export interface QuestionSnapshot extends Question {
   groupStemMarkdown?: string;
   partId?: string;
 }
-export interface QuestionViewerHandle { confirmLeave: () => boolean; savePendingNotes: () => Promise<void>; refreshStudy: () => void }
+export interface QuestionViewerHandle { confirmLeave: () => boolean; savePendingNotes: () => Promise<void>; refreshStudy: () => void; hasUnsavedChanges: () => boolean; isSaving: () => boolean }
 
 /** Read immutable content from the set, and bind only learning state to the
  * original question. An edited/deleted original never replaces this snapshot. */
-export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: QuestionSnapshot; onStudyChange?: () => void; contentSource?: 'snapshot' | 'current'; studyOnly?: boolean; reviewDirection?: ReviewDirection }>(function QuestionViewer({ question, onStudyChange, contentSource = 'snapshot', studyOnly = false, reviewDirection }, ref) {
+export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: QuestionSnapshot; onStudyChange?: () => void; contentSource?: 'snapshot' | 'current'; studyOnly?: boolean; reviewDirection?: ReviewDirection; presentation?: 'embedded' | 'page' }>(function QuestionViewer({ question, onStudyChange, contentSource = 'snapshot', studyOnly = false, reviewDirection, presentation = 'embedded' }, ref) {
   const sourceId = question.sourceQuestionId || question.id;
   const partId = question.partId;
   const source = useResource<Question>(`/api/questions/${idPath(sourceId)}`);
@@ -39,6 +39,8 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   const dirty = notes !== (study?.notes || '');
   useImperativeHandle(ref, () => ({
     confirmLeave: () => !busy && (!dirty || confirm('学习笔记尚未保存，确定离开这道题？')),
+    hasUnsavedChanges: () => dirty,
+    isSaving: () => busy,
     savePendingNotes: async () => { if (busy) throw new Error('学习记录正在保存，请稍后再追加 AI 说明'); if (dirty && !await updateStudy({ notes })) throw new Error('小题笔记未保存，暂未追加 AI 说明'); },
     refreshStudy: source.refresh,
   }), [busy, dirty, notes, sourceId, partId, source.data]);
@@ -60,14 +62,15 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   const readingVocabulary = snapshotVocabulary(question, source.error ? undefined : source.data || undefined);
   const reverse = reviewDirection === 'meaning_to_word' && !!readingVocabulary;
   return <div className="question-viewer" onClickCapture={event => {
+    if (presentation === 'page') return;
     const link = (event.target as HTMLElement).closest('a');
     if (link?.getAttribute('href')?.startsWith('#/') && !link.hasAttribute('data-question-history-review')) { event.preventDefault(); toast('请先关闭看题窗口，再打开其他页面'); }
   }}>
     <div className="question-viewer-layout">
       <div className="question-viewer-main">
         {!studyOnly && <SourceNoticeScope contents={questionNoticeContents(question)}>
-          <section className="question-viewer-reading question-body">
-            {reverse ? <span className="badge">词汇逆向复习</span> : <QuestionMeta question={question} />}<h3 className="question-viewer-title">{reverse ? '看释义想词' : question.title}</h3>
+          <section className={`question-viewer-reading question-body${presentation === 'page' ? ' card' : ''}`}>
+            {reverse ? <span className="badge">词汇逆向复习</span> : <QuestionMeta question={question} />}{presentation !== 'page' && <h3 className="question-viewer-title">{reverse ? '看释义想词' : question.title}</h3>}
             {question.groupStemMarkdown && <section className="group-material"><span className="section-label">共用材料 · {question.groupTitle}</span><QuestionContent>{question.groupStemMarkdown}</QuestionContent></section>}
             <QuestionContent>{reverse ? readingVocabulary!.meaningPrompt : question.stemMarkdown}</QuestionContent>
             {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
@@ -76,7 +79,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
             {answerOpen && <div className="answer-content"><div className="section-label">参考答案{question.correctAnswers.length ? ' · ' + question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、') : ''}</div>{reverse && <><p><strong>目标词语：</strong>{readingVocabulary!.headword}</p><QuestionStructuredBody question={{ ...question, vocabulary: readingVocabulary }} /></>}<QuestionStructuredBody question={question} showAnswers /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><div className="section-label">解析 · 追问 · 误区</div><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</div>}
           </section>
         </SourceNoticeScope>}
-        {(!reverse || answerOpen) && <QuestionHistory questionId={sourceId} partId={partId} aggregate={question.type === 'group'} beforeOpenReview={() => !busy && (!dirty || confirm('学习笔记尚未保存，确定离开这道题并打开整卷复盘？'))} />}
+        {(!reverse || answerOpen) && <QuestionHistory questionId={sourceId} partId={partId} aggregate={question.type === 'group'} beforeOpenReview={() => presentation === 'page' || !busy && (!dirty || confirm('学习笔记尚未保存，确定离开这道题并打开整卷复盘？'))} />}
         {source.loading ? <Loading text="正在读取学习记录…" /> : !live ? <div className="notice info">{contentSource === 'current' ? '当前原题已删除或暂时无法读取，仍展示打开窗口时读取的内容；关闭窗口刷新后重新确认。' : '原题已删除或暂时无法读取，仍可查看题集保存的完整题目与解析。'}当前无法保存原题学习记录。{source.error && <button type="button" className="button" onClick={source.refresh}>重试学习记录</button>}</div> : <>
           {(!reverse || answerOpen) && <section className="card question-viewer-notes">
             <h3><Bookmark size={17} />{partId !== undefined ? '本小题的学习笔记' : '我的学习笔记'}</h3>
@@ -120,16 +123,16 @@ function LegacyGroupStudy({ question }: { question: Question }) {
 export const GroupStudyTools = forwardRef<QuestionViewerHandle, { question: Question; onStudyChange?: () => void }>(function GroupStudyTools({ question, onStudyChange }, ref) {
   const [partId, setPartId] = useState(() => new URLSearchParams(location.hash.split('?')[1]).get('part') || question.parts?.[0]?.id || '');
   const viewer = useRef<QuestionViewerHandle>(null);
-  useImperativeHandle(ref, () => ({ confirmLeave: () => viewer.current?.confirmLeave() !== false, savePendingNotes: async () => { await viewer.current?.savePendingNotes(); }, refreshStudy: () => viewer.current?.refreshStudy() }), []);
+  useImperativeHandle(ref, () => ({ confirmLeave: () => viewer.current?.confirmLeave() !== false, savePendingNotes: async () => { await viewer.current?.savePendingNotes(); }, refreshStudy: () => viewer.current?.refreshStudy(), hasUnsavedChanges: () => viewer.current?.hasUnsavedChanges() || false, isSaving: () => viewer.current?.isSaving() || false }), []);
   const part = question.parts?.find(item => item.id === partId) || question.parts?.[0];
   if (!part) return null;
   const leaf: QuestionSnapshot = { ...question, ...part, id: `${question.id}::${part.id}`, parts: undefined, sourceQuestionId: question.id, partId: part.id, groupTitle: question.title, groupStemMarkdown: question.stemMarkdown };
   return <section className="group-study-tools"><Field label="选择小题学习记录"><select value={part.id} onChange={event => { if (viewer.current?.confirmLeave() !== false) setPartId(event.target.value); }}>{question.parts!.map((item, index) => <option key={item.id} value={item.id}>小题 {index + 1} · {item.title}</option>)}</select></Field><QuestionViewer key={part.id} ref={viewer} question={leaf} contentSource="current" studyOnly onStudyChange={onStudyChange} /></section>;
 });
 
-export const QuestionSetQuestionViewer = forwardRef<QuestionViewerHandle, { paperId: string; questionId: string }>(function QuestionSetQuestionViewer({ paperId, questionId }, ref) {
+export const QuestionSetQuestionViewer = forwardRef<QuestionViewerHandle, { paperId: string; questionId: string; presentation?: 'embedded' | 'page' }>(function QuestionSetQuestionViewer({ paperId, questionId, presentation }, ref) {
   const { data, loading, error, refresh } = useResource<QuestionSnapshot>(`/api/papers/${idPath(paperId)}/questions/${idPath(questionId)}`);
   if (loading) return <Loading text="正在读取题集中的题目…" />;
   if (error || !data) return <ErrorNotice message={error || '题集中的题目不存在'} retry={refresh} />;
-  return <QuestionViewer ref={ref} question={data} />;
+  return <QuestionViewer ref={ref} question={data} presentation={presentation} />;
 });

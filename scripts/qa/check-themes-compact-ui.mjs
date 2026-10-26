@@ -13,6 +13,7 @@ const fixture = `import assert from 'node:assert/strict';
 import {buildApp} from './server/index.ts';
 const app=await buildApp({databasePath:':memory:',seedPath:'no-themes-compact-ui-seed',staticRoot:'dist/web',logger:false});
 const api=async(url,method='GET',payload)=>{const response=await app.inject({url,method,...(payload===undefined?{}:{payload})});assert.ok(response.statusCode<400,response.body);return response.json();};
+const system=await api('/api/settings');await api('/api/settings','PUT',{settings:{...system,reviewScheduling:{...system.reviewScheduling,strategy:'fixed'}}});
 await api('/api/import','POST',{mode:'merge',data:{schemaVersion:1,domains:[],categories:[],tags:[],documents:[],papers:[],questions:[{id:'COMPACT-Q',title:'紧凑学习情况验收',type:'true_false',stemMarkdown:['说明数据与展示的边界。','','| 项目 | 范围 |','| --- | --- |','| 学习统计 | 真实提交 |','','~~~ts','const answered = true;','~~~'].join('\\n'),answerMarkdown:'正确，保留独立的学习与历史记录。',explanationMarkdown:'统计保留完整语义，缩小展示不丢失信息。',correctAnswers:['true'],status:'published'}]}});
 const paper=await api('/api/papers','POST',{title:'主题与学习情况验收题集',mode:'manual',questionIds:['COMPACT-Q'],scoring:{enabled:false}});
 for(const value of ['true','false']){const draft=await api('/api/quick-practice','POST',{questionId:'COMPACT-Q'});await api('/api/attempts/'+draft.id+'/submit','POST',{answers:{'COMPACT-Q':{value}}});}
@@ -97,16 +98,16 @@ try {
   await snapshot('compact-study-laptop'); await page.setViewportSize({ width: 1440, height: 1000 });
   checks.push('1366x768常见桌面首屏仍可看到完整学习情况与日期更新按钮');
 
-  await navigate('papers/' + state.paperId); await page.getByRole('button', { name: '查看题目：紧凑学习情况验收', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '题集内看题', exact: true }); await dialog.locator('.question-history-stats').waitFor();
-  assert.deepEqual(await counts(dialog), { 实际作答: 2, 正确: 1, 部分正确: 0, 错误: 1, 未判: 0 });
+  await navigate('papers/' + state.paperId); await page.getByLabel('查看题目：紧凑学习情况验收', { exact: true }).click();
+  const reader = page.locator('main'); await reader.locator('.question-history-stats').waitFor();
+  assert.deepEqual(await counts(reader), { 实际作答: 2, 正确: 1, 部分正确: 0, 错误: 1, 未判: 0 });
   await snapshot('compact-set-reader-desktop'); await page.setViewportSize({ width: 390, height: 844 }); await noOverflow();
-  assert.ok(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth + 1)); await snapshot('compact-set-reader-mobile');
+  assert.ok(await reader.evaluate(node => node.scrollWidth <= node.clientWidth + 1)); await snapshot('compact-set-reader-mobile');
   checks.push('题集查看复用紧凑学习情况，数据一致，390px正文与侧栏无横向溢出');
 
   await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('settings');
   await page.locator('#system-settings-form input[type="number"]').first().waitFor();
-  measurements.settings = await page.locator('#system-settings-form input[type="number"]').evaluateAll(nodes => nodes.map(node => ({ width: node.getBoundingClientRect().width, label: node.closest('.field')?.querySelector('.field-label')?.textContent })));
+  measurements.settings = await page.locator('#system-settings-form input[type="number"]:visible').evaluateAll(nodes => nodes.map(node => ({ width: node.getBoundingClientRect().width, label: node.closest('.field')?.querySelector('.field-label')?.textContent })));
   assert.ok(measurements.settings.every(item => item.width > 0 && item.width <= 170), JSON.stringify(measurements.settings));
   const columns = await page.locator('.settings-sections-grid .form-grid').first().evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length);
   assert.ok(columns >= 3, 'desktop settings should use available width for multiple fields'); await snapshot('compact-settings-desktop');
@@ -142,8 +143,8 @@ try {
     }
     await snapshot(theme + '-question-desktop'); await page.setViewportSize({ width: 390, height: 844 }); await snapshot(theme + '-question-mobile');
     if (theme === 'dark') {
-      await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('papers/' + state.paperId); await page.getByRole('button', { name: '查看题目：紧凑学习情况验收', exact: true }).click();
-      await dialog.locator('.question-history-stats').waitFor(); await darkReadable(dialog, 'dialog'); await snapshot('dark-dialog-desktop'); await page.setViewportSize({ width: 390, height: 844 }); await snapshot('dark-dialog-mobile');
+      await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('papers/' + state.paperId); await page.getByLabel('查看题目：紧凑学习情况验收', { exact: true }).click();
+      await reader.locator('.question-history-stats').waitFor(); await darkReadable(reader.locator('.question-viewer-study'), 'set-reader'); await snapshot('dark-reader-desktop'); await page.setViewportSize({ width: 390, height: 844 }); await snapshot('dark-reader-mobile');
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
     checks.push(theme + '主题保存到SQLite与缓存，刷新及跨页面一致，桌面/手机布局正常');

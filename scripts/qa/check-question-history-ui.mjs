@@ -131,11 +131,11 @@ try {
   await partPanel.locator('.question-history-record > summary').click(); await partPanel.getByText('乙题只提交这一份完整回答', { exact: true }).waitFor(); await partPanel.getByText('原始公共材料：整组共享，但各小题独立作答。', { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 }); await noOverflow(); assert.ok(await partPanel.evaluate(node => node.scrollWidth <= node.clientWidth + 1));
   await page.screenshot({ path: resolve(output, 'group-history-mobile.png'), fullPage: true });
-  await navigate('papers/' + state.groupPaperId); await page.getByRole('button', { name: '查看题目：甲题', exact: true }).click();
-  const viewer = page.getByRole('dialog', { name: '题集内看题', exact: true }); partPanel = await open(viewer.locator('.question-history')); assert.equal((await stats(partPanel)).实际作答, 2);
+  await navigate('papers/' + state.groupPaperId); await page.getByLabel('查看题目：甲题', { exact: true }).click();
+  const viewer = page.locator('main'); partPanel = await open(viewer.locator('.question-history')); assert.equal((await stats(partPanel)).实际作答, 2);
   await noOverflow(); assert.ok(await viewer.evaluate(node => node.scrollWidth <= node.clientWidth + 1)); await page.screenshot({ path: resolve(output, 'snapshot-part-history-mobile.png'), fullPage: true });
   await viewer.locator('.question-viewer-aside').scrollIntoViewIfNeeded(); await page.screenshot({ path: resolve(output, 'snapshot-learning-situation-mobile.png'), animations: 'disabled' });
-  await viewer.getByRole('button', { name: '关闭', exact: true }).click();
+  await viewer.getByRole('link', { name: /^返回题集(?:\s|$)/ }).click();
   checks.push('组合题分别统计小题与整组合计，材料和完整答案保留；题集快照共用单题历史，390px无横向溢出');
 
   await page.setViewportSize({ width: 1440, height: 1000 }); await configure({ 每题集最多已提交整卷历史: 1 });

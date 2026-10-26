@@ -159,11 +159,11 @@ export function useDocumentDraft({ documentId, sourceUpdatedAt, state, restore, 
       if (!changed() && !isPublishing.current && !isLeaving.current) { knownHash.current = next; return; }
       event.stopImmediatePropagation();
       const epoch = ++navigationEpoch.current;
-      window.history.replaceState(null, '', previous || '#/');
+      window.history.replaceState(window.history.state, '', previous || '#/');
       void leave(() => {
         if (epoch !== navigationEpoch.current) return;
         knownHash.current = next; finished.current = true;
-        window.history.replaceState(null, '', next || '#/');
+        window.history.replaceState(window.history.state, '', next || '#/');
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       });
     };

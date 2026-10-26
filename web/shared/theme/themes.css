@@ -203,8 +203,7 @@
 :root[data-theme]:not([data-theme="green"]) .question-history-score,
 :root[data-theme]:not([data-theme="green"]) .question-history-stats dt,
 :root[data-theme]:not([data-theme="green"]) .question-history-record-info > span { color: var(--theme-muted); }
-:root[data-theme]:not([data-theme="green"]) .settings-section,
-:root[data-theme]:not([data-theme="green"]) .question-viewer-navigation { background: var(--theme-surface); }
+:root[data-theme]:not([data-theme="green"]) .settings-section { background: var(--theme-surface); }
 
 .theme-picker { min-width: 0; }
 .theme-picker > legend { display: flex; align-items: center; gap: 7px; padding: 0; margin-bottom: 12px; }

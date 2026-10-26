@@ -71,7 +71,7 @@
 ## 题集、组题草稿与计分
 
 - `GET /api/papers`：支持 archived、organization=domain|other、domainId 和分页；`GET /api/papers/:id` 返回题集及不含答案的题目快照，同时提供选题单位数 questionCount 与展开作答项数 answerCount。加 `?summary=true` 仅返回题目元数据，不传题干、选项和材料；需要完整内容时按题读取快照接口。
-- `GET /api/papers/:id/questions/:questionId`：读取题集内指定作答项的完整快照与答案，用于就地看题；不会替换为当前源题内容。考试期间仍受其他功能访问锁限制。
+- `GET /api/papers/:id/questions/:questionId`：读取题集内指定作答项的完整快照与答案；前端独立阅读地址为`#/papers/:id/questions/:questionId`，返回目标为原题集，前后题按同一题集展开后的保存顺序确定。不会替换为当前源题内容。组合小题使用编码后的`原题ID::小题ID`。考试期间仍受其他功能访问锁限制。
 - `POST /api/papers`、`PUT /api/papers/:id`：手动卷使用 questionIds；随机卷使用 filters、count 或 scoring。领域专项需 `organization:'domain',domainId`，其他卷使用 other。修改创建新版本，不修改已开始作答的快照。
 - `POST /api/papers/preview`：同一组题结构，返回预览但不保存；随机卷正式生成时重新抽题。候选不足、无精确分值组合或展开后超限时拒绝，不静默放宽条件。
 - `DELETE /api/papers/:id`：归档；加 `?permanent=true` 永久删除源卷，保留作答快照。

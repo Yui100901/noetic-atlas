@@ -8,17 +8,17 @@
 .question-study-statistics { min-width: 0; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
 .question-study-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .question-study-statistics h3 { font-size: 12px; line-height: 1.5; margin: 4px 0; }
-.question-history-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; margin: 5px 0 6px; }
-.question-history-stats .question-study-total { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; text-align: left; }
+.question-history-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.question-history-stats .question-study-total { grid-column: 1 / -1; min-height: 40px; }
 .question-history-stats .question-study-total dd { margin: 0; }
 .question-study-last-answer, .question-study-counting-note { font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .question-study-counting-note { margin-top: 3px; color: var(--muted); }
 .question-study-counting-note > summary { cursor: pointer; }
 .question-study-counting-note > p { margin-top: 5px; line-height: 1.7; }
 .question-study-heading .question-study-refresh { flex: none; width: 30px; min-height: 30px; padding: 5px; }
-.question-history-stats > div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; padding: 3px 0; border-bottom: 1px solid var(--border); text-align: left; }
-.question-history-stats dt { color: var(--muted); font-size: 11px; }
-.question-history-stats dd { margin: 0; font-size: 16px; line-height: 1.5; font-weight: 600; font-variant-numeric: tabular-nums; }
+.question-history-stats > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; min-height: 34px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--theme-inset, #f8faf2); text-align: left; }
+.question-history-stats dt { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+.question-history-stats dd { min-width: 0; margin: 0; font-size: 16px; line-height: 1.4; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
 .question-history-stats .question-study-total dd { font-size: 20px; }
 .question-history-stats dd small { font-size: 11px; font-weight: 400; }
 .question-history-stat-correct dd { color: var(--theme-link, var(--green)); }
@@ -72,7 +72,6 @@
 @media (max-width: 700px) {
   .question-history { padding: 16px 12px; }
   .question-history-toggle { font-size: 13px; }
-  .question-history-stats { gap: 4px 14px; }
   .question-history-record > summary { gap: 7px; padding: 12px 9px; flex-wrap: wrap; }
   .question-history-record-info { min-width: 110px; }
   .question-history-score { max-width: 105px; }

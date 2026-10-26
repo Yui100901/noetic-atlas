@@ -28,7 +28,7 @@
 .daily-push-checking {animation:daily-push-spin 1s linear infinite;}
 @keyframes daily-push-spin {to {transform:rotate(360deg);}}
 @media(prefers-reduced-motion:reduce){.daily-push-checking {animation:none;}}
-.daily-settings-form {max-width:1000px;min-width:0;}
+.daily-settings-form {max-width:1000px;min-width:0;gap:var(--layout-gap,20px);}
 .daily-settings-section {padding:22px;}
 .daily-settings-heading {display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:22px;}
 .daily-settings-heading h2 {margin-bottom:7px;}
@@ -44,7 +44,7 @@
 .daily-settings-section>p {font-size:12px;line-height:1.8;}
 .daily-settings-points {margin-top:22px;}
 .daily-settings-rule {margin:14px 0;font-size:12px;line-height:1.8;}
-.daily-settings-time {margin:18px 0;border-top:1px solid var(--border);padding-top:15px;}
+.daily-settings-time {margin:var(--space-5,20px) 0;border-top:1px solid var(--border);padding-top:var(--space-4,16px);}
 .daily-settings-time>summary {cursor:pointer;font-size:13px;font-weight:650;padding:4px 0;}
 .daily-settings-time>.daily-settings-grid {margin-top:15px;}
 .daily-settings-time>p {font-size:12px;line-height:1.8;}

@@ -1,0 +1,87 @@
+/* Shared layout primitives. Feature styles own their composition, not a second
+   copy of these base rules. Spacing remains independent of the active theme. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --layout-gap: var(--space-5);
+  --card-padding: var(--space-6);
+  --control-gap: var(--space-2);
+}
+
+.ui-stack { display: flex; flex-direction: column; gap: var(--stack-gap, var(--layout-gap)); min-width: 0; }
+.ui-grid { display: grid; grid-template-columns: repeat(var(--ui-columns, 2), minmax(0, 1fr)); gap: var(--layout-gap); align-items: start; }
+.ui-stack > *, .ui-grid > * { min-width: 0; }
+.ui-actions, .action-row, .form-actions, .ui-divider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--control-gap);
+  min-width: 0;
+}
+:is(.ui-actions, .action-row, .form-actions, .ui-divider-actions) > .button { max-width: 100%; white-space: normal; }
+.ui-divider-actions { border-top: 1px solid var(--border); margin-top: var(--space-5); padding-top: var(--space-4); }
+
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: var(--space-5); margin-bottom: var(--space-6); }
+.page-header > div:first-child { flex: 1 1 240px; min-width: 0; }
+.eyebrow { font-size: 10px; letter-spacing: 1.9px; color: var(--muted); font-weight: 500; line-height: 1.8; margin-bottom: var(--space-2); }
+.page-description { font-size: 12px; color: var(--muted); margin-top: var(--space-2); max-width: 720px; line-height: 1.9; }
+.header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--control-gap); margin-top: 18px; min-width: 0; max-width: 100%; }
+.header-actions .button { min-height: 44px; padding: 10px 14px; font-size: 13px; white-space: normal; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: var(--card-padding); box-shadow: var(--shadow); min-width: 0; }
+.card-title { display: flex; align-items: center; gap: var(--space-2); font-size: 15px; font-weight: 600; margin-bottom: var(--space-4); }
+.card-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.card-heading h2 { display: flex; align-items: center; gap: var(--space-2); font-size: 14px; }
+.card-heading > .muted { font-size: 11px; }
+
+.field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.field-label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
+.form-stack { display: flex; flex-direction: column; gap: var(--layout-gap); }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.form-grid .field { min-width: 0; }
+.form-actions { justify-content: flex-end; margin-top: var(--space-5); }
+.form-stack > .form-actions { margin-top: 0; }
+
+.pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: 12px; color: var(--muted); padding: var(--space-4) 2px; }
+.pagination > div { display: flex; flex-wrap: wrap; align-items: center; gap: var(--control-gap); }
+.pagination button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); min-height: 36px; padding: 6px 10px; font-size: 12px; color: var(--theme-text); background: var(--surface); border-color: var(--border); }
+.page-size-label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; }
+.page-size-label select { width: auto; min-height: 36px; padding: 5px 8px; }
+.table-scroll { width: 100%; overflow: auto; overscroll-behavior: contain; margin: var(--space-4) 0; border: 1px solid var(--border); border-radius: 6px; }
+
+.modal-backdrop { position: fixed; inset: 0; background: var(--theme-backdrop, #152c2470); backdrop-filter: blur(3px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: var(--space-6); }
+.modal { width: 480px; max-width: 100%; max-height: 92vh; overflow: auto; padding: var(--space-6); scrollbar-width: thin; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 25px 100px var(--theme-shadow-color, #162b2640); }
+.modal-wide { width: 760px; }
+.modal-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); }
+.modal-heading h2 { min-width: 0; overflow-wrap: anywhere; font-size: 18px; color: var(--theme-text); font-weight: 600; }
+.modal-heading > .icon-button { flex-shrink: 0; }
+.modal input, .modal select, .modal textarea { font-size: 12px; }
+/* Legacy dialogs place their body directly in Modal; space these siblings
+   without changing markup or applying margins inside nested feature layouts. */
+.modal > :is(p, .field, .notice, .form-grid, .check-row) + :is(p, .field, .notice, .form-grid, .check-row) { margin-top: var(--space-4); }
+.modal .form-actions { border-top: 1px solid var(--border); padding-top: var(--space-4); }
+
+@media (max-width: 1200px) { :root { --card-padding: var(--space-5); } }
+@media (max-width: 1000px) {
+  .page-header { flex-direction: column; gap: var(--space-4); }
+  .page-header > div:first-child { flex-basis: auto; }
+  .header-actions { margin-top: 0; justify-content: flex-start; }
+}
+@media (max-width: 760px) {
+  :root { --layout-gap: var(--space-4); --card-padding: var(--space-4); }
+  .ui-grid { grid-template-columns: 1fr; }
+  .form-actions { justify-content: flex-start; }
+  .button { min-height: 44px; }
+  .pagination { gap: var(--space-3); padding-block: var(--space-4); }
+  .pagination button, .page-size-label select { min-height: 40px; }
+  .pagination > div { gap: 6px; }
+  .modal-backdrop { padding: var(--space-4); }
+  .modal { padding: var(--space-5); border-radius: 10px; }
+  .modal-heading h2 { font-size: 17px; }
+}
+@media (max-width: 390px) { .form-grid { grid-template-columns: 1fr; } }

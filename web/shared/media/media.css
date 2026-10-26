@@ -12,9 +12,4 @@
 .attachment-toolbar strong {overflow-wrap:anywhere; }
 .pdf-frame {width:100%;height:75vh;min-height:450px;border:1px solid var(--border);border-radius:8px;background:var(--theme-surface, #fff); }
 .document-file-import {margin-bottom:22px; }
-.settings-tabs {display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px; }
-.settings-tabs button.selected {background:var(--theme-inset, #e6efdf);border-color:var(--theme-border, #abc09a); }
-.settings-section .form-grid {grid-template-columns:repeat(2,minmax(0,1fr)); }
-.settings-section h2 {margin-bottom:18px; }
-.settings-footer {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:18px 0; }
-@media(max-width:680px) { .pdf-frame {min-height:350px;height:65vh; } .settings-section .form-grid {grid-template-columns:1fr; } }
+@media(max-width:680px) { .pdf-frame {min-height:350px;height:65vh; } }

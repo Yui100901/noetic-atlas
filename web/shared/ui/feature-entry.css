@@ -6,11 +6,9 @@
 .button.feature-entry:focus-visible {outline:3px solid var(--theme-primary-border, #89a977);outline-offset:3px;
 }
 .feature-entry > svg {flex-shrink:0; }
-.header-actions .button,
+
 .learning-next .button {min-height:44px;padding:10px 14px;font-size:13px;
 }
-.header-actions .button.feature-entry {min-height:44px;font-size:13px; }
-.page-header .header-actions {max-width:100%; }
 .learning-next > div:last-of-type {flex-wrap:wrap;gap:10px; }
 .sidebar-note .button.feature-entry {margin-top:14px;background:var(--theme-nav-active, #dce8ca);border-color:var(--theme-sidebar-border, #dce8ca);color:var(--theme-nav-active-text, #294a37);
 }

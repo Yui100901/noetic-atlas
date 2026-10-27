@@ -1,7 +1,8 @@
 import {QuestionContent, SourceNoticeScope, questionNoticeContents} from '../../shared/ui/content-notices';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Sparkles, X } from 'lucide-react';
-import { AI_PAPER_MAX_QUESTIONS, type AiPaperPlanResult, type AiRun } from '../../../shared/ai/ai';
+import { AI_PAPER_MAX_QUESTIONS, type AiPaperPlanResult } from '../../../shared/ai/ai';
+import type { AiRunView as AiRun } from './ai-api';
 import type { PaperDetail, PaperFilters, Question, QuestionType } from '../../../shared/models/types';
 import { typeLabels } from '../../../shared/models/types';
 import { DEFAULT_SETTINGS } from '../../../shared/models/settings';
@@ -15,7 +16,7 @@ import { normalizePaperFilters } from '../../shared/lib/learning-filters';
 
 function QuestionPreview({id}:{id:string}) {
   const question=useResource<Question>(`/api/questions/${idPath(id)}`);
-  return question.loading?<Loading/>:question.error?<ErrorNotice message={question.error}/>:question.data?<SourceNoticeScope contents={questionNoticeContents(question.data)}><div className="ai-plan-question-preview"><QuestionContent>{question.data.stemMarkdown}</QuestionContent>{question.data.options?.map(option=><div key={option.key}><strong>{option.key}.</strong> <QuestionContent>{option.text}</QuestionContent></div>)}{question.data.parts?.map(part=><section key={part.id}><h4>{part.title}</h4><QuestionContent>{part.stemMarkdown}</QuestionContent></section>)}</div></SourceNoticeScope>:null;
+  return question.loading?<Loading/>:question.error?<ErrorNotice message={question.error}/>:question.data?<SourceNoticeScope contents={questionNoticeContents(question.data)}><div className="ai-plan-question-preview"><QuestionContent questionType={question.data.type}>{question.data.stemMarkdown}</QuestionContent>{question.data.options?.map(option=><div key={option.key}><strong>{option.key}.</strong> <QuestionContent>{option.text}</QuestionContent></div>)}{question.data.parts?.map(part=><section key={part.id}><h4>{part.title}</h4><QuestionContent questionType={part.type}>{part.stemMarkdown}</QuestionContent></section>)}</div></SourceNoticeScope>:null;
 }
 function AiPlannerFilters({filters,set}:{filters:PaperFilters;set:<K extends keyof PaperFilters>(key:K,value:PaperFilters[K])=>void}) {
   const {bootstrap}=useApp();

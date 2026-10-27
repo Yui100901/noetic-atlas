@@ -1,0 +1,12 @@
+import {readFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+import {buildApp} from '../../server/index.js';
+const app=await buildApp({databasePath:':memory:',seedPath:'missing-music-qa-seed',staticRoot:resolve('dist/web'),dailyPushScheduler:false});
+const pack=JSON.parse(await readFile('data/content-packs/knowledge-expansion-20261026-music.json','utf8'));
+const response=await app.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data:{...pack,questions:pack.questions.map((q:any)=>({...q,status:'published'}))}}});assert.equal(response.statusCode,200,response.body);
+const byTerm=Object.fromEntries(pack.questions.filter((q:any)=>q.concept).map((q:any)=>[q.concept.term,q.id]));
+const objective=pack.questions.find((q:any)=>q.type==='true_false'&&q.explanationMarkdown.includes('/api/assets/'));
+const p=await app.inject({method:'POST',url:'/api/papers',payload:{title:'离线音乐符号测试',mode:'manual',practiceKind:'concept',questionIds:[byTerm['高音谱号'],byTerm['四分音符'],byTerm['休止符']],scoring:{enabled:false}}});assert.equal(p.statusCode,201,p.body);
+console.log('MUSIC_NOTATION_READY '+JSON.stringify({origin:await app.listen({host:'127.0.0.1',port:0}),byTerm,objectiveId:objective.id,paperId:p.json().id}));
+const close=async()=>{await app.close();process.exit(0);};process.on('SIGTERM',()=>void close());process.on('SIGINT',()=>void close());

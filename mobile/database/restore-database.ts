@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { recordTables } from '../../server/database/schema';
 import type { DatabaseSync } from '../shims/sqlite';
 const coreTables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'reviews'];
-const derivedTables = ['question_read_model', 'paper_read_model', 'projection_pending', 'asset_references', 'atlas_question_order', 'search_read_model', 'search_projection_pending'];
+const derivedTables = ['question_read_model', 'paper_read_model', 'projection_pending', 'asset_references', 'atlas_question_order', 'search_read_model', 'search_projection_pending', 'quality_fingerprints'];
 const stamp = z.string().datetime({ offset: true });
 const invalid = (message: string): never => { throw new Error(`SQLite 备份校验失败：${message}`); };
 const rows = (db: Database, sql: string) => {
@@ -48,7 +48,7 @@ export function inspectSQLite(sql: SqlJsStatic, bytes: Uint8Array) {
     if (metadata.get('schema_version') !== '1') invalid('schema_version 不是受支持的版本 1');
     if ([...metadata.keys()].some(key => !['schema_version', 'seed_initialized', 'read_projection_version','question_history_version','search_projection_version'].includes(key))) invalid('包含当前版本不支持的元数据');
     if (metadata.has('seed_initialized') && !stamp.safeParse(metadata.get('seed_initialized')).success) invalid('初始化元数据时间无效');
-    if (metadata.has('read_projection_version') && !['1', '2', '3', '4', '5'].includes(metadata.get('read_projection_version')!)) invalid('读取模型版本比当前应用更新');
+    if (metadata.has('read_projection_version') && !['1', '2', '3', '4', '5', '6'].includes(metadata.get('read_projection_version')!)) invalid('读取模型版本比当前应用更新');
     if(metadata.has('question_history_version')&&metadata.get('question_history_version')!=='1')invalid('单题历史版本不受当前应用支持');
     if(metadata.has('search_projection_version')&&metadata.get('search_projection_version')!=='1')invalid('统一搜索索引版本比当前应用更新');
     for (const row of objects.filter(row => row.type === 'trigger')) db.run(`DROP TRIGGER ${quote(String(row.name))}`);
@@ -61,7 +61,7 @@ export function inspectSQLite(sql: SqlJsStatic, bytes: Uint8Array) {
 }
 
 export function databaseCounts(database: { prepare(sql: string): { get(): any } }) {
-  return Object.fromEntries(recordTables.map(table => [table, Number(database.prepare(`SELECT COUNT(*) AS count FROM ${quote(table)}`).get().count)]));
+  return Object.fromEntries(recordTables.filter(table=>table!=='quality_fingerprints').map(table => [table, Number(database.prepare(`SELECT COUNT(*) AS count FROM ${quote(table)}`).get().count)]));
 }
 
 /** Native adapter maintenance; application services never issue driver SQL. */

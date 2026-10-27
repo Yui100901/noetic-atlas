@@ -1,3 +1,4 @@
+import {normalizeBlankMarkers} from '../../../shared/questions/blank-markers';
 import {createContext, memo, useContext, useMemo, useRef, useState, type ReactNode} from 'react';
 import {collectContentNotices, extractContentNotices} from '../../../shared/questions/content-notices';
 import {Markdown} from './components';
@@ -14,9 +15,9 @@ function ContentNotices({notices}:{notices:Notices}) {
 
 /** Only question content opts into audited notice extraction. Ordinary notes,
  * documents, and knowledge about licensing continue to use Markdown directly. */
-export const QuestionContent = memo(function QuestionContent({children}:{children:string}) {
+export const QuestionContent = memo(function QuestionContent({children,questionType}:{children:string;questionType?:string}) {
   const scoped=useContext(NoticeScope);
-  const content=useMemo(()=>extractContentNotices(children),[children]);
+  const content=useMemo(()=>extractContentNotices(questionType==='fill_blank'?normalizeBlankMarkers(children):children),[children,questionType]);
   return <>{content.markdown.trim()&&<Markdown>{content.markdown}</Markdown>}{!scoped&&<ContentNotices notices={content.notices}/>}</>;
 });
 

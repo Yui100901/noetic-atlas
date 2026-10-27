@@ -17,6 +17,11 @@ export class SqliteExpressions {
     return sql<SqlBool>`not exists(select 1 from json_each(${JSON.stringify(values)}) as requested where not exists(select 1 from json_each(${sql.ref(ref)},${this.path(key)}) as selected where selected.value=requested.value))`;
   }
   arrayLength(ref:string,key:string):RawBuilder<number> { return sql<number>`coalesce(json_array_length(${sql.ref(ref)},${this.path(key)}),0)`; }
+  /** Adapter-owned table expression; services can join normalized membership
+   * without decoding full question records or embedding dialect SQL. */
+  arrayElements<T = string>(ref: string, key: string): RawBuilder<{ value: T }> {
+    return sql<{ value: T }>`json_each(${sql.ref(ref)},${this.path(key)})`;
+  }
   /** A bounded attempt's judging metadata, excluding question bodies, material,
    * notes and subjective answer text. Dynamic JSON keys are quoted as data. */
   attemptLearningItems(ref:string):RawBuilder<string> {

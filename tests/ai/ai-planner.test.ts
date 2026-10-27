@@ -98,7 +98,7 @@ test('manual constraints intersect prompt constraints and never expand to anothe
   f.intent({ count: 1, domainIds: ['en'] });
   const result = await f.api('/api/ai/paper-plan', { prompt: '只要英语题', filters: { domainId: 'cs' } }, 422);
   assert.equal(result.error.code, 'AI_PAPER_INSUFFICIENT_QUESTIONS');
-  assert.equal(f.requests.length, 1); assert.equal(f.store.database.records('ai_runs').length, 0);
+  assert.equal(f.requests.length, 1); assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0);
 });
 
 test('manual tag filters and prompt type filters both remain effective', async t => {
@@ -137,12 +137,12 @@ test('unknown intent references, fake question IDs and cross-batch duplicates le
   await t.test('unknown intent reference', async sub => {
     const f = await fixture(sub, [q('Q-1')]); f.intent({ count: 1, domainIds: ['invented-domain'] });
     assert.equal((await f.api('/api/ai/paper-plan', { prompt: '不存在的领域' }, 502)).error.code, 'AI_PAPER_FILTER_INVALID');
-    assert.equal(f.store.database.records('ai_runs').length, 0);
+    assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0);
   });
   await t.test('fake selected ID', async sub => {
     const f = await fixture(sub, [q('Q-1')]); f.select(() => ({ title: '伪造', description: '', items: [{ questionId: 'invented-question', reason: '错误' }] }));
     assert.equal((await f.api('/api/ai/paper-plan', { prompt: '一题', count: 1 }, 502)).error.code, 'AI_PAPER_SELECTION_INVALID');
-    assert.equal(f.store.database.records('ai_runs').length, 0);
+    assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0);
   });
   await t.test('duplicate across successful first batch', async sub => {
     const f = await fixture(sub, Array.from({ length: 150 }, (_, i) => q(`Q-${i}`)));
@@ -152,7 +152,7 @@ test('unknown intent references, fake question IDs and cross-batch duplicates le
       return result;
     });
     assert.equal((await f.api('/api/ai/paper-plan', { prompt: '101题事务练习', count: 101 }, 502)).error.code, 'AI_PAPER_SELECTION_INVALID');
-    assert.equal(f.requests.length, 2); assert.equal(f.store.database.records('ai_runs').length, 0); assert.equal(f.store.all('papers').length, 0);
+    assert.equal(f.requests.length, 2); assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0); assert.equal(f.store.all('papers').length, 0);
   });
 });
 
@@ -167,7 +167,7 @@ test('group questions honor the 500 answer-slot limit including expanded child q
   await t.test('510 slots rejected', async sub => {
     const f = await fixture(sub, Array.from({ length: 17 }, (_, i) => group(`G-${i}`, 30)));
     assert.equal((await f.api('/api/ai/paper-plan', { prompt: '整理17道组合题', count: 17 }, 422)).error.code, 'AI_PAPER_TOO_MANY_PARTS');
-    assert.equal(f.store.database.records('ai_runs').length, 0); assert.equal(f.store.all('papers').length, 0);
+    assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0); assert.equal(f.store.all('papers').length, 0);
   });
 });
 
@@ -192,13 +192,13 @@ test('cancel, intermediate provider failure and source changes do not save parti
     const controller = new AbortController();
     f.before((_request, index) => { if (index === 1) controller.abort(); });
     await assert.rejects(f.direct({ prompt: '101题递进练习', count: 101 }, { signal: controller.signal, emit() {} }), error => error instanceof ApiError && error.code === 'AI_CANCELLED');
-    assert.equal(f.store.database.records('ai_runs').length, 0); assert.equal(f.store.all('papers').length, 0);
+    assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0); assert.equal(f.store.all('papers').length, 0);
   });
   await t.test('intermediate failure', async sub => {
     const f = await fixture(sub, Array.from({ length: 120 }, (_, i) => q(`Q-${i}`)));
     f.before((_request, index) => { if (index === 1) throw new Error('fixture fails second batch'); });
     assert.equal((await f.api('/api/ai/paper-plan', { prompt: '101题递进练习', count: 101 }, 502)).error.code, 'AI_PROVIDER_ERROR');
-    assert.equal(f.store.database.records('ai_runs').length, 0); assert.equal(f.store.all('papers').length, 0);
+    assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0); assert.equal(f.store.all('papers').length, 0);
   });
   await t.test('selected source changed after an early batch', async sub => {
     const f = await fixture(sub, Array.from({ length: 120 }, (_, i) => q(`Q-${i}`)));
@@ -208,7 +208,7 @@ test('cancel, intermediate provider failure and source changes do not save parti
       f.store.put('questions', selected, { ...question, updatedAt: nextStamp(question.updatedAt) });
     });
     assert.equal((await f.api('/api/ai/paper-plan', { prompt: '101题递进练习', count: 101 }, 409)).error.code, 'AI_QUESTION_VERSION_CONFLICT');
-    assert.equal(f.store.database.records('ai_runs').length, 0); assert.equal(f.store.all('papers').length, 0);
+    assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0); assert.equal(f.store.all('papers').length, 0);
   });
   await t.test('cached candidate changed before selection in a later batch', async sub => {
     const f = await fixture(sub, Array.from({ length: 120 }, (_, i) => q(`Q-${i}`)));
@@ -218,7 +218,7 @@ test('cancel, intermediate provider failure and source changes do not save parti
       f.store.put('questions', future, { ...question, updatedAt: nextStamp(question.updatedAt) });
     });
     assert.equal((await f.api('/api/ai/paper-plan', { prompt: '101题递进练习', count: 101 }, 409)).error.code, 'AI_QUESTION_VERSION_CONFLICT');
-    assert.equal(f.store.database.records('ai_runs').length, 0); assert.equal(f.store.all('papers').length, 0);
+    assert.equal(f.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0); assert.equal(f.store.all('papers').length, 0);
   });
 });
 

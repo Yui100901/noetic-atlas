@@ -57,7 +57,7 @@ export async function nativePreviewSQLiteRestore(file){
  await new Promise(resolve=>setTimeout(resolve,60));
  if(file.name.startsWith('invalid'))throw new Error('SQLite 备份校验失败：不是 SQLite 3 数据库文件');
  const bytes=new Uint8Array(await file.arrayBuffer());if(!bytes.length)throw new Error('empty');
- const counts={questions:25,papers:4,documents:3,assets:6,attempts:1,learning_results:7,study:4,study_parts:3,reviews:2,domains:2,categories:5,tags:4,paper_drafts:1,settings:1,ai_settings:1,ai_runs:9};
+ const counts={questions:25,papers:4,documents:3,assets:6,attempts:1,learning_results:7,study:4,study_parts:3,reviews:2,review_cards:3,review_events:8,question_history:7,question_banks:0,domains:2,categories:5,tags:4,paper_drafts:1,document_drafts:2,daily_pushes:1,settings:1,ai_settings:1,ai_runs:9,ai_import_jobs:2,question_feedback:4,quality_scans:2,quality_issues:7};
  return {token:file.name,filename:file.name,byteLength:bytes.length,sha256:'1234567890abcdef'.repeat(4),schemaVersion:1,counts,currentCounts:{questions:8,papers:2,attempts:3},sourceHadAiKey:true,activeExamCount:0};
 }
 export async function nativeConfirmSQLiteRestore(token){localStorage.setItem('qa-backup',JSON.stringify(backup));if(token.startsWith('fail'))throw new Error('恢复失败，原数据已保留，应用可继续使用。');localStorage.setItem('qa-restored','yes');return {recoveryBackup:backup};}
@@ -65,7 +65,7 @@ export async function nativeFetch(){throw new Error('not used in UI mock');}
 export async function nativeDownload(){}
 export async function saveGeneratedFile(){}
 `);
-await writeFile(resolve(folder,'entry.tsx'), `import React from 'react';import {createRoot} from 'react-dom/client';import {SQLiteRestore} from '../../web/features/settings/sqlite-restore';import '../../web/app/styles.css';createRoot(document.getElementById('root')!).render(<main style={{maxWidth:900,margin:'32px auto',padding:16}}><SQLiteRestore /></main>);`);
+await writeFile(resolve(folder,'entry.tsx'), `import React from 'react';import {createRoot} from 'react-dom/client';import {SQLiteRestore} from '../../web/features/settings/sqlite-restore';import '../../web/app/styles.css';import '../../web/shared/ui/layout.css';createRoot(document.getElementById('root')!).render(<main style={{maxWidth:900,margin:'32px auto',padding:16}}><SQLiteRestore /></main>);`);
 const built=resolve(folder,'built');
 await build({root,configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},plugins:[react()],resolve:{alias:[{find:'@platform',replacement:resolve(folder,'platform.ts')}]},publicDir:false,build:{outDir:built,emptyOutDir:true,lib:{entry:resolve(folder,'entry.tsx'),formats:['es'],fileName:()=> 'ui.mjs'}}});
 const css=(await readdir(built)).find(file=>file.endsWith('.css'));
@@ -81,7 +81,8 @@ try {
  const file=page.getByLabel('选择 SQLite 数据库备份');const choose=page.getByRole('button',{name:'选择 SQLite 数据库备份',exact:true});
  await file.setInputFiles({name:'invalid.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('invalid')});await page.getByRole('alert').filter({hasText:'不是 SQLite'}).waitFor();assert.equal(await choose.isEnabled(),true);
  await file.setInputFiles({name:'fail.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('SQLite format 3 mock')});await page.getByRole('heading',{name:'已通过校验：fail.sqlite'}).waitFor();
- const restore=page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true});assert.equal(await restore.isDisabled(),true);assert.equal(await page.locator('tbody tr').count(),16);
+ const restore=page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true});assert.equal(await restore.isDisabled(),true);assert.equal(await page.locator('tbody tr').count(),25);
+ for(const [label,count]of [['自适应复习卡片',3],['自适应复习事件',8],['每日推荐记录',1],['AI 教材处理任务',2],['题目反馈',4]])assert.deepEqual(await page.getByRole('row').filter({has:page.getByRole('cell',{name:label,exact:true})}).getByRole('cell').allTextContents(),[label,'0',String(count)]);
  await page.getByRole('checkbox').check();assert.equal(await restore.isEnabled(),true);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'mobile preview has no horizontal page overflow');
  await page.screenshot({path:resolve(folder,'preview-mobile.png'),fullPage:true});
@@ -90,7 +91,8 @@ try {
  await page.setViewportSize({width:1280,height:900});await file.setInputFiles({name:'success.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('SQLite format 3 mock')});await page.getByRole('heading',{name:'已通过校验：success.sqlite'}).waitFor();await page.getByRole('checkbox').check();await page.screenshot({path:resolve(folder,'preview-desktop.png'),fullPage:true});
  await Promise.all([page.waitForEvent('load'),page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true}).click()]);
  await page.getByRole('button',{name:'保存或分享恢复前副本'}).waitFor();assert.equal(await page.evaluate(()=>localStorage.getItem('qa-restored')),'yes');assert.equal(await page.getByRole('checkbox').count(),0);assert.deepEqual(errors,[]);
- console.log('UI QA passed: invalid file; preview/counts/explicit confirmation; mobile layout; failed restore keeps page usable and exports recovery; successful restore reloads and retains recovery access; no browser exceptions.');
+ const report={passed:6,checks:['拒绝无效SQLite文件，选择器保持可用','预览25类数据及FSRS/每日推荐/教材任务/反馈数量，显式勾选后才允许替换','390px恢复预览无页面横向溢出','恢复失败保持原数据及页面可用，可导出恢复前副本','成功恢复重载页面并保留恢复前副本入口','全程无浏览器异常'],browserErrors:errors,isolatedNativeBridge:true};
+ await writeFile(resolve(folder,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  } catch(error) { console.error('Browser errors:',errors); console.error('Page snapshot:',await page.locator('body').innerHTML()); throw error; }
 } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); }
 

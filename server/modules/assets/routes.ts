@@ -32,6 +32,7 @@ export function validateAssetReferences(store: Store, record: unknown, limits?: 
 export function validateAllAssetReferences(store: Store) {
   for (const table of ['questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'reviews', 'learning_results','question_history'] as const) for (const record of store.all(table)) validateAssetReferences(store, record);
   for (const draft of store.all<any>('document_drafts')) validateAssetReferences(store, draft.state);
+  for (const job of store.database.records<any>('ai_import_jobs')) validateAssetReferences(store, (job.blocks || []).flatMap((block: any) => block.questions || []));
 }
 /** Derived references use the same structural collector as writes/migration;
  * a file page never scans source bodies or historical snapshots. */

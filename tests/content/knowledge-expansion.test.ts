@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Store } from '../../server/core/store.js';
+import { questionSchema } from '../../server/core/validation.js';
+import { buildPaper } from '../../server/modules/practice/service.js';
+import { validatePack } from '../../scripts/content/manage.js';
+import { applyKnowledgeExpansion, conceptSourceFingerprint } from '../../scripts/content/apply-knowledge-expansion.js';
+import type { Question } from '../../shared/models/types.js';
+function fixture(t: test.TestContext) {
+    const store = new Store(':memory:');
+    t.after(() => store.db.close());
+    const domain = { id: 'economics', name: '经济学', description: '', sortOrder: 0 };
+    const category = { id: 'economic-concepts', name: '经济概念', description: '', domainId: domain.id, parentId: null, sortOrder: 0 };
+    const tag = { id: 'economic-topic', name: '经济基础', description: '', domainId: domain.id, kind: 'topic' as const, color: '#123456' };
+    store.put('domains', domain.id, domain);
+    store.put('categories', category.id, category);
+    store.put('tags', tag.id, tag);
+    const make = (id: string, title: string, status: 'published' | 'pending') => ({ ...questionSchema.parse({ id, title, type: 'short_answer', stemMarkdown: title, answerMarkdown: '已经发生且无法收回的支出。', explanationMarkdown: '决策时应比较未来增量收益和成本。', status, categoryIds: [category.id], tagIds: [tag.id], sourceRefs: [{ label: 'OpenStax', url: 'https://openstax.org/' }] }), id }) as Question;
+    const existing = make('OLD', '沉没成本', 'published');
+    store.put('questions', existing.id, existing);
+    store.putStudy({ ...store.study(existing.id), notes: 'private learning note', favorite: true });
+    const oldPaper = buildPaper(store, { id: 'old-paper', title: '原题集', description: '', mode: 'manual', questionIds: [existing.id], scoring: { enabled: false } });
+    store.put('papers', oldPaper.id, oldPaper);
+    const pack = validatePack({ schemaVersion: 1, domains: [domain], categories: [category], tags: [tag], questions: [make('NEW', '新概念练习', 'pending')], documents: [], papers: [], assets: [] });
+    const supplement = { format: 'noetic-atlas-concept-supplement' as const, schemaVersion: 1 as const, generatedAt: new Date().toISOString(), questions: [{ id: existing.id, sourceFingerprint: conceptSourceFingerprint(existing), concept: { term: '沉没成本', meaningPrompt: '已经发生且无法通过未来选择收回的支出。', acceptedAnswers: ['沉没成本'] } }] };
+    return { store, existing, oldPaper, pack, supplement };
+}
+test('content expansion preserves old publication, answers, study and snapshots while new content awaits review', t => {
+    const f = fixture(t), beforeStudy = f.store.study('OLD'), beforePaper = f.store.get('papers', 'old-paper');
+    const result = applyKnowledgeExpansion(f.store, [f.pack], f.supplement, true);
+    assert.equal(result.conceptMetadataUpdated, 1);
+    assert.equal(result.imported.counts.questions.added, 1);
+    assert.equal(result.createdSets.length, 1);
+    const updated = f.store.require<Question>('questions', 'OLD');
+    assert.equal(updated.status, 'published');
+    assert.equal(updated.answerMarkdown, f.existing.answerMarkdown);
+    assert.equal(updated.concept!.term, '沉没成本');
+    assert.equal(f.store.require<Question>('questions', 'NEW').status, 'pending');
+    assert.deepEqual(f.store.study('OLD'), beforeStudy);
+    assert.deepEqual(f.store.get('papers', 'old-paper'), beforePaper);
+    const second = applyKnowledgeExpansion(f.store, [f.pack], f.supplement, true);
+    assert.equal(second.conceptMetadataUpdated, 0);
+    assert.equal(second.createdSets.length, 0);
+    assert.equal(second.imported.counts.questions.added, 0);
+});
+test('later concept additions create new sets without reshuffling previous snapshots or repeating covered questions', t => {
+    const f = fixture(t);
+    const first = applyKnowledgeExpansion(f.store, [f.pack], f.supplement, true);
+    const original = f.store.get('papers', first.createdSets[0]);
+    f.store.put('questions', 'LATER', { ...f.existing, id: 'LATER', title: '机会成本', concept: { term: '机会成本', meaningPrompt: '选择一项行动时放弃的最佳替代方案的价值。', acceptedAnswers: ['机会成本'] } });
+    const second = applyKnowledgeExpansion(f.store, [f.pack], f.supplement, true);
+    assert.equal(second.createdSets.length, 1);
+    assert.deepEqual(f.store.get('papers', first.createdSets[0]), original);
+    assert.deepEqual(f.store.require<{questionIds:string[]}>('papers', second.createdSets[0]).questionIds, ['LATER']);
+});
+test('modified source and unsafe reverse definitions abort the entire expansion before adding new questions', t => {
+    const f = fixture(t);
+    f.store.put('questions', 'OLD', { ...f.existing, answerMarkdown: '用户编辑的定义' });
+    assert.throws(() => applyKnowledgeExpansion(f.store, [f.pack], f.supplement), /source changed/);
+    assert.equal(f.store.get('questions', 'NEW'), undefined);
+    f.store.put('questions', 'OLD', f.existing);
+    const unsafe = structuredClone(f.supplement);
+    unsafe.questions[0].concept.meaningPrompt = '沉没成本就是无法收回的支出。';
+    assert.throws(() => applyKnowledgeExpansion(f.store, [f.pack], unsafe));
+    assert.equal(f.store.get('questions', 'NEW'), undefined);
+});

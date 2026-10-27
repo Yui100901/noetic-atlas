@@ -6,7 +6,12 @@ export type AiProgressUpdate =
 export type AiStreamEvent<T = unknown> = AiProgressUpdate
   | { type: 'result'; result: T }
   | { type: 'error'; error: { code: string; message: string; statusCode?: number; details?: unknown } };
-export interface AiExecutionContext { emit(event: AiProgressUpdate): void; signal?: AbortSignal }
+/** Telemetry never enters the stream. Only bounded metadata may be recorded. */
+export type AiTelemetryEvent =
+  | { type: 'provider_start'; model: string; inputBytes: number }
+  | { type: 'provider_update'; phase?: string; outputBytes?: number; httpStatus?: number; finishReason?: string }
+  | { type: 'provider_end'; ok: boolean; code?: string };
+export interface AiExecutionContext { emit(event: AiProgressUpdate): void; signal?: AbortSignal; streaming?: boolean; telemetry?(event: AiTelemetryEvent): void }
 export const AI_PROGRESS_HEADER = 'x-atlas-ai-progress';
 
 // The Android API and UI share one process. This channel avoids extra local

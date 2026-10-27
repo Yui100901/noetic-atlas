@@ -1,3 +1,6 @@
+import {migrateFeedbackQualityIssues} from './modules/content-quality/feedback-links.js';
+import {retireMissingSourceIssues,retireMissingExplanationIssues} from './modules/content-quality/maintenance.js';
+import {registerContentQualityRoutes} from './modules/content-quality/routes.js';
 import Fastify from 'fastify';
 import staticPlugin from '@fastify/static';
 import { existsSync, readFileSync } from 'node:fs';
@@ -13,12 +16,15 @@ import { registerLibraryRoutes } from './modules/library/routes.js';
 import { registerDocumentDraftRoutes } from './modules/library/document-drafts.js';
 import { registerSharingRoutes } from './modules/sharing/routes.js';
 import { ensureAiStorage, registerAiRoutes, getPublicAiSettings } from './modules/ai/routes.js';
+import { registerAiDocumentRoutes } from './modules/ai/document-routes.js';
+import { registerQuestionFeedbackRoutes } from './modules/quality-feedback/routes.js';
 import { registerPaperDraftRoutes } from './modules/practice/paper-drafts.js';
 import { registerApiDocs } from './http/openapi.js';
 import { registerVocabularyRoutes } from './modules/questions/vocabulary.js';
 import { dashboardStats } from './core/read-models.js';
 import { registerHttpSecurity } from './http/security.js';
 import { registerQuestionRoutes } from './modules/questions/routes.js';
+import { registerSimilarQuestionRoutes } from './modules/questions/similar-routes.js';
 import { registerTaxonomyRoutes } from './modules/taxonomy/routes.js';
 import { registerStudyRoutes } from './modules/study/routes.js';
 import { registerPracticeRoutes } from './modules/practice/routes.js';
@@ -58,7 +64,7 @@ export async function buildApp(options: AppOptions = {}) {
       importData(store, JSON.parse(readFileSync(seedPath, 'utf8')));
       store.database.run(store.database.query.insertInto('metadata').values({key:'seed_initialized',value:now()}).onConflict(c=>c.column('key').doUpdateSet({value:now()})));
     }
-    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); validateAllAssetReferences(store); return store.database.schemaChanged || migrated || learning > 0 || history>0; });
+    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); const retired=retireMissingSourceIssues(store)+retireMissingExplanationIssues(store),quality=migrateFeedbackQualityIssues(store);validateAllAssetReferences(store); return store.database.schemaChanged || migrated || learning > 0 || history>0 || retired>0 || quality>0; });
     if (migrated) options.onDataMigrated?.();
     store.database.projections.refreshAll();
   } catch (error) { store.db.close(); throw error; }
@@ -80,8 +86,12 @@ export async function buildApp(options: AppOptions = {}) {
   registerDocumentDraftRoutes(app, store);
   registerSharingRoutes(app, store);
   registerAiRoutes(app, store, { native: options.native });
+  registerAiDocumentRoutes(app, store, { native: options.native });
+  registerQuestionFeedbackRoutes(app, store, { native: options.native });
   registerPaperDraftRoutes(app, store);
   registerQuestionRoutes(app, store);
+  registerContentQualityRoutes(app, store);
+  registerSimilarQuestionRoutes(app, store, { native: options.native });
   registerQuestionHistoryRoutes(app,store);
 
   registerTaxonomyRoutes(app, store);

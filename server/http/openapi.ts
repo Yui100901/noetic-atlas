@@ -1,3 +1,4 @@
+import * as quality from '../modules/content-quality/schema.js';
 import type { FastifyInstance, FastifySchema } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_SETTINGS } from '../../shared/models/settings.js';
@@ -6,6 +7,11 @@ import { settingsSchema } from '../modules/settings/service.js';
 import { configurationSchema, configurationPreviewInputSchema, configurationImportInputSchema, configurationExportQuerySchema, configurationPreviewSchema, configurationImportResultSchema } from '../modules/settings/configuration.js';
 import { assetInputSchema } from '../modules/assets/schema.js';
 import * as ai from '../modules/ai/schema.js';
+import { aiDiagnosticsSchema, aiFailedRunSchema } from '../modules/ai/audit-schema.js';
+import { aiHistoryQuerySchema } from '../modules/ai/history.js';
+import { aiDocumentCreateSchema, aiDocumentProcessSchema, aiDocumentImportSchema, aiDocumentPlanResultSchema, aiDocumentGenerateResultSchema, storedAiDocumentJobSchema } from '../modules/ai/document-schema.js';
+import { questionFeedbackSchema, questionFeedbackInputSchema, questionFeedbackResolveSchema, questionFeedbackAiInputSchema, questionFeedbackReviewSchema } from '../modules/quality-feedback/schema.js';
+import { questionFeedbackQuerySchema, questionFeedbackSummariesSchema } from '../modules/quality-feedback/routes.js';
 import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/paper-drafts.js';
 import { documentDraftSchema, documentDraftQuerySchema, createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema } from '../modules/library/document-drafts.js';
 import { paginationFields } from '../core/pagination.js';
@@ -14,6 +20,8 @@ import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuesti
 import { globalLearningSummaryQuerySchema, globalLearningQuestionsQuerySchema, learningCardSummariesInputSchema } from '../modules/practice/global-learning.js';
 import { learningResetInputSchema } from '../modules/study/reset.js';
 import { questionHistoryQuerySchema } from '../modules/questions/history.js';
+import { practiceTimingInputSchema, practiceTimingStateSchema } from '../modules/practice/practice-timing.js';
+import { similarQuestionsQuerySchema, aiSimilarQuestionsInputSchema, aiSimilarQuestionsResultSchema } from '../modules/questions/similar-schema.js';
 import { dailyPushRecordSchema, dailyPushSettingsSchema } from '../modules/daily-push/schema.js';
 import { analyticsQuerySchema, weeklyQuerySchema } from '../modules/analytics/schema.js';
 import { analyticsReportOutputSchema, weeklyReportOutputSchema } from './analytics-schemas.js';
@@ -32,7 +40,7 @@ const aiProgressEvent: JsonSchema = { oneOf: [
   { type: 'object', required: ['type','result'], properties: { type: { const: 'result' }, result: object } },
   { type: 'object', required: ['type','error'], properties: { type: { const: 'error' }, error: { type: 'object', required: ['code','message'], properties: { code: { type: 'string' }, message: { type: 'string' }, statusCode: { type: 'integer' } } } } },
 ] };
-const streamingAiRoute = (method: string, url: string) => method === 'POST' && (/^\/api\/ai\/(?:test|explain|grade|import|review|paper-plan)$/.test(url) || url === '/api/attempts/:id/ai-review');
+const streamingAiRoute = (method: string, url: string) => method === 'POST' && (/^\/api\/ai\/(?:test|explain|grade|import|review|paper-plan|similar-questions)$/.test(url) || /^\/api\/ai\/document-jobs\/:id\/(?:plan|generate)$/.test(url) || url === '/api/attempts/:id/ai-review' || url === '/api/question-feedback/ai-review');
 const id = validation.id;
 const toJson = (schema: z.ZodType): JsonSchema => { const {$schema: _schema,...result} = z.toJSONSchema(schema,{io:'input',unrepresentable:'any'}) as JsonSchema; return result; };
 const paged = (item: JsonSchema): JsonSchema => ({ anyOf: [{type:'array',items:item},{type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}}] });
@@ -41,12 +49,32 @@ const dailyRecordOutput=toJson(dailyPushRecordSchema);
 const dailyViewOutput:JsonSchema={...dailyRecordOutput,required:[...(dailyRecordOutput.required||[]),'paperAvailable','progress'],properties:{...dailyRecordOutput.properties,paperAvailable:{type:'boolean'},progress:dailyProgressOutput}};
 const dailyOverviewOutput:JsonSchema={type:'object',required:['config','today','recent','recentLimit','unreadCount','nextDateKey'],properties:{config:toJson(dailyPushSettingsSchema),today:{anyOf:[dailyViewOutput,{type:'null'}]},recent:{type:'array',items:dailyViewOutput},recentLimit:{type:'integer'},unreadCount:{type:'integer'},nextDateKey:{type:'string'}}};
 const questionStatisticsOutput:JsonSchema={type:'object',required:['answered','correct','partial','incorrect','ungraded','lastAnsweredAt','unknown'],properties:{...Object.fromEntries(['answered','correct','partial','incorrect','ungraded','unknown'].map(key=>[key,{type:'integer',minimum:0}])),lastAnsweredAt:{type:['string','null'],format:'date-time'}}};
+const qualityIssueOutput=toJson(quality.qualityIssueSchema);
+const qualityIssueViewOutput:JsonSchema={...qualityIssueOutput,required:[...(qualityIssueOutput.required||[]),'sourceAvailable','sourceChanged','relatedChanged'],properties:{...qualityIssueOutput.properties,sourceAvailable:{type:'boolean'},sourceChanged:{type:'boolean'},relatedChanged:{type:'boolean'}}};
+const feedbackViewOutput=toJson(questionFeedbackSchema.extend({sourceAvailable:z.boolean(),sourceChanged:z.boolean()}));
+const qualityReviewContextOutput:JsonSchema={type:'object',required:['issue','feedback'],properties:{issue:qualityIssueViewOutput,feedback:feedbackViewOutput}};
 const questionHistoryOutput:JsonSchema={type:'object',required:['retention','items','total','page','pageSize'],properties:{summary:questionStatisticsOutput,retention:{type:'object',properties:{limit:{type:'integer',minimum:0},available:{type:'integer',minimum:0}}},total:{type:'integer',minimum:0},page:{type:'integer',minimum:1},pageSize:{type:'integer'},items:{type:'array',items:{type:'object',required:['id','attemptId','source','paperId','paperTitle','paperVersion','submittedAt','historyAvailable','question','answer','verdict','points','score'],properties:{id:{type:'string'},attemptId:{type:'string'},source:{enum:['paper','quick']},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},submittedAt:{type:'string',format:'date-time'},historyAvailable:{type:'boolean'},beforeReset:{type:'boolean'},question:toJson(validation.snapshotQuestionSchema.safeExtend({id:validation.leafId})),answer:toJson(validation.answerSchema),verdict:{enum:['correct','partial','incorrect','ungraded']},points:{type:['number','null']},score:{type:['number','null']}}}}}};
 const {key:_writeOnlyKey,clearKey:_clearKey,...aiPublicFields}=ai.aiSettingsSchema.shape;
 const aiPublicSettingsSchema=z.object({...aiPublicFields,hasKey:z.boolean()});
-const aiRunOutput: JsonSchema = {type:'object',required:['id','kind','status','createdAt','model','questionIds','warnings','result'],properties:{id:{type:'string'},kind:{enum:['explain','grade','import','review','paper_plan']},status:{const:'completed'},createdAt:{type:'string',format:'date-time'},model:{type:'string'},warnings:{type:'array',items:{type:'string'}},questionIds:{type:'array',items:{type:'string'}},attemptId:{type:'string'},createdPaperId:{type:'string'},appliedAt:{type:'string',format:'date-time'},result:{oneOf:[toJson(ai.explanationSchema),toJson(ai.gradeResultSchema),toJson(ai.importResultSchema),toJson(ai.reviewResultSchema.safeExtend({approvedIds:z.array(id)})),toJson(ai.aiPaperPlanOutputSchema.safeExtend({requestedCount:z.number().int(),candidateCount:z.number().int(),candidates:z.array(z.object({id,title:z.string(),type:z.string()}))}))]}}};
+const aiRunOutput: JsonSchema = { oneOf: [
+  { type: 'object', required: ['id','kind','status','createdAt','model','questionIds','warnings','result'], properties: {
+    id: {type:'string'}, kind: toJson(aiFailedRunSchema.shape.kind), status: {const:'completed'}, createdAt: {type:'string',format:'date-time'},
+    model: {type:'string'}, warnings: {type:'array',items:{type:'string'}}, questionIds: {type:'array',items:{type:'string'}},
+    attemptId: {type:'string'}, jobId: {type:'string'}, batchId: {type:'string'}, feedbackId: {type:'string'}, createdPaperId: {type:'string'}, appliedAt: {type:'string',format:'date-time'}, diagnostics: toJson(aiDiagnosticsSchema),
+    result: {oneOf:[toJson(ai.explanationSchema),toJson(ai.gradeResultSchema),toJson(ai.aiImportResultOutputSchema),toJson(ai.reviewResultSchema.safeExtend({approvedIds:z.array(id)})),toJson(ai.aiPaperPlanOutputSchema.safeExtend({requestedCount:z.number().int(),candidateCount:z.number().int(),candidates:z.array(z.object({id,title:z.string(),type:z.string()}))})),toJson(aiDocumentPlanResultSchema),toJson(aiDocumentGenerateResultSchema),toJson(questionFeedbackReviewSchema),toJson(aiSimilarQuestionsResultSchema)]},
+  } },
+  toJson(aiFailedRunSchema.omit({_context:true})),
+] };
+const aiDocumentJobOutput = toJson(storedAiDocumentJobSchema);
+delete aiDocumentJobOutput.properties.blocks.items.properties.text;
+aiDocumentJobOutput.properties.blocks.items.required = aiDocumentJobOutput.properties.blocks.items.required.filter((key: string) => key !== 'text');
+const aiDocumentSummaryOutput: JsonSchema = { ...aiDocumentJobOutput, properties: Object.fromEntries(Object.entries(aiDocumentJobOutput.properties).filter(([key]) => !['blocks','mode','requirements','questionTypes','difficulty','categoryIds','tagIds','questionsPerBlock','maxQuestions'].includes(key))) };
+aiDocumentSummaryOutput.required = aiDocumentJobOutput.required.filter((key: string) => Object.hasOwn(aiDocumentSummaryOutput.properties,key));
+const questionFeedbackViewOutput = toJson(questionFeedbackSchema.extend({ sourceAvailable: z.boolean(), sourceChanged: z.boolean() }));
 const paperOutput: JsonSchema = {type:'object',properties:{...toJson(validation.paperInputSchema).properties,id:{type:'string'},questionCount:{type:'integer'},answerCount:{type:'integer'},version:{type:'integer'},archived:{type:'boolean'},createdAt:{type:'string',format:'date-time'},updatedAt:{type:'string',format:'date-time'},scoring:toJson(validation.storedScoringSchema),questions:{type:'array',items:{...object,description:'ExamQuestion：题干、选项、难度与分值；交卷前不含参考答案'}}}};
 const attemptOutput: JsonSchema = {type:'object',properties:{id:{type:'string'},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},source:{enum:['paper','quick']},status:{enum:['in_progress','submitted']},practiceMode:{enum:['practice','exam']},durationMinutes:{type:'integer'},deadlineAt:{type:['string','null'],format:'date-time'},startedAt:{type:'string',format:'date-time'},submittedAt:{type:['string','null'],format:'date-time'},updatedAt:{type:'string',format:'date-time'},elapsedSeconds:{type:'integer',minimum:0},autoSubmitted:{type:'boolean'},answers:{type:'object',additionalProperties:toJson(validation.answerSchema)},questions:{type:'array',items:object},scoring:toJson(validation.storedScoringSchema),objectiveScore:{type:'number'},objectiveMax:{type:'number'},subjectiveScore:{type:'number'},subjectiveMax:{type:'number'},totalScore:{type:['number','null']},pendingSubjectiveCount:{type:'integer'},gradingStatus:{enum:['pending','partial','complete','not_applicable']}}};
+attemptOutput.properties.practiceTiming = toJson(practiceTimingStateSchema);
+attemptOutput.properties.practiceKind = { enum: ['standard','vocabulary','concept'] };
 const shareSelection=z.object({kind:z.enum(['questions','paper']),id:id.optional(),ids:z.array(id).min(1).max(50000).optional(),filters:z.record(z.string(),z.unknown()).optional()}).strict();
 const learningSummaryOutput:JsonSchema={type:'object',properties:{source:{enum:['paper','quick']},paperId:{type:'string'},title:{type:'string'},deleted:{type:'boolean'},archived:{type:'boolean'},counts:{type:'object',properties:Object.fromEntries(['drafts','submitted','wrong','due','favorite'].map(key=>[key,{type:'integer',minimum:0}]))},suggestions:{type:'array',items:{type:'string'}}}};
 const learningHistoryOutput:JsonSchema={type:'object',additionalProperties:false,properties:{id:{type:'string'},source:{enum:['paper','quick']},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},status:{enum:['in_progress','submitted']},practiceMode:{enum:['practice','exam']},startedAt:{type:'string'},updatedAt:{type:'string'},submittedAt:{type:['string','null']},referenceViewedAt:{type:['string','null']},elapsedSeconds:{type:'integer'},durationMinutes:{type:['integer','null']},deadlineAt:{type:['string','null']},autoSubmitted:{type:'boolean'},questionCount:{type:'integer'},answeredCount:{type:'integer'},scoringEnabled:{type:'boolean'},totalPoints:{type:'number'},objectiveScore:{type:'number'},objectiveMax:{type:'number'},subjectiveScore:{type:'number'},subjectiveMax:{type:'number'},totalScore:{type:['number','null']},pendingSubjectiveCount:{type:'integer'},gradingStatus:{enum:['not_applicable','pending','partial','complete']}}};
@@ -57,6 +85,13 @@ const globalLearningSummaryOutput:JsonSchema={type:'object',required:['counts'],
 const learningPage=(item:JsonSchema):JsonSchema=>({type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}});
 const learningResetPreviewOutput:JsonSchema={type:'object',required:['fingerprint','counts','retained'],properties:{fingerprint:{type:'string',pattern:'^[a-f0-9]{64}$'},counts:{type:'object',properties:Object.fromEntries(['states','partStates','reviews','results'].map(key=>[key,{type:'integer',minimum:0}]))},retained:{type:'object',properties:{attempts:{type:'integer',minimum:0},drafts:{type:'integer',minimum:0}}}}};
 const pathBodies: Record<string,z.ZodType> = {
+  '/api/content-quality/scans':quality.qualityScanCreateSchema,
+  '/api/content-quality/scans/:id/process':quality.qualityScanProcessSchema,
+  '/api/content-quality/scans/:id/cancel':z.object({}).strict(),
+  '/api/content-quality/issues/:id/resolve':quality.qualityResolveSchema,
+  '/api/content-quality/issues/resolve':quality.qualityBulkResolveSchema,
+  '/api/content-quality/issues/:id/review-context':quality.qualityReviewContextSchema,
+  '/api/content-quality/review-contexts':quality.qualityReviewContextsSchema,
   '/api/daily-push/check': z.object({}).strict(), '/api/daily-push/:id/read': z.object({}).strict(),
   '/api/questions': validation.questionSchema, '/api/domains': validation.domainSchema, '/api/categories': validation.categorySchema,
   '/api/tags': validation.tagSchema, '/api/documents': validation.documentSchema,
@@ -66,7 +101,17 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/learning/reset': learningResetInputSchema,
   '/api/questions/bulk-import': validation.bulkQuestionImportSchema, '/api/questions/review': validation.questionReviewSchema,
   '/api/ai/settings': ai.aiSettingsSchema, '/api/ai/paper-plan': ai.aiPaperPlanInputSchema,
-  '/api/ai/import': z.object({text:z.string().min(1).max(400000),sourceName:z.string().optional(),categoryIds:z.array(id).default([]),tagIds:z.array(id).default([]),count:z.number().int().min(1).max(50).default(20)}),
+  '/api/attempts/:id/timing': practiceTimingInputSchema,
+  '/api/ai/similar-questions': aiSimilarQuestionsInputSchema,
+  '/api/ai/import': ai.aiImportInputSchema,
+  '/api/ai/document-jobs': aiDocumentCreateSchema,
+  '/api/ai/document-jobs/:id/plan': aiDocumentProcessSchema,
+  '/api/ai/document-jobs/:id/generate': aiDocumentProcessSchema,
+  '/api/ai/document-jobs/:id/import': aiDocumentImportSchema,
+  '/api/question-feedback': questionFeedbackInputSchema,
+  '/api/question-feedback/summaries': questionFeedbackSummariesSchema,
+  '/api/question-feedback/:id/resolve': questionFeedbackResolveSchema,
+  '/api/question-feedback/ai-review': questionFeedbackAiInputSchema,
   '/api/ai/explain': z.object({questionId:id,partId:id.optional()}),
   '/api/ai/grade': z.union([z.object({attemptId:id,questionIds:ai.aiLeafIds.optional(),gradingRequirements:ai.gradingRequirementsSchema.optional()}),z.object({questionId:id,answer:z.string().max(100000),maxPoints:z.number().min(.01).max(1000).optional(),gradingRequirements:ai.gradingRequirementsSchema.optional()})]),
   '/api/assets': assetInputSchema,
@@ -114,6 +159,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   const learningQueries:Record<string,z.ZodType>={'/api/learning/summary':learningSummaryQuerySchema,'/api/learning/attempts':learningAttemptsQuerySchema,'/api/learning/questions':learningQuestionsQuerySchema,'/api/learning/contexts':learningContextsQuerySchema,'/api/learning/global/summary':globalLearningSummaryQuerySchema,'/api/learning/global/questions':globalLearningQuestionsQuerySchema};
   if(learningQueries[url])schema.querystring=toJson(learningQueries[url]!);
   if(url==='/api/questions/:id/history')schema.querystring=toJson(questionHistoryQuerySchema);
+  if(url==='/api/questions/:id/similar')schema.querystring=toJson(similarQuestionsQuerySchema);
   if(url==='/api/questions/:id/statistics')schema.querystring=toJson(z.object({partId:id.optional()}).strict());
   if(url==='/api/analytics')schema.querystring=toJson(analyticsQuerySchema);
   if(url==='/api/analytics/weekly')schema.querystring=toJson(weeklyQuerySchema);
@@ -130,9 +176,23 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/paper-drafts')schema.querystring=toJson(z.object({context:z.string().min(1).max(160).optional()}));
   if(url==='/api/document-drafts')schema.querystring=toJson(documentDraftQuerySchema);
   if(url==='/api/attempts')schema.querystring=toJson(z.object({...paginationFields,paperId:id.optional(),source:z.enum(['paper','quick']).optional(),status:z.enum(['in_progress','submitted']).optional()}));
-  if(url==='/api/ai/runs')schema.querystring=toJson(z.object({...paginationFields,kind:z.enum(['explain','grade','import','review','paper_plan']).optional(),questionId:validation.leafId.optional(),attemptId:id.optional()}));
+  if(url==='/api/ai/runs')schema.querystring=toJson(aiHistoryQuerySchema);
+  if(url==='/api/ai/document-jobs')schema.querystring=toJson(z.object(paginationFields));
+  if(url==='/api/question-feedback')schema.querystring=toJson(questionFeedbackQuerySchema);
+  if(url==='/api/content-quality/issues'||url==='/api/content-quality/questions')schema.querystring=toJson(quality.qualityIssueQuerySchema);
+  if(url==='/api/content-quality/scans'&&method==='GET')schema.querystring=toJson(quality.qualityScanQuerySchema);
   const outputs:Record<string,JsonSchema>={questions:toJson(validation.questionSchema),documents:toJson(validation.documentSchema),domains:toJson(validation.domainSchema),categories:toJson(validation.categorySchema),tags:toJson(validation.tagSchema),papers:paperOutput,attempts:attemptOutput,'paper-drafts':toJson(paperDraftSchema)};
   let success:JsonSchema=outputs[area]||object;
+  if(url==='/api/content-quality/issues'&&method==='GET')success=learningPage(qualityIssueViewOutput);
+  if(url==='/api/content-quality/questions'&&method==='GET')success=learningPage(toJson(quality.qualityQuestionGroupSchema));
+  if(url==='/api/content-quality/overview'&&method==='GET')success=toJson(quality.qualityOverviewSchema);
+  if(url==='/api/content-quality/issues/:id'&&method==='GET')success={type:'object',required:['issue','question','relatedQuestions','feedbacks'],properties:{issue:qualityIssueViewOutput,question:{anyOf:[toJson(validation.questionSchema),{type:'null'}]},relatedQuestions:{type:'array',items:toJson(validation.questionSchema)},feedbacks:{type:'array',items:feedbackViewOutput}}};
+  if(url==='/api/content-quality/issues/:id/review-context')success=qualityReviewContextOutput;
+  if(url==='/api/content-quality/review-contexts')success={type:'object',required:['items'],properties:{items:{type:'array',items:qualityReviewContextOutput,maxItems:20}}};
+  if(url==='/api/content-quality/issues/:id/resolve')success=qualityIssueViewOutput;
+  if(url==='/api/content-quality/issues/resolve')success={type:'object',required:['items'],properties:{items:{type:'array',items:qualityIssueViewOutput}}};
+  if(url==='/api/content-quality/scans')success=method==='GET'?learningPage(toJson(quality.qualityScanSchema)):toJson(quality.qualityScanSchema);
+  if(/^\/api\/content-quality\/scans\/:id(?:\/(?:process|cancel))?$/.test(url))success=toJson(quality.qualityScanSchema);
   if(url==='/api/learning/summary')success=learningSummaryOutput;
   if(url==='/api/learning/attempts')success=learningPage(learningHistoryOutput);
   if(url==='/api/learning/questions')success=learningPage(learningQuestionOutput);
@@ -149,11 +209,20 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/questions/metadata')success=toJson(z.object({items:z.array(z.object({id,title:z.string(),type:validation.types,status:z.enum(['published','pending','draft','archived'])})),missingIds:z.array(id)}));
   if(url==='/api/papers/:id/questions/:questionId')success=toJson(validation.snapshotQuestionSchema);
   if(url==='/api/ai/runs')success=paged(aiRunOutput);
-  if(/^\/api\/ai\/runs\/:id$/.test(url)||/^\/api\/ai\/(?:explain|grade|import|review|paper-plan)$/.test(url))success=aiRunOutput;
+  if(/^\/api\/ai\/runs\/:id$/.test(url)||/^\/api\/ai\/(?:explain|grade|import|review|paper-plan|similar-questions)$/.test(url))success=aiRunOutput;
+  if(url==='/api/questions/:id/similar')success={type:'object',required:['items','total','page','pageSize','query','scope'],properties:{items:{type:'array',items:{type:'object',required:['question','reason','score'],properties:{question:toJson(validation.questionSchema),reason:{type:'string'},score:{type:'number'}}}},total:{type:'integer',minimum:0},page:{type:'integer',minimum:1},pageSize:{type:'integer',minimum:1},query:{type:'string'},scope:{type:'string'}}};
   if(url==='/api/attempts/:id/ai-review')success=aiRunOutput;
   if(url==='/api/ai/test')success={type:'object',required:['ok','message','model'],properties:{ok:{const:true},message:{type:'string'},model:{type:'string'}}};
   if(url==='/api/ai/runs/:id/paper')success={type:'object',properties:{paper:paperOutput,run:aiRunOutput}};
   if(url==='/api/ai/settings')success=toJson(aiPublicSettingsSchema);
+  if(url==='/api/ai/document-jobs')success=method==='GET'?paged(aiDocumentSummaryOutput):aiDocumentJobOutput;
+  if(/^\/api\/ai\/document-jobs\/:id(?:\/(?:plan|generate))?$/.test(url))success=aiDocumentJobOutput;
+  if(url==='/api/ai/document-jobs/:id/import')success={type:'object',required:['added','items','job'],properties:{added:{type:'integer'},items:{type:'array',items:toJson(validation.questionSchema)},job:aiDocumentJobOutput}};
+  if(url==='/api/question-feedback')success=method==='GET'?paged(questionFeedbackViewOutput):questionFeedbackViewOutput;
+  if(url==='/api/question-feedback/:id'||url==='/api/question-feedback/:id/resolve')success=questionFeedbackViewOutput;
+  if(url==='/api/question-feedback/summaries')success={type:'object',required:['summaries'],properties:{summaries:object}};
+  if(url==='/api/question-feedback/:id/candidates')success={type:'object',required:['feedbackId','sourceCurrent','sourceChanged','items','limit','scope'],properties:{feedbackId:{type:'string'},sourceCurrent:{type:'boolean'},sourceChanged:{type:'boolean'},items:{type:'array',items:object},limit:{type:'integer'},scope:{type:'string'}}};
+  if(url==='/api/question-feedback/ai-review')success={type:'object',required:['status','completed','failed','items'],properties:{status:{enum:['completed','partial','failed']},completed:{type:'integer'},failed:{type:'integer'},items:{type:'array',items:object}}};
   if(url==='/api/settings')success=method==='GET'?toJson(settingsSchema):{type:'object',properties:{settings:toJson(settingsSchema),retention:{type:'object',properties:{drafts:{type:'integer'},history:{type:'integer'},authoring:{type:'integer'},documentDrafts:{type:'integer'},questionHistory:{type:'integer'},total:{type:'integer'}}}}};
   if(url==='/api/settings/export')success=toJson(configurationSchema);
   if(url==='/api/settings/import/preview')success=toJson(configurationPreviewSchema);
@@ -163,7 +232,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/documents/kinds')success={type:'array',items:{type:'string'}};
   if(url==='/api/study')success={type:'object',properties:{items:{type:'array',items:object},reviews:{type:'array',items:object}}};
   if(url==='/api/exams/active'||url==='/api/exams/sync')success={type:'object',properties:{attempt:{anyOf:[attemptOutput,{type:'null'}]}}};
-  if(url==='/api/papers/:id/attempts'||url==='/api/quick-practice'||/^\/api\/attempts\/:id\/(?:sync|submit|review|reveal)$/.test(url))success=attemptOutput;
+  if(url==='/api/papers/:id/attempts'||url==='/api/quick-practice'||/^\/api\/attempts\/:id\/(?:sync|submit|review|reveal|timing)$/.test(url))success=attemptOutput;
   if(url==='/api/papers/:id/drafts'||url==='/api/paper-drafts')success={type:'array',items:url.includes('/drafts')?attemptOutput:toJson(paperDraftSchema)};
   if(area==='document-drafts')success=url.endsWith('/publish')?toJson(validation.documentSchema):method==='GET'?{type:'array',items:toJson(documentDraftSchema)}:toJson(documentDraftSchema);
   if(url==='/api/daily-push')success=dailyOverviewOutput;
@@ -197,6 +266,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/questions/metadata')schema.description+=' 只读批量查询题目元数据，最多50000个唯一题号；按输入顺序返回 id/title/type/status，含待审核与归档题。不存在的题号列入 missingIds，不查询题干、答案、笔记。';
   if(url==='/api/questions/:id/history'||url==='/api/questions/:id/statistics')schema.description+=' 单题统计仅计入真正填写并提交的作答，整卷漏答与草稿不计。正确、部分正确、错误、未判分别统计；answered为四类总和。组合题可按partId查小题，未指定时汇总整组。详情默认每个叶题保留最近10次，maxQuestionHistory可配置，0关闭详情保留；整卷仍保留时共享原回答，整卷裁剪前只归档仍在单题保留范围内的完整快照。详情裁剪不清累计统计或整卷。重置进度后旧详情标beforeReset，不参与重置后的统计。unknown表示旧内容已清理且不能确认是否实际填写，不计入answered。history传summary=false时省略累计统计且不执行统计查询，适用于侧栏已经单独读取statistics的页面。';
   if(url==='/api/ai/grade'||url==='/api/attempts/:id/ai-review')schema.description+=' gradingRequirements为可选判题要求（最多10000字符），与题目、参考解析及作答一起发送。结果verdict为correct/partial/incorrect；计分题与建议分数一致，不计分题仍返回判定。结果须经用户显式应用才改变作答、单题统计和错题状态。旧无分数且无明确判定的分析标记requiresRegrade，须重新判题后应用。';
+  if(url==='/api/attempts/:id/timing')schema.description+=' 普通练习累计活跃时长，GET不会启动或推进计时。resume需带当前expectedSessionId（首次为null），checkpoint/pause的elapsedMilliseconds为本session从零开始的单调累计毫秒；重复、过期checkpoint及旧session暂停不会重复计时。考试保持绝对截止时间，不支持此接口。';
   if(url==='/api/papers/:id/restore')schema.description+=' 恢复前确认所有成员原题已审核发布且题集非空。首次恢复且未经编辑的旧集合无分题集按原顺序重新读取已审核题目，保持无分数并产生新版本；其他题集保留原快照、版本和分值。恢复均不改写历史作答。';
   if(url==='/api/papers/:id/questions/:questionId')schema.description+=' 返回这份题集保存的单题快照与解析，含组合题公共材料；不从当前题库替换历史内容。';
   if(url==='/api/papers/:id'&&method==='GET')schema.description+=' summary=true 仅返回答题导航所需信息，省略题干、选项与材料正文，适用于大型题集浏览。';

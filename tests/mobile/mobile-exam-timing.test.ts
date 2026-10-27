@@ -28,7 +28,9 @@ test('actual offline runtime persists exam deadline, auto-submission and elapsed
   assert.equal(submitted.status, 'submitted'); assert.equal(submitted.autoSubmitted, true); assert.equal(submitted.answers['TIMED-Q'].value, 'true'); assert.equal(submitted.elapsedSeconds, 60); assert.equal(submitted.objectiveScore, 2);
   await runtime.close(); runtime = await createLocalRuntime(sql, seed, storage);
   assert.equal((await api(`/api/attempts/${exam.id}`)).status, 'submitted'); assert.equal((await api('/api/exams/sync', 'POST')).attempt, null);
-  const ordinary = await api(`/api/papers/${paper.id}/attempts`, 'POST', { mode: 'practice' }, 201); t.mock.timers.tick(12000);
+  const ordinary = await api(`/api/papers/${paper.id}/attempts`, 'POST', { mode: 'practice' }, 201);
+  await api(`/api/attempts/${ordinary.id}/timing`, 'POST', { action: 'resume', sessionId: 'native-ordinary-session', expectedSessionId: null }); t.mock.timers.tick(12000);
+  await api(`/api/attempts/${ordinary.id}/timing`, 'POST', { action: 'pause', sessionId: 'native-ordinary-session', elapsedMilliseconds: 12000 });
   const done = await api(`/api/attempts/${ordinary.id}/submit`, 'POST', { answers: {} }); assert.equal(done.elapsedSeconds, 12); assert.equal(done.practiceMode, 'practice');
   const next = await api(`/api/papers/${paper.id}/attempts`, 'POST', { mode: 'exam', durationMinutes: 1 }, 201); t.mock.timers.tick(61000);
   assert.equal((await api('/api/exams/sync', 'POST')).attempt, null); await runtime.close(); runtime = await createLocalRuntime(sql, seed, storage);

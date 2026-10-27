@@ -6,13 +6,15 @@ import { ErrorNotice, Field, Loading, QuestionMeta, Tags, useApp } from '../../s
 import { QuestionContent, SourceNoticeScope, questionNoticeContents } from '../../shared/ui/content-notices';
 import { QuestionStructuredBody } from './question-structure';
 import { QuestionHistory, QuestionStatistics } from './question-history';
-import { matchesQuestionSnapshot, snapshotVocabulary } from './question-viewer-state';
+import { matchesQuestionSnapshot, snapshotVocabulary, snapshotConcept } from './question-viewer-state';
 import './question-viewer.css';
 import { emptyStudy } from '../../../shared/questions/study-state';
 import type { Paged } from '../../../shared/utils/pagination';
 import { DEFAULT_REVIEW_SCHEDULING } from '../../../shared/models/settings';
+import { ReportQuestionAction } from '../quality-feedback/report-question';
 import { ReviewSchedulingPanel } from '../review-scheduler/review-scheduling';
 import type { ReviewDirection } from '../../../shared/models/adaptive-review';
+import { SimilarQuestionsLauncher, SimilarQuestionsPanel, type SimilarQuestionsMode } from './similar-questions';
 
 export interface QuestionSnapshot extends Question {
   sourceQuestionId?: string;
@@ -34,6 +36,8 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   const [notes, setNotes] = useState('');
   const [reviewDate, setReviewDate] = useState('');
   const [busy, setBusy] = useState(false);
+  const [similarMode, setSimilarMode] = useState<SimilarQuestionsMode | null>(null);
+  useEffect(() => { setSimilarMode(null); }, [sourceId, partId]);
   const study = partId === undefined ? source.data?.study : source.data?.partStudies?.find(state => state.partId === partId) || emptyStudy(sourceId, partId);
   const favorite = source.data?.study?.favorite || false;
   const dirty = notes !== (study?.notes || '');
@@ -60,23 +64,28 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   const live = !!source.data && !source.error && (partId === undefined || source.data.type === 'group' && source.data.parts?.some(part => part.id === partId && part.type === question.type));
   const sameContent = live && matchesQuestionSnapshot(question, source.data!);
   const readingVocabulary = snapshotVocabulary(question, source.error ? undefined : source.data || undefined);
-  const reverse = reviewDirection === 'meaning_to_word' && !!readingVocabulary;
+  const readingConcept = snapshotConcept(question, source.error ? undefined : source.data || undefined);
+  const reverse = reviewDirection === 'meaning_to_word' && !!(readingVocabulary || readingConcept);
+  const recallPrompt = readingConcept?.meaningPrompt || readingVocabulary?.meaningPrompt || '';
+  const recallTarget = readingConcept?.term || readingVocabulary?.headword || '';
   return <div className="question-viewer" onClickCapture={event => {
     if (presentation === 'page') return;
     const link = (event.target as HTMLElement).closest('a');
-    if (link?.getAttribute('href')?.startsWith('#/') && !link.hasAttribute('data-question-history-review')) { event.preventDefault(); toast('请先关闭看题窗口，再打开其他页面'); }
+    if (link?.getAttribute('href')?.startsWith('#/') && link.getAttribute('target') !== '_blank' && !link.hasAttribute('data-question-history-review')) { event.preventDefault(); toast('请先关闭看题窗口，再打开其他页面'); }
   }}>
     <div className="question-viewer-layout">
       <div className="question-viewer-main">
+        {live && (!reverse || answerOpen) && <div className="question-viewer-feedback"><ReportQuestionAction questionId={sourceId} partId={partId} disabled={busy} snapshotDifferent={contentSource === 'snapshot' && !sameContent} /><SimilarQuestionsLauncher disabled={busy} archived={source.data?.status === 'archived'} onOpen={setSimilarMode} /></div>}
+        {live && (!reverse || answerOpen) && similarMode && <SimilarQuestionsPanel key={`${sourceId}:${partId || ''}:${similarMode}`} questionId={sourceId} partId={partId} initialMode={similarMode} snapshotDifferent={contentSource === 'snapshot' && !sameContent} onClose={() => setSimilarMode(null)} />}
         {!studyOnly && <SourceNoticeScope contents={questionNoticeContents(question)}>
           <section className={`question-viewer-reading question-body${presentation === 'page' ? ' card' : ''}`}>
-            {reverse ? <span className="badge">词汇逆向复习</span> : <QuestionMeta question={question} />}{presentation !== 'page' && <h3 className="question-viewer-title">{reverse ? '看释义想词' : question.title}</h3>}
+            {reverse ? <span className="badge">{readingConcept ? '概念逆向复习' : '词汇逆向复习'}</span> : <QuestionMeta question={question} />}{presentation !== 'page' && <h3 className="question-viewer-title">{reverse ? (readingConcept ? '看描述想概念' : '看释义想词') : question.title}</h3>}
             {question.groupStemMarkdown && <section className="group-material"><span className="section-label">共用材料 · {question.groupTitle}</span><QuestionContent>{question.groupStemMarkdown}</QuestionContent></section>}
-            <QuestionContent>{reverse ? readingVocabulary!.meaningPrompt : question.stemMarkdown}</QuestionContent>
+            <QuestionContent questionType={question.type}>{reverse ? recallPrompt : question.stemMarkdown}</QuestionContent>
             {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
             {!reverse && <><QuestionStructuredBody question={{...question,vocabulary:readingVocabulary}} />{!question.vocabulary && readingVocabulary && <p className="muted">读音补充来自当前词卡；题目正文仍为题集快照。</p>}<Tags ids={question.tagIds} max={30} /></>}
             <div className="answer-toggle"><button type="button" className={'button ' + (answerOpen ? '' : 'primary')} aria-expanded={answerOpen} onClick={() => setAnswerOpen(value => !value)}><BookOpen size={17} />{answerOpen ? '收起参考答案' : '展开答案与解析'}<ChevronDown size={15} className={answerOpen ? 'rotated' : ''} /></button></div>
-            {answerOpen && <div className="answer-content"><div className="section-label">参考答案{question.correctAnswers.length ? ' · ' + question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、') : ''}</div>{reverse && <><p><strong>目标词语：</strong>{readingVocabulary!.headword}</p><QuestionStructuredBody question={{ ...question, vocabulary: readingVocabulary }} /></>}<QuestionStructuredBody question={question} showAnswers /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><div className="section-label">解析 · 追问 · 误区</div><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</div>}
+            {answerOpen && <div className="answer-content"><div className="section-label">参考答案{question.correctAnswers.length ? ' · ' + question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、') : ''}</div>{reverse && <><p><strong>{readingConcept ? '目标概念：' : '目标词语：'}</strong>{recallTarget}</p><QuestionStructuredBody question={{ ...question, vocabulary: readingVocabulary }} /></>}<QuestionStructuredBody question={question} showAnswers /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><div className="section-label">解析 · 追问 · 误区</div><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</div>}
           </section>
         </SourceNoticeScope>}
         {(!reverse || answerOpen) && <QuestionHistory questionId={sourceId} partId={partId} aggregate={question.type === 'group'} beforeOpenReview={() => presentation === 'page' || !busy && (!dirty || confirm('学习笔记尚未保存，确定离开这道题并打开整卷复盘？'))} />}
@@ -100,7 +109,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
             <div className="list-toolbar"><h3>掌握与复习</h3><button type="button" className={'button ' + (favorite ? 'favorited' : '')} disabled={busy} onClick={() => void updateStudy({ favorite: !favorite })}><Star size={16} fill={favorite ? 'currentColor' : 'none'} />{favorite ? '已收藏' : partId !== undefined ? '收藏整组' : '收藏'}</button></div>
             <p className="muted">{partId !== undefined ? '本小题独立记录掌握、复习与笔记；收藏属于整组。' : (adaptive ? '掌握程度记录理解深度，FSRS单独记录回忆质量。' : '掌握程度与复习日期同步到原题。')}</p>
             <div className="mastery-buttons">{[0, 1, 2, 3].map(value => <button type="button" key={value} className={study?.mastery === value ? 'selected' : ''} disabled={busy} onClick={() => void updateStudy({ mastery: value }, !adaptive)}><span>{value}</span>{['不会', '需提示', '能独立', '能深入'][value]}</button>)}</div>
-            {adaptive ? <ReviewSchedulingPanel questionId={sourceId} partId={partId} vocabulary={!!readingVocabulary} direction={reviewDirection} available={source.data?.status === 'published'} onChanged={() => { source.refresh(); onStudyChange?.(); }} /> : <>
+            {adaptive ? <ReviewSchedulingPanel questionId={sourceId} partId={partId} vocabulary={!!(readingVocabulary || readingConcept)} concept={!!readingConcept} direction={reviewDirection} available={source.data?.status === 'published'} onChanged={() => { source.refresh(); onStudyChange?.(); }} /> : <>
             <dl className="facts"><div><dt>最近复习</dt><dd>{localDate(study?.lastReviewedAt)}</dd></div><div><dt>下次复习</dt><dd>{localDate(study?.nextReviewAt)}</dd></div></dl>
             <div className="study-review-date"><Field label="调整复习日期"><input type="date" value={reviewDate} onChange={event => setReviewDate(event.target.value)} /></Field><button type="button" className="button full-width" disabled={busy} onClick={() => void updateStudy({ nextReviewAt: reviewDate ? new Date(reviewDate + 'T09:00:00').toISOString() : null })}>更新日期</button></div>
           </>}

@@ -36,6 +36,9 @@ export interface AttemptReviewItem extends ReviewIdentity {
 export interface AttemptReviewOverview { attemptId: string; strategy: 'fsrs' | 'fixed'; items: AttemptReviewItem[] }
 export interface ReviewQueueSummary { due: number; overdue: number; relearning: number; today: number; suspended: number }
 export interface ReviewQueueItem extends ReviewIdentity {
+  practiceKind?: 'concept' | 'vocabulary';
+  /** Existing standard identities may serve as a concept's forward alias. */
+  logicalDirection?: ReviewDirection;
   key: string; title: string; partTitle?: string; href: string; card: ReviewCard | null;
   dueAt: string; reason: 'legacy' | 'overdue' | 'relearning' | 'today';
 }

@@ -11,6 +11,7 @@ import { paperList, attemptList } from '../../core/read-models.js';
 import { getId } from '../../http/request.js';
 import { flattenQuestions, validatePaperAnswers } from '../questions/structure.js';
 import { normalizeScoring } from './scoring.js';
+import { practiceTimingInputSchema, updatePracticeTiming } from './practice-timing.js';
 
 export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/papers', async request => {
@@ -91,6 +92,7 @@ export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/exams/active', async () => { const attempt = getActiveExam(store); return { attempt: attempt ? attemptView(attempt) : null }; });
   app.post('/api/exams/sync', async () => { syncExams(store); const attempt = getActiveExam(store); return { attempt: attempt ? attemptView(attempt) : null }; });
   app.post('/api/attempts/:id/sync', async request => attemptView(syncAttempt(store, store.require<StoredAttempt>('attempts', getId(request)))));
+  app.post('/api/attempts/:id/timing', async request => attemptView(updatePracticeTiming(store, store.require<StoredAttempt>('attempts', getId(request)), parse(practiceTimingInputSchema, request.body))));
   app.get('/api/attempts/:id', async request => attemptView(store.require<StoredAttempt>('attempts', getId(request))));
   app.put('/api/attempts/:id', async request => {
     const aid = getId(request); const attempt = store.require<StoredAttempt>('attempts', aid);

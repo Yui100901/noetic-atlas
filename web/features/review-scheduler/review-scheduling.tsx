@@ -15,8 +15,8 @@ const ratingHints: Record<ReviewRating, string> = { again: '想不起来、答�
 const localInput = (value: string | null) => { if (!value) return ''; const date = new Date(value); if (!Number.isFinite(date.getTime())) return ''; return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 const shortDue = (value: string) => new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
 
-export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, direction: initialDirection, attemptId, leafId, onChanged, available = true, onlyAgain = false }: {
-  questionId: string; partId?: string; vocabulary?: boolean; direction?: ReviewDirection; attemptId?: string; leafId?: string; onChanged?: () => void; available?: boolean; onlyAgain?: boolean;
+export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, concept = false, direction: initialDirection, attemptId, leafId, onChanged, available = true, onlyAgain = false }: {
+  questionId: string; partId?: string; vocabulary?: boolean; concept?: boolean; direction?: ReviewDirection; attemptId?: string; leafId?: string; onChanged?: () => void; available?: boolean; onlyAgain?: boolean;
 }) {
   const { bootstrap, reload, toast } = useApp();
   const strategy = (bootstrap.settings?.reviewScheduling || DEFAULT_REVIEW_SCHEDULING).strategy;
@@ -50,7 +50,7 @@ export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, 
   const value = resource.data;
   return <div className="review-scheduling" aria-label={attemptId ? '本次回忆评级' : '自适应复习'}>
     <div className="review-scheduling-heading"><h3><CalendarClock size={16} />{attemptId ? '本次回忆评级' : '自适应复习'}</h3><span className="badge">FSRS</span></div>
-    {vocabulary && !attemptId && !initialDirection && <div className="review-scheduling-direction"><Field label="复习方向"><select disabled={busy} value={direction} onChange={event => setDirection(event.target.value as ReviewDirection)}><option value="word_to_meaning">{directionLabels.word_to_meaning}</option><option value="meaning_to_word">{directionLabels.meaning_to_word}</option></select></Field></div>}
+    {vocabulary && !attemptId && !initialDirection && <div className="review-scheduling-direction"><Field label="复习方向"><select disabled={busy} value={direction} onChange={event => setDirection(event.target.value as ReviewDirection)}><option value="word_to_meaning">{concept ? '顺向 · 看概念想含义' : directionLabels.word_to_meaning}</option><option value="meaning_to_word">{concept ? '逆向 · 看描述想概念' : directionLabels.meaning_to_word}</option></select></Field></div>}
     {resource.loading ? <Loading text="正在计算复习安排…" /> : resource.error ? <ErrorNotice message={resource.error} retry={resource.refresh} /> : value && <>
       <p className="review-scheduling-summary">{value.suspended ? '已暂停自动复习' : stateLabels[value.state]}{value.latestRating ? ` · 最近${REVIEW_RATING_LABELS[value.latestRating]}` : ''}{attemptId ? ' · 更正只作用于原作答事件' : ''}</p>
       <dl className="review-scheduling-facts"><div><dt>下次复习</dt><dd>{value.suspended ? '暂停中' : localDate(value.dueAt)}</dd></div><div><dt>有效回忆记录</dt><dd>{value.eventCount} 次</dd></div>{value.card && <><div><dt>复习次数／遗忘次数</dt><dd>{value.card.memory.reps}／{value.card.memory.lapses}</dd></div><div><dt>最近复习</dt><dd>{localDate(value.lastReviewedAt)}</dd></div></>}</dl>

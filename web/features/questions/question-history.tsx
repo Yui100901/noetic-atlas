@@ -82,7 +82,7 @@ function QuestionHistoryContent({ questionId, partId, aggregate = false, beforeO
 function QuestionHistoryRecord({ item, beforeOpenReview }: { item: QuestionHistoryItem; beforeOpenReview?: () => boolean }) {
   const [open, setOpen] = useState(false);
   const question = item.question;
-  const source = (item.source === 'quick' ? '随机 / 单题自测' : `${item.paperTitle} · v${item.paperVersion}`) + (item.vocabularyDirection ? ` · ${vocabularyDirectionLabel(item.vocabularyDirection)}` : '');
+  const source = (item.source === 'quick' ? '随机 / 单题自测' : `${item.paperTitle} · v${item.paperVersion}`) + (item.vocabularyDirection ? ` · ${vocabularyDirectionLabel(item.vocabularyDirection, item.question.concept ? 'concept' : 'vocabulary')}` : '');
   const score = item.points == null ? '无分练习' : item.score == null ? `待判分 / ${pointText(item.points)} 分` : `${pointText(item.score)} / ${pointText(item.points)} 分`;
   const values = Array.isArray(item.answer.value) ? item.answer.value : [item.answer.value];
   return <details className="question-history-record" onToggle={event => setOpen(event.currentTarget.open)}>
@@ -93,7 +93,7 @@ function QuestionHistoryRecord({ item, beforeOpenReview }: { item: QuestionHisto
         <div className="question-history-snapshot-heading"><span className="section-label">本次提交时的题目快照</span><span className="badge">{typeLabels[question.type]}</span></div>
         <h3>{question.title}</h3>
         {question.groupStemMarkdown && <section className="group-material"><span className="section-label">公共材料{question.groupTitle ? ` · ${question.groupTitle}` : ''}</span><QuestionContent>{question.groupStemMarkdown}</QuestionContent></section>}
-        <QuestionContent>{question.stemMarkdown}</QuestionContent>
+        <QuestionContent questionType={question.type}>{question.stemMarkdown}</QuestionContent>
         {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
         <section className="question-history-user-answer"><h4>我的作答</h4>{question.type === 'fill_blank' && Array.isArray(item.answer.value) ? <ol>{values.map((value, index) => <li key={index}><span className="muted">{question.blanks?.[index]?.label || `第${index + 1}空`}：</span><span className="question-history-answer-text">{value || '（此空未填写）'}</span></li>)}</ol> : <div className="question-history-answer-text">{values.map(value => answerText(value, question)).join('、')}</div>}<p className="muted">判定：{verdictLabels[item.verdict]} · {score}{item.answer.mastery != null ? ` · 掌握自评 ${item.answer.mastery}/3` : ''}</p></section>
         <section className="question-history-reference"><h4>当时的参考答案{question.correctAnswers.length ? ` · ${question.correctAnswers.map(value => answerText(value, question)).join('、')}` : ''}</h4><BlankAnswerSummary blanks={question.blanks} /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><h4>当时的解析</h4><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</section>

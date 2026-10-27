@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
+
+const folder = resolve('test-results/practice-timing-ui'); await mkdir(folder, { recursive: true });
+const server = spawn(process.execPath, ['--import', 'tsx', 'scripts/qa/serve-practice-timing.ts'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+let stdout = '', stderr = '', browser, page, dismissUnload = false, cancelledUnloads = 0;
+const checks = [], pageErrors = [], unexpectedNetwork = [];
+server.stdout.on('data', chunk => stdout += chunk); server.stderr.on('data', chunk => stderr += chunk);
+try {
+  for (let count = 0; count < 600 && !stdout.includes('PRACTICE_TIMING_READY '); count++) { if (server.exitCode !== null) throw new Error(stderr); await delay(100); }
+  const line = stdout.split(/\r?\n/).find(value => value.startsWith('PRACTICE_TIMING_READY ')); assert.ok(line, stderr + stdout);
+  const { origin } = JSON.parse(line.slice('PRACTICE_TIMING_READY '.length));
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href : 'playwright');
+  browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' }); page = await context.newPage(); page.setDefaultTimeout(30_000);
+  page.on('pageerror', reason => pageErrors.push(reason.message));
+  page.on('dialog', dialog => { if (dialog.type() === 'beforeunload' && dismissUnload) { dismissUnload = false; cancelledUnloads++; void dialog.dismiss(); } else void dialog.accept(); });
+  await context.route('**/*', route => { const url = new URL(route.request().url()); if (url.origin === origin || ['data:', 'blob:'].includes(url.protocol)) return route.continue(); unexpectedNetwork.push(url.href); return route.abort(); });
+  const api = async (url, method = 'GET', body) => { const response = await page.request.fetch(origin + url, { method, ...(body === undefined ? {} : { data: body }) }); assert.ok(response.ok(), url + ': ' + await response.text()); return response.json(); };
+  const state = () => api('/qa/practice-timing');
+  const settle = async (check, name) => { for (let tick = 0; tick < 200; tick++) { if (await check()) return; await delay(100); } throw new Error('Timed out: ' + name); };
+  const initial = await state(), attemptPath = `/#/attempts/${initial.attemptId}`;
+  const go = async path => { await page.goto(origin + path); await page.getByTestId('attempt-clock').waitFor(); await settle(async () => (await state()).attempt.practiceTiming?.running, 'timer started'); };
+  await go(attemptPath); await page.waitForTimeout(2200); assert.notEqual(await page.getByTestId('attempt-clock').innerText(), '00:00:00');
+  const first = await state(); checks.push('进入普通练习启动前台秒表，不修改答案也正常计时');
+  await page.getByRole('link', { name: '返回题集记录', exact: true }).click(); await settle(async () => !(await state()).attempt.practiceTiming.running, 'pause without dirty answers');
+  const paused = (await state()).attempt; assert.ok(paused.practiceTiming.elapsedMilliseconds >= 2000); assert.equal(Object.keys(paused.answers).length, 0); await delay(1400);
+  assert.equal((await state()).attempt.practiceTiming.elapsedMilliseconds, paused.practiceTiming.elapsedMilliseconds); checks.push('无答案修改时离开也暂停，草稿GET及离开时段不增加用时');
+  await go(attemptPath); const resumed = (await state()).attempt; assert.notEqual(resumed.practiceTiming.sessionId, first.attempt.practiceTiming.sessionId); await page.waitForTimeout(1300);
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click(); await settle(async () => (await state()).attempt.practiceTiming.elapsedMilliseconds > paused.practiceTiming.elapsedMilliseconds + 1000, 'manual checkpoint'); checks.push('继续同一草稿使用新会话，手动保存保存累计用时');
+  const beforeReload = (await state()).attempt.practiceTiming.elapsedMilliseconds; await page.reload(); await page.getByTestId('attempt-clock').waitFor(); await settle(async () => (await state()).attempt.practiceTiming.running, 'reload resume');
+  assert.ok((await state()).attempt.practiceTiming.elapsedMilliseconds >= beforeReload); checks.push('刷新先暂停并恢复，已保存用时不丢失、不从开始日期补算');
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+  await settle(async () => !(await state()).attempt.practiceTiming.running, 'background pause'); const hidden = (await state()).attempt.practiceTiming; await delay(1300); assert.equal((await state()).attempt.practiceTiming.elapsedMilliseconds, hidden.elapsedMilliseconds);
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange')); }); await settle(async () => (await state()).attempt.practiceTiming.running, 'foreground resume'); assert.notEqual((await state()).attempt.practiceTiming.sessionId, hidden.sessionId); checks.push('后台立即暂停，回到前台以新会话继续，后台时段排除');
+  await page.locator('#exam-1 input[type="radio"]').first().check();
+  dismissUnload = true; await page.reload({ waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => undefined); await settle(async () => (await state()).attempt.practiceTiming.running, 'cancelled unload resumes');
+  assert.equal(cancelledUnloads, 1);
+  assert.match(page.url(), /\/attempts\//); const cancelledClock = await page.getByTestId('attempt-clock').innerText(); await page.waitForTimeout(1300); assert.notEqual(await page.getByTestId('attempt-clock').innerText(), cancelledClock); checks.push('取消关闭确认后留在答题页，秒表自动继续');
+  await api('/qa/practice-timing/fail-pause', 'POST', {}); await page.getByRole('link', { name: '返回题集记录', exact: true }).click();
+  await settle(() => page.evaluate(id => !!sessionStorage.getItem(`noetic-atlas:practice-timing:${id}`), initial.attemptId), 'failed pause kept locally'); const pending = await page.evaluate(id => JSON.parse(sessionStorage.getItem(`noetic-atlas:practice-timing:${id}`)), initial.attemptId); await delay(1300);
+  await go(attemptPath); await settle(() => page.evaluate(id => sessionStorage.getItem(`noetic-atlas:practice-timing:${id}`) === null, initial.attemptId), 'replayed final pause'); const recovered = (await state()).attempt; assert.ok(recovered.practiceTiming.elapsedMilliseconds >= pending.elapsedMilliseconds); checks.push('暂停请求失败保留最终会话，重新进入先重放再恢复，离开时间不计入');
+  await page.waitForTimeout(1200); await page.locator('.navigator-submit').click(); await page.getByLabel('本次作答时间', { exact: true }).waitFor(); const submitted = (await state()).attempt;
+  assert.equal(submitted.status, 'submitted'); assert.equal(submitted.practiceTiming.running, false); assert.equal(submitted.elapsedSeconds, Math.floor(submitted.practiceTiming.elapsedMilliseconds / 1000)); await delay(1300); assert.equal((await state()).attempt.elapsedSeconds, submitted.elapsedSeconds); checks.push('交卷先提交最后计时段，成绩页用时冻结，答案保留');
+  assert.equal(submitted.answers['TIMING-Q'].value, 'true'); checks.push('暂停、刷新和恢复不影响自动保存答案');
+  await page.screenshot({ path: resolve(folder, 'practice-timing-desktop.png'), fullPage: true });
+  const exam = await api(`/api/papers/${initial.paperId}/attempts`, 'POST', { mode: 'exam', durationMinutes: 1 }); const callsBeforeExam = (await state()).calls.length;
+  await page.goto(origin + `/#/attempts/${exam.id}`); await page.getByLabel('考试倒计时', { exact: true }).waitFor(); const examBefore = await page.getByTestId('attempt-clock').innerText();
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); }); await page.waitForTimeout(2100); assert.notEqual(await page.getByTestId('attempt-clock').innerText(), examBefore); assert.equal((await state()).calls.length, callsBeforeExam); checks.push('考试仍按固定截止时间倒计时，后台不暂停且不调用普通计时接口');
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.setViewportSize({ width: 390, height: 844 }); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); await page.screenshot({ path: resolve(folder, 'practice-timing-mobile.png'), fullPage: true }); checks.push('390px计时与答题页无横向溢出');
+  await api(`/api/attempts/${exam.id}/submit`, 'POST', { answers: {} });
+  assert.deepEqual(pageErrors, []); assert.deepEqual(unexpectedNetwork, []); checks.push('零页面异常和意外外部请求，测试仅隔离内存数据库');
+  const report = { passed: checks.length, checks, pageErrors, unexpectedNetwork, database: ':memory:' }; await writeFile(resolve(folder, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
+} catch (error) { await page?.screenshot({ path: resolve(folder, 'failure.png'), fullPage: true }).catch(() => {}); await writeFile(resolve(folder, 'failure.json'), JSON.stringify({ error: String(error.stack || error), checks, pageErrors, unexpectedNetwork, stderr }, null, 2)); throw error; }
+finally { await browser?.close(); server.kill('SIGTERM'); if (server.exitCode === null) await Promise.race([new Promise(done => server.once('exit', done)), delay(3000)]); if (server.exitCode === null) server.kill('SIGKILL'); }

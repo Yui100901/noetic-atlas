@@ -61,10 +61,31 @@ test('bootstrap aggregates metadata without decoding question, paper, document o
   for (let index = 0; index < 4; index++) database.putRecord('documents', `D${index}`, { id: `D${index}`, title: '资料', bodyMarkdown: 'PRIVATE_DOCUMENT_BODY'.repeat(2000), ...(index === 3 ? {} : { _archived: index === 1 }) });
   database.projections.refreshAll();
   const { value, reads } = await observed(database, async () => responseJson(await app.inject('/api/bootstrap')));
-  assert.deepEqual(value.stats, { totalQuestions: 3, generalQuestions: 2, personalQuestions: 1, totalPapers: 3, totalDocuments: 3, favoriteCount: 2, dueCount: 1, wrongCount: 1, typeCounts: { true_false: 1, short_answer: 1, single_choice: 1 } });
+  assert.deepEqual(value.stats, { totalQuestions: 3, generalQuestions: 2, personalQuestions: 1, totalPapers: 3, totalDocuments: 3, favoriteCount: 2, dueCount: 1, wrongCount: 1, typeCounts: { true_false: 1, short_answer: 1, single_choice: 1 }, domainQuestionCounts: {} });
   for (const kind of ['questionBodies', 'paperBodies', 'paperQuestionBodies', 'attemptBodies', 'documentBodies', 'studyNotes'] as const) assert.equal(reads[kind], 0, kind);
   assert.ok(reads.dataBytes < 20_000); assert.doesNotMatch(JSON.stringify(value), /REFERENCE_ONLY|PRIVATE_STUDY|PRIVATE_DOCUMENT|PRIVATE_ORPHAN/);
   t.diagnostic(JSON.stringify({ bootstrapReads: reads }));
+});
+
+test('domain overview counts published and pending questions once per domain with current classification', async t => {
+  const {app,database}=await fixture(t);
+  for(const id of ['D1','D2','EMPTY'])database.putRecord('domains',id,{id,name:id,description:'',sortOrder:0});
+  const category=(id:string,domainId:string,parentId:string|null=null)=>database.putRecord('categories',id,{id,domainId,parentId,name:id,description:'',sortOrder:0});
+  category('C1','D1');category('C2','D1','C1');category('C3','D2');
+  for(const [id,status,categoryIds] of [
+    ['SHARED','published',['C1','C2','C3']],['CHILD','published',['C2']],['PENDING','pending',['C1']],
+    ['DRAFT','draft',['C1']],['ARCHIVED','archived',['C1']],['UNCLASSIFIED','published',[]],
+  ] as const)database.putRecord('questions',id,{...question(id,'short_answer',status),categoryIds:[...categoryIds]});
+  database.projections.refreshAll();
+  const read=()=>observed(database,async()=>responseJson(await app.inject('/api/bootstrap')));
+  const first=await read();
+  assert.equal(first.value.stats.totalQuestions,3);
+  assert.deepEqual(first.value.stats.domainQuestionCounts,{D1:{published:2,pending:1},D2:{published:1,pending:0}});
+  assert.equal(first.reads.questionBodies,0);
+  category('C2','D2');
+  const moved=await read();
+  assert.deepEqual(moved.value.stats.domainQuestionCounts,{D1:{published:1,pending:1},D2:{published:2,pending:0}});
+  assert.equal(moved.reads.questionBodies,0);
 });
 
 test('paper list decodes only its page, hides snapshots, strips retired fields and keeps unpaged/include-all contracts', async t => {

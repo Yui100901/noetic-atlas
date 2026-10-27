@@ -4,6 +4,7 @@ import { Store } from '../../server/core/store.js';
 import { attemptView, buildPaper, createAttempt, getActiveExam, saveAttempt, submitAttempt, syncAttempt, syncExams, validateAttemptTiming } from '../../server/modules/practice/service.js';
 import { answerState, attemptElapsedSeconds, durationText, examRemainingSeconds } from '../../shared/practice/attempt-timing.js';
 import type { AttemptQuestion, Question } from '../../shared/models/types.js';
+import { updatePracticeTiming } from '../../server/modules/practice/practice-timing.js';
 
 const start = Date.parse('2026-10-22T01:00:00.000Z');
 function fixture(t: test.TestContext) {
@@ -14,11 +15,12 @@ function fixture(t: test.TestContext) {
   return { store, paper };
 }
 
-test('normal practice measures wall time across draft saves and freezes elapsed time after submission', t => {
+test('normal practice accumulates acknowledged active time across draft saves and freezes elapsed time after submission', t => {
   t.mock.timers.enable({ apis: ['Date'], now: start }); const { store, paper } = fixture(t);
   const attempt = createAttempt(store, paper); assert.equal(attempt.practiceMode, 'practice'); assert.equal(attempt.deadlineAt, null);
-  t.mock.timers.tick(90000); saveAttempt(store, attempt, { T: { value: 'true' } }); assert.equal(attempt.elapsedSeconds, 90);
-  t.mock.timers.tick(15000); submitAttempt(store, attempt); assert.equal(attempt.elapsedSeconds, 105); assert.equal(attempt.objectiveScore, 2);
+  updatePracticeTiming(store, attempt, { action: 'resume', sessionId: 'first', expectedSessionId: null });
+  t.mock.timers.tick(90000); updatePracticeTiming(store, attempt, { action: 'checkpoint', sessionId: 'first', elapsedMilliseconds: 90000 }); saveAttempt(store, attempt, { T: { value: 'true' } }); assert.equal(attempt.elapsedSeconds, 90);
+  t.mock.timers.tick(15000); updatePracticeTiming(store, attempt, { action: 'pause', sessionId: 'first', elapsedMilliseconds: 105000 }); submitAttempt(store, attempt); assert.equal(attempt.elapsedSeconds, 105); assert.equal(attempt.objectiveScore, 2);
   t.mock.timers.tick(60000); assert.equal(attemptView(attempt).elapsedSeconds, 105); assert.equal(attemptElapsedSeconds(attempt), 105); validateAttemptTiming(attempt);
 });
 

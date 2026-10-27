@@ -115,7 +115,7 @@ test('HTTP AI SSE sends status and answer chunks before the provider completes, 
   assert.equal(received.filter(event => event.type === 'error').length, 0);
 });
 
-test('HTTP AI SSE reports schema errors and sanitized provider failures without persisting a run', async t => {
+test('HTTP AI SSE reports schema errors and sanitized provider failures with metadata-only failure history', async t => {
   for (const options of [{ result: { unexpected: true } }, { providerStatus: 429 }]) {
     const f = await fixture(t, options); f.release();
     const response = await f.post('/api/ai/explain', { questionId: 'S1' }, { headers: { Accept: 'text/event-stream' } });
@@ -123,7 +123,7 @@ test('HTTP AI SSE reports schema errors and sanitized provider failures without 
     const terminal = received.at(-1)!; assert.equal(terminal.type, 'error');
     if (terminal.type !== 'error') throw new Error('Missing error');
     assert.equal(terminal.error.statusCode, 502); assert.equal(terminal.error.code, 'providerStatus' in options ? 'AI_PROVIDER_ERROR' : 'AI_INVALID_OUTPUT');
-    assert.ok(!JSON.stringify(received).includes('secret-provider-detail')); assert.equal(f.store.database.records('ai_runs').length, 0);
+    assert.ok(!JSON.stringify(received).includes('secret-provider-detail')); const failures = f.store.database.records<any>('ai_runs'); assert.equal(failures.length, 1); assert.equal(failures[0].status, 'failed'); assert.equal(failures[0].result, undefined);
   }
 });
 
@@ -135,7 +135,7 @@ test('disconnecting AI SSE aborts the provider and cannot publish pending questi
   controller.abort(); await deadline(f.closed); f.release();
   // A subsequent HTTP read observes the state only after the abort callback has
   // had a full event-loop turn, rather than relying on a fixed sleep duration.
-  const records = await fetch(`${f.origin}/api/ai/runs`); assert.deepEqual(await records.json(), []);
+  const records = await fetch(`${f.origin}/api/ai/runs?status=completed`); assert.deepEqual(await records.json(), []);
   assert.equal(f.store.require<any>('questions', 'P1').status, 'pending');
   await iterator.return(undefined);
 });
@@ -146,7 +146,7 @@ test('cancelling a rubric-based AI grade aborts the provider without persisting 
   const response = await f.post('/api/ai/grade', { questionId: 'S1', answer: '整体提交或回滚', gradingRequirements: '允许等价表达；即使取消也请完成判题' }, { signal: controller.signal, headers: { Accept: 'text/event-stream' } });
   const iterator = events(response); await deadline(iterator.next()); await deadline(f.started);
   controller.abort(); await deadline(f.closed); f.release();
-  const records = await fetch(`${f.origin}/api/ai/runs`); assert.deepEqual(await records.json(), []);
+  const records = await fetch(`${f.origin}/api/ai/runs?status=completed`); assert.deepEqual(await records.json(), []);
   await iterator.return(undefined);
 });
 
@@ -178,7 +178,7 @@ test('native AI emits live progress but waits for full JSON completion and permi
   const activeRequest = during.post('/api/ai/explain', { questionId: 'S1' }, { headers: { 'x-atlas-ai-progress': 'native-cancel-in-progress' } });
   await deadline(during.started); activeController.abort(); await deadline(during.closed); during.release();
   const interrupted = await activeRequest; assert.equal(interrupted.status, 499); assert.equal((await interrupted.json()).error.code, 'AI_CANCELLED');
-  assert.equal(during.store.database.records('ai_runs').length, 0);
+  assert.equal(during.store.database.records<any>('ai_runs').filter(run => run.status === 'completed').length, 0); assert.equal(during.store.database.records<any>('ai_runs')[0]?.status, 'cancelled');
 });
 
 test('SSE still respects same-origin and active-exam guards; OpenAPI declares JSON and event-stream', async t => {

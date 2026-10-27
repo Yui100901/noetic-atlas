@@ -19,5 +19,5 @@ export const attemptReviewOutputSchema = z.object({
 export const reviewQueueOutputSchema = z.object({
   page: z.number().int().positive(), pageSize: z.number().int().positive(), total: count,
   summary: z.object({ due: count, overdue: count, relearning: count, today: count, suspended: count }),
-  items: z.array(z.object({ ...identity, key: z.string(), title: z.string(), partTitle: z.string().optional(), href: z.string(), card: reviewCardSchema.nullable(), dueAt: z.string(), reason: z.enum(['legacy', 'overdue', 'relearning', 'today']) })),
+  items: z.array(z.object({ ...identity, practiceKind:z.enum(['concept','vocabulary']).optional(), logicalDirection:z.enum(['standard','word_to_meaning','meaning_to_word']).optional(), key: z.string(), title: z.string(), partTitle: z.string().optional(), href: z.string(), card: reviewCardSchema.nullable(), dueAt: z.string(), reason: z.enum(['legacy', 'overdue', 'relearning', 'today']) })),
 }) satisfies z.ZodType<ReviewQueue>;

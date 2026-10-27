@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AI_PROGRESS_HEADER, nativeAiProgress, nativeAiProgressSignal, type AiExecutionContext, type AiStreamEvent } from '../../../shared/ai/ai-progress.js';
 import { ApiError, fail } from '../../core/validation.js';
+import { auditedFailure } from './audit-errors.js';
 
 /** Check after any provider await and immediately before publishing a run or
  * changing a question. A disconnected client must not complete background edits. */
@@ -60,7 +61,8 @@ export async function runAiAction<T>(request: FastifyRequest, reply: FastifyRepl
       const safe = error instanceof ApiError
         ? { code: error.code, message: error.message, statusCode: error.status }
         : { code: 'INTERNAL_ERROR', message: 'AI 任务未完成，请检查本地服务日志', statusCode: 500 };
-      send({ type: 'error', error: safe });
+      const audit = auditedFailure(error);
+      send({ type: 'error', error: { ...safe, ...(audit ? { details: audit } : {}) } });
     }
   } finally {
     clearInterval(heartbeat);

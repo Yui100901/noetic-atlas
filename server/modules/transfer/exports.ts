@@ -1,3 +1,4 @@
+import {questionStemMarkdown} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { typeLabels, type Question } from '../../../shared/models/types.js';
@@ -21,7 +22,7 @@ const points = (value: number) => `${Number(value.toFixed(2))}`;
 export function exportFilename(title: string, mode: ExportMode) { return `${plain(title).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 100) || '题集'}-${exportModeLabels[mode]}`; }
 
 function questionDocument(question: StoredLeafQuestion, number: number, document: ExportDocument, attempt?: StoredAttempt): ExportQuestion {
-  const q: ExportQuestion = { id: question.id, number, title: question.title, type: question.type, stemMarkdown: question.stemMarkdown, options: question.type === 'true_false' ? [{ key: 'true', text: '正确' }, { key: 'false', text: '错误' }] : question.options, difficulty: question.difficulty, depth: question.depth, frequency: question.frequency, points: document.scoring.enabled ? document.scoring.questionPoints[question.id]! : null };
+  const q: ExportQuestion = { id: question.id, number, title: questionStemMarkdown({type:question.type,stemMarkdown:question.title}), type: question.type, stemMarkdown: questionStemMarkdown(question), options: question.type === 'true_false' ? [{ key: 'true', text: '正确' }, { key: 'false', text: '错误' }] : question.options, difficulty: question.difficulty, depth: question.depth, frequency: question.frequency, points: document.scoring.enabled ? document.scoring.questionPoints[question.id]! : null };
   Object.assign(q, { sourceQuestionId: question.sourceQuestionId || question.id, groupId: question.groupId, groupTitle: question.groupTitle, groupStemMarkdown: question.groupStemMarkdown, partId: question.partId, partIndex: question.partIndex, blanks: question.blanks?.map(({ answers: _answers, ...blank }) => blank) });
   if (document.mode === 'blank') return q;
   q.blanks = question.blanks;

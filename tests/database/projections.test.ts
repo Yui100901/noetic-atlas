@@ -111,7 +111,7 @@ test('obsolete projection version invalidates stale derived content and rebuilds
     database.run(database.query.updateTable('metadata').set({ value: 'obsolete-test-version' }).where('key', '=', 'read_projection_version'));
     database.projections.initialize(); assert.ok(pending(database).length > 0); database.projections.refreshAll();
     assert.deepEqual(derived(database), expected); assert.deepEqual(canonical(database), originals);
-    assert.equal(database.one(database.query.selectFrom('metadata').select('value').where('key', '=', 'read_projection_version'))?.value, '5');
+    assert.equal(database.one(database.query.selectFrom('metadata').select('value').where('key', '=', 'read_projection_version'))?.value, '6');
   } finally { database.close(); }
 });
 

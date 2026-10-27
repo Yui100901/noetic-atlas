@@ -81,7 +81,7 @@ export class SearchProjections {
     const prompt = (item: any) => [item.stemMarkdown, ...(Array.isArray(item.options) ? item.options.map((option: any) => option.text) : []), ...(Array.isArray(item.blanks) ? item.blanks.map((blank: any) => blank.label) : [])];
     const references = (item: any) => [item.answerMarkdown, item.explanationMarkdown, ...(Array.isArray(item.blanks) ? item.blanks.flatMap((blank: any) => strings(blank.answers)) : [])];
     const content = [...prompt(record), ...parts.flatMap((part: any) => [part.title, ...prompt(part)])].filter(value => typeof value === 'string').join('\n');
-    const reference = [...references(record), record.vocabulary?.headword, record.vocabulary?.meaningPrompt, ...parts.flatMap(references)].filter(value => typeof value === 'string').join('\n');
+    const reference = [...references(record), record.vocabulary?.headword, record.vocabulary?.meaningPrompt, record.concept?.term, record.concept?.meaningPrompt, ...strings(record.concept?.acceptedAnswers), ...parts.flatMap(references)].filter(value => typeof value === 'string').join('\n');
     this.put('questions', record.id, 'question', metadata, content, reference, record.status === 'archived');
   }
   private note(source: 'study' | 'study_parts', sourceId: string, record: any, question: any) {

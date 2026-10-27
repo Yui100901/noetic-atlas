@@ -22,19 +22,28 @@ const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
 const eventOrder = (a: ReviewEvent, b: ReviewEvent) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.id.localeCompare(b.id);
 const identityOf = (card: ReviewIdentity): ReviewIdentity => ({ questionId: card.questionId, ...(card.partId ? { partId: card.partId } : {}), direction: card.direction });
 
-interface SourceHeader { id: string; status: string; type: string; hasVocabulary: boolean; leaves: Array<{ partId?: string; type: string }> }
+interface SourceHeader { id: string; status: string; type: string; hasVocabulary: boolean; hasConcept: boolean; hasLegacyStandard: boolean; leaves: Array<{ partId?: string; type: string }> }
 function sourceHeaders(store: Store, ids: string[]): Map<string, SourceHeader> {
   if (!ids.length) return new Map();
   const d = store.database, x = d.expressions;
+  const wanted = [...new Set(ids)];
+  // Metadata only, one batch lookup for the whole attempt. Adding concept
+  // metadata must not discard the established standard card's memory/events.
+  const legacy = new Set(d.all(d.query.selectFrom('review_cards').select(x.field<string>('data','questionId').as('questionId'))
+    .where(x.valueInJson(x.field<string>('data','questionId'),wanted)).where(x.field('data','partId'),'is',null).where(x.field('data','direction'),'=','standard')).map(row=>row.questionId));
   return new Map(d.all(d.query.selectFrom('questions').select('id').select([x.field<string>('data', 'status').as('status'), x.field<string>('data', 'type').as('type'), x.questionLearningLeaves('data').as('leaves')])
-    .select(eb => eb.case().when(x.field('data', 'vocabulary'), 'is', null).then(0).else(1).end().as('hasVocabulary')).where(x.idInJson('id', [...new Set(ids)]))).map(row => [row.id, { ...row, hasVocabulary: !!row.hasVocabulary, leaves: JSON.parse(row.leaves) }]));
+    .select(eb => eb.case().when(eb.and([eb(x.field('data', 'vocabulary'), 'is', null), eb(x.field('data', 'concept'), 'is', null)])).then(0).else(1).end().as('hasVocabulary'))
+    .select(eb=>eb.case().when(x.field('data','concept'),'is',null).then(0).else(1).end().as('hasConcept'))
+    .where(x.idInJson('id', wanted))).map(row => [row.id, { ...row, hasVocabulary: !!row.hasVocabulary, hasConcept:!!row.hasConcept, hasLegacyStandard:legacy.has(row.id), leaves: JSON.parse(row.leaves) }]));
 }
 function sourceIdentity(store: Store, questionId: string, partId?: string, direction?: ReviewDirection, supplied?: Map<string, SourceHeader>): ReviewIdentity {
   const question = (supplied || sourceHeaders(store, [questionId])).get(questionId);
   if (!question || question.status !== 'published') return fail(404, 'REVIEW_SOURCE_UNAVAILABLE', '题目已删除、归档或未发布，无法安排复习');
   if (question.type === 'group' ? !partId || !question.leaves.some(part => part.partId === partId) : partId !== undefined) fail(400, 'REVIEW_PART_INVALID', '请选择有效的小题；组合题按小题独立安排复习');
-  const resolved = question.hasVocabulary && (!direction || direction === 'standard') ? 'word_to_meaning' : direction || 'standard';
-  if (resolved !== 'standard' && (!question.hasVocabulary || partId)) fail(400, 'REVIEW_DIRECTION_INVALID', '只有词汇题可分别记录正向与逆向复习');
+  const forward = !direction || direction === 'standard' || direction === 'word_to_meaning';
+  const resolved = question.hasConcept && question.hasLegacyStandard && !partId && forward ? 'standard'
+    : question.hasVocabulary && (!direction || direction === 'standard') ? 'word_to_meaning' : direction || 'standard';
+  if (resolved !== 'standard' && (!question.hasVocabulary || partId)) fail(400, 'REVIEW_DIRECTION_INVALID', '只有词汇或概念卡可分别记录正向与逆向复习');
   return { questionId, ...(partId ? { partId } : {}), direction: resolved };
 }
 function eventsFor(store: Store, cardId: string): ReviewEvent[] {
@@ -107,7 +116,7 @@ function eligible(store: Store, attempt: StoredAttempt, leafId: string, headers?
   if (!question || attempt.status !== 'submitted') return { reason: '交卷后才可安排复习' };
   if (!isAnswerPresent(attempt.answers[leafId])) return { reason: '漏答不作为遗忘证据' };
   if (wasReset ?? !!store.get<any>('learning_results', attempt.id)?.reset) return { reason: '该作答属于重置前记录' };
-  const direction: ReviewDirection = attempt.vocabularyDirection || (question.vocabulary ? 'word_to_meaning' : 'standard');
+  const direction: ReviewDirection = attempt.vocabularyDirection || ((question.vocabulary || question.concept) ? 'word_to_meaning' : 'standard');
   let identity: ReviewIdentity;
   try { identity = sourceIdentity(store, question.sourceQuestionId || question.id, question.partId, direction, headers); } catch { return { reason: '原题或小题已不可用' }; }
   const header = headers?.get(identity.questionId);
@@ -158,7 +167,7 @@ export function attemptReviewOverview(store: Store, attempt: StoredAttempt): Att
   const cards = new Map(cardIds.length ? d.all(d.query.selectFrom('review_cards').select(['id', 'data']).where(x.idInJson('id', cardIds))).map(row => [row.id, JSON.parse(row.data) as ReviewCard]) : []);
   const headers = sourceHeaders(store, attempt.questions.map(question => question.sourceQuestionId || question.id)), wasReset = !!store.get<any>('learning_results', attempt.id)?.reset;
   return { attemptId: attempt.id, strategy: getSettings(store).reviewScheduling.strategy, items: attempt.questions.map(question => {
-    const state = eligible(store, attempt, question.id, headers, wasReset), direction = attempt.vocabularyDirection || (question.vocabulary ? 'word_to_meaning' : 'standard'), event = events.get(question.id);
+    const state = eligible(store, attempt, question.id, headers, wasReset), event = events.get(question.id), direction = event?.direction || state.identity?.direction || attempt.vocabularyDirection || ((question.vocabulary || question.concept) ? 'word_to_meaning' : 'standard');
     return { questionId: question.sourceQuestionId || question.id, ...(question.partId ? { partId: question.partId } : {}), direction, leafId: question.id,
       eligible: !!state.automatic, ...(state.reason ? { reason: state.reason } : {}), ...(event ? { eventId: event.id, rating: event.rating, ratingSource: event.ratingSource } : {}), card: event ? cards.get(event.cardId) || null : null };
   }) };
@@ -223,7 +232,8 @@ export function validateReviewImport(inputCards: unknown[], inputEvents: unknown
 
 export function reviewQueue(store: Store, input: { page: number; pageSize: number; domainId?: string; categoryId?: string; kind?: string; direction?: ReviewDirection }, at = new Date()): ReviewQueue {
   const d = store.database, x = d.expressions, timeZone = getSettings(store).dailyPush.timeZone, today = dailyCalendar(at, timeZone).dateKey;
-  const identities = d.all(d.query.selectFrom('review_cards').select([x.field<string>('data', 'questionId').as('questionId'), x.field<string | null>('data', 'partId').as('partId')]));
+  const identities = d.all(d.query.selectFrom('review_cards').select([x.field<string>('data', 'questionId').as('questionId'), x.field<string | null>('data', 'partId').as('partId'), x.field<ReviewDirection>('data','direction').as('direction')]));
+  const legacyStandard = new Set(identities.filter(row=>row.direction==='standard' && !row.partId).map(row=>row.questionId));
   const represented = new Set(identities.map(row => JSON.stringify([row.questionId, row.partId ?? null])));
   const broadUntil = new Date(at.getTime() + 2 * 86400000).toISOString();
   const allCards = d.all(d.query.selectFrom('review_cards').select('data').where(eb => eb.or([eb(x.field('data', 'suspended'), '=', 1), eb(x.field('data', 'dueAt'), '<=', broadUntil)]))).map(row => JSON.parse(row.data) as ReviewCard).filter(card => card.suspended || card.dueAt && Date.parse(card.dueAt) <= at.getTime());
@@ -234,7 +244,7 @@ export function reviewQueue(store: Store, input: { page: number; pageSize: numbe
     .filter(row => !represented.has(JSON.stringify([row.questionId, row.partId ?? null])) && row.nextReviewAt && Date.parse(row.nextReviewAt) <= at.getTime());
   const wanted = [...new Set([...allCards.map(card => card.questionId), ...legacy.map(row => row.questionId)])];
   const metadata = wanted.length ? d.all(d.query.selectFrom('questions').select('id').select([x.field<string>('data', 'title').as('title'), x.field<string>('data', 'type').as('type'), x.field<string>('data', 'categoryIds').as('categoryIds'), x.questionLearningLeaves('data').as('leaves')])
-    .select(eb => eb.case().when(x.field('data', 'vocabulary'), 'is', null).then(0).else(1).end().as('hasVocabulary')).where(x.idInJson('id', wanted)).where(x.field('data', 'status'), '=', 'published'))
+    .select(eb => eb.case().when(eb.and([eb(x.field('data', 'vocabulary'), 'is', null), eb(x.field('data', 'concept'), 'is', null)])).then(0).else(1).end().as('hasVocabulary')).select(eb=>eb.case().when(x.field('data','concept'),'is',null).then(0).else(1).end().as('hasConcept')).where(x.idInJson('id', wanted)).where(x.field('data', 'status'), '=', 'published'))
     .map(row => ({ id: row.id, data: { ...row, categoryIds: JSON.parse(row.categoryIds || '[]') as string[], parts: (JSON.parse(row.leaves) as Array<{ partId?: string }>).map(leaf => ({ id: leaf.partId })) } })) : [];
   const categories = input.categoryId ? new Set(store.categoryDescendants(input.categoryId)) : null;
   const domainCategories = input.domainId ? new Set(d.all(d.query.selectFrom('categories').select('id').where(x.field('data', 'domainId'), '=', input.domainId)).map(row => row.id)) : null;
@@ -242,13 +252,18 @@ export function reviewQueue(store: Store, input: { page: number; pageSize: numbe
   const pending: ReviewQueueItem[] = [], summary = { due: 0, overdue: 0, relearning: 0, today: 0, suspended: 0 };
   const add = (identity: ReviewIdentity, dueAt: string | null, card: ReviewCard | null) => {
     const question = questions.get(identity.questionId); if (!question || question.type === 'group' && !identity.partId || identity.partId && !question.parts?.some((part: any) => part.id === identity.partId)) return;
-    if (input.direction && input.direction !== identity.direction) return;
+    const logicalDirection: ReviewDirection = question.hasConcept && identity.direction === 'standard' ? 'word_to_meaning' : identity.direction;
+    // A legacy standard card is the concept's established forward identity.
+    // Keep a previously-created extra forward chain as history, not a second
+    // live due task competing with the canonical old card.
+    if (question.hasConcept && legacyStandard.has(identity.questionId) && identity.direction === 'word_to_meaning') return;
+    if (input.direction && input.direction !== logicalDirection) return;
     if (card?.suspended) { summary.suspended++; return; }
     if (!dueAt || !Number.isFinite(Date.parse(dueAt)) || Date.parse(dueAt) > at.getTime()) return;
     const overdue = dailyCalendar(new Date(dueAt), timeZone).dateKey < today, relearning = !!card && [1, 3].includes(card.memory.state);
     summary.due++; if (overdue) summary.overdue++; else summary.today++; if (relearning) summary.relearning++;
     if (input.kind === 'overdue' && !overdue || input.kind === 'today' && overdue || input.kind === 'relearning' && !relearning) return;
-    pending.push({ ...identity, key: reviewCardId(identity), title: question.title, ...(identity.partId ? { partTitle: identity.partId } : {}), href: `#/questions/${encodeURIComponent(identity.questionId)}${identity.partId ? '?part=' + encodeURIComponent(identity.partId) : ''}`, card, dueAt, reason: card ? relearning ? 'relearning' : overdue ? 'overdue' : 'today' : 'legacy' });
+    pending.push({ ...identity, ...(logicalDirection !== identity.direction ? {logicalDirection} : {}), ...(question.hasConcept ? {practiceKind:'concept' as const} : question.hasVocabulary ? {practiceKind:'vocabulary' as const} : {}), key: reviewCardId(identity), title: question.title, ...(identity.partId ? { partTitle: identity.partId } : {}), href: `#/questions/${encodeURIComponent(identity.questionId)}${identity.partId ? '?part=' + encodeURIComponent(identity.partId) : ''}`, card, dueAt, reason: card ? relearning ? 'relearning' : overdue ? 'overdue' : 'today' : 'legacy' });
   };
   for (const card of allCards) add(card, card.dueAt, card);
   for (const row of legacy) {

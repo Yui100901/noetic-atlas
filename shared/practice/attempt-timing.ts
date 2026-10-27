@@ -1,9 +1,16 @@
 import type { Attempt, AttemptAnswer, AttemptQuestion } from '../models/types.js';
 import { getObjectiveCorrect, isSubjectiveType } from '../questions/question-utils.js';
 
-/** Timestamps, rather than interval ticks, keep timers accurate across sleep and reload. */
-export function attemptElapsedSeconds(attempt: Pick<Attempt, 'startedAt' | 'submittedAt' | 'deadlineAt' | 'practiceMode' | 'elapsedSeconds' | 'status'>, currentTime = Date.now()): number {
+/** Practice reads show acknowledged active time only. A page owns its local
+ * monotonic stopwatch; drafts must never keep growing while nobody is reading.
+ * Exams retain their absolute deadline even across sleep and reload. */
+export function attemptElapsedSeconds(attempt: Pick<Attempt, 'startedAt' | 'submittedAt' | 'deadlineAt' | 'practiceMode' | 'elapsedSeconds' | 'status' | 'practiceTiming'>, currentTime = Date.now()): number {
   if (attempt.status === 'submitted' && attempt.elapsedSeconds != null) return attempt.elapsedSeconds;
+  if (attempt.practiceMode !== 'exam') {
+    if (attempt.practiceTiming) return Math.floor(attempt.practiceTiming.elapsedMilliseconds / 1000);
+    if (attempt.elapsedSeconds != null) return attempt.elapsedSeconds;
+    if (attempt.status === 'in_progress') return 0;
+  }
   const start = Date.parse(attempt.startedAt), end = attempt.submittedAt ? Date.parse(attempt.submittedAt) : currentTime;
   const limitedEnd = attempt.practiceMode === 'exam' && attempt.deadlineAt ? Math.min(end, Date.parse(attempt.deadlineAt)) : end;
   return Number.isFinite(start) && Number.isFinite(limitedEnd) ? Math.max(0, Math.floor((limitedEnd - start) / 1000)) : 0;

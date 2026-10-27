@@ -5,11 +5,11 @@ import { aiRequest } from './ai-api';
 import './ai.css';
 
 export interface AiPreviewItem { label: string; text: string }
-const previewLabels: Record<string,string> = {title:'标题',description:'说明',explanationMarkdown:'解析',followUpsMarkdown:'追问理解',pitfallsMarkdown:'误区与边界',comment:'评价',reason:'推荐理由',stemMarkdown:'题干',message:'服务回复'};
+const previewLabels: Record<string,string> = {title:'标题',description:'说明',summary:'知识块摘要',explanationMarkdown:'解析',followUpsMarkdown:'追问理解',pitfallsMarkdown:'误区与边界',comment:'评价',reason:'推荐理由',stemMarkdown:'题干',message:'服务回复'};
 /** Read only human-readable JSON string values, including an unfinished last
  * string. This is a display preview, never a parser or source of saved data. */
 export function aiReadablePreview(source: string): AiPreviewItem[] {
-  const result: AiPreviewItem[] = []; const keys = /"(title|description|explanationMarkdown|followUpsMarkdown|pitfallsMarkdown|comment|reason|stemMarkdown|message)"\s*:\s*"/g;
+  const result: AiPreviewItem[] = []; const keys = /"(title|description|summary|explanationMarkdown|followUpsMarkdown|pitfallsMarkdown|comment|reason|stemMarkdown|message)"\s*:\s*"/g;
   let match: RegExpExecArray | null;
   while ((match = keys.exec(source))) {
     let text = ''; let cursor = keys.lastIndex;
@@ -26,7 +26,7 @@ export function aiReadablePreview(source: string): AiPreviewItem[] {
   }
   return result.slice(-8);
 }
-interface AiProgressState {
+export interface AiProgressState {
   status: 'idle'|'running'|'completed'|'cancelled'|'failed';
   startedAt: number; elapsed: number; message: string; stages: string[];
   current?: number; total?: number; preview: AiPreviewItem[];

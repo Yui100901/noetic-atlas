@@ -1,3 +1,4 @@
+import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
 import { Store, makeId, now } from '../../core/store.js';
 import { bulkQuestionImportSchema, fail, parse, questionSchema } from '../../core/validation.js';
@@ -30,7 +31,8 @@ export function registerQuestionBankRoutes(app: FastifyInstance, store: Store) {
     const { data } = parse(bulkQuestionImportSchema, request.body);
     const result = store.transaction(() => {
       const stamp = now();
-      const entries = data.questions.map(input => {
+      const entries = data.questions.map(raw => {
+        const input=normalizeQuestionBlankStems(raw);
         assertNewQuestionId(input.id);
         store.validateRefs(input);
         validateAssetReferences(store, input);

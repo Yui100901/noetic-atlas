@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {buildApp} from '../../server/index.js';
+test('quality API documents bounded batches, versioned triage and source-state views',async t=>{
+ const app=await buildApp({databasePath:':memory:',seedPath:'missing-quality-openapi',staticRoot:'missing-web',native:true,dailyPushScheduler:false});t.after(()=>app.close());
+ const response=await app.inject('/api/openapi.json');assert.equal(response.statusCode,200);const paths=response.json().paths;
+ const body=(url:string)=>paths[url].post.requestBody.content['application/json'].schema;
+ assert.equal(body('/api/content-quality/scans/{id}/process').properties.batchSize.maximum,200);
+ assert.equal(body('/api/content-quality/issues/resolve').properties.ids.maxItems,100);
+ assert.ok(body('/api/content-quality/issues/{id}/resolve').required.includes('expectedUpdatedAt'));
+ const params=paths['/api/content-quality/issues'].get.parameters;assert.ok(params.some((p:any)=>p.in==='query'&&p.name==='rule'));assert.ok(params.some((p:any)=>p.name==='pageSize'));
+ const grouped=paths['/api/content-quality/questions'].get;assert.ok(grouped.parameters.some((p:any)=>p.name==='origin'));assert.ok(grouped.parameters.some((p:any)=>p.name==='pageSize'));
+ const group=grouped.responses['200'].content['application/json'].schema.properties.items.items;assert.ok(group.required.includes('questionId'));assert.ok(group.required.includes('issueCount'));assert.ok(group.required.includes('matchedIssueCount'));assert.ok(group.properties.counts);assert.deepEqual(group.properties.origins.items.enum,['scan','feedback']);
+ const overview=paths['/api/content-quality/overview'].get.responses['200'].content['application/json'].schema;assert.ok(overview.required.includes('totalQuestions'));assert.ok(overview.required.includes('activeQuestions'));assert.ok(overview.properties.totalIssues);
+ const result=paths['/api/content-quality/issues/{id}'].get.responses['200'].content['application/json'].schema;
+ assert.ok(result.properties.issue.required.includes('sourceChanged'));assert.ok(result.properties.issue.required.includes('relatedChanged'));assert.ok(result.properties.relatedQuestions);
+ assert.ok(result.required.includes('feedbacks'));assert.ok(result.properties.feedbacks.items.properties.qualityIssueId);
+ assert.ok(params.some((p:any)=>p.name==='origin'));assert.ok(params.some((p:any)=>p.name==='feedbackId'));
+ assert.equal(body('/api/content-quality/review-contexts').properties.ids.maxItems,20);
+ assert.ok(body('/api/content-quality/issues/{id}/review-context').required.includes('expectedUpdatedAt'));
+ const review=paths['/api/content-quality/issues/{id}/review-context'].post.responses['200'].content['application/json'].schema;assert.ok(review.properties.issue);assert.ok(review.properties.feedback);
+});

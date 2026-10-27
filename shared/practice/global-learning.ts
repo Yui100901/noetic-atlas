@@ -1,5 +1,5 @@
 import type { ContextLearningQuestion, ContextLearningSummary } from './context-learning.js';
-import type { VocabularyDirection } from '../models/types.js';
+import type { VocabularyDirection, PaperPracticeKind } from '../models/types.js';
 
 export type GlobalLearningKind = 'wrong' | 'favorite' | 'due';
 export interface GlobalLearningCounts { wrong: number; favorite: number; due: number }
@@ -7,7 +7,7 @@ export interface GlobalLearningSummary { counts: GlobalLearningCounts }
 /** Complete provenance, never silently truncated. A paper membership without an
  * attempt is retained separately from that paper's latest retained attempt. */
 export interface LearningOrigin {
-  vocabularyDirection?: VocabularyDirection;
+  practiceKind?: PaperPracticeKind; vocabularyDirection?: VocabularyDirection;
   source: 'paper' | 'quick' | 'library';
   paperId?: string;
   /** Saved title for an attempt, current title for a membership. */

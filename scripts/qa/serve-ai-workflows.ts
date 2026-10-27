@@ -5,7 +5,7 @@ import {resolve} from 'node:path';
 import {buildApp} from '../../server/index.js';
 
 const app=await buildApp({databasePath:':memory:',seedPath:resolve('test-results/no-ai-workflows-seed.json'),staticRoot:resolve('dist/web'),logger:false});
-const requests:{kind:string;questionIds:string[]}[]=[];
+const requests:{kind:string;questionIds:string[];source?:{mode:string;name:string;url?:string;text:string;task:string}}[]=[];
 let paperId='';const originalNotes='原始笔记：先理解，再用转账举例。';
 app.get('/qa/ai-workflows',async()=>{
   const questions=await api('/api/questions?status=all&pageSize=200',undefined,'GET'),s1=await api('/api/questions/S1',undefined,'GET');
@@ -28,11 +28,14 @@ const provider=createServer(async(request,response)=>{
       kind='review';questionIds=material.questions.map((q:any)=>q.id);
       result={items:material.questions.map((q:any)=>q.id==='BAD1'?{questionId:q.id,verdict:'needs_changes',issues:['通常整数算术中2+2=4，原答案错误。']}:{questionId:q.id,verdict:'valid',issues:[]})};
     }else if(input.outputSchema.questions){
-      kind='import';result={questions:[{title:'AI转换的事务判断题',type:'true_false',stemMarkdown:'事务中的操作要么整体提交，要么整体回滚。',answerMarkdown:'正确。',explanationMarkdown:'此题由原始资料转换，须经用户确认与审核。',correctAnswers:['true'],options:[],categoryIds:material.selectedCategoryIds||[],tagIds:material.selectedTagIds||[]}],taxonomySuggestions:{domains:[],categories:[],tags:[]}};
+      kind='import';result={questions:material.mode==='generate'?[
+        {title:'教材生成的原子性概念题',type:'short_answer',stemMarkdown:'根据教材说明事务原子性的含义。',answerMarkdown:'一组操作整体提交或整体回滚。',explanationMarkdown:'教材第一段说明事务操作必须作为整体处理。',difficulty:2},
+        {title:'教材生成的转账应用题',type:'short_answer',stemMarkdown:'根据教材解释转账中只扣款未入账违背什么性质。',answerMarkdown:'违背事务原子性，因为操作没有整体完成。',explanationMarkdown:'教材转账示例要求扣款与入账共同完成。',difficulty:2},
+      ]:[{title:'AI转换的事务判断题',type:'true_false',stemMarkdown:'事务中的操作要么整体提交，要么整体回滚。',answerMarkdown:'正确。',explanationMarkdown:'此题由原始资料转换，须经用户确认与审核。',correctAnswers:['true'],options:[],categoryIds:material.selectedCategoryIds||[],tagIds:material.selectedTagIds||[]}],taxonomySuggestions:{domains:[],categories:[],tags:[]}};
     }else{
       kind='explain';questionIds=[material.question.id];result={explanationMarkdown:'QA解释：事务原子性要求整组操作一起提交或回滚，不能留下转账只扣款未入账的中间结果。',followUpsMarkdown:'隔离性约束并发事务间的可见性，与原子性不同。',pitfallsMarkdown:'事务原子性不表示所有事务必须实际串行执行。'};
     }
-    requests.push({kind,questionIds});response.writeHead(200,{'Content-Type':'application/json',Connection:'close'});response.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}]}));
+    requests.push({kind,questionIds,...(kind==='import'?{source:{mode:material.mode,name:material.sourceName,url:material.sourceUrl,text:material.text,task:input.task}}:{})});response.writeHead(200,{'Content-Type':'application/json',Connection:'close'});response.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}]}));
   }catch{response.writeHead(400,{'Content-Type':'application/json'});response.end('{}');}
 });
 await new Promise<void>(done=>provider.listen(0,'127.0.0.1',done));

@@ -5,7 +5,8 @@ export interface AiSettings {
   supportsImages: boolean; sendImages: boolean; timeoutSeconds: number; maxTokens: number; updatedAt: string;
 }
 export interface AiSettingsInput extends Omit<AiSettings, 'hasKey' | 'updatedAt'> { updatedAt?: string; key?: string; clearKey?: boolean }
-export type AiRunKind = 'explain' | 'grade' | 'import' | 'review' | 'paper_plan';
+export const AI_RUN_KINDS = ['explain', 'grade', 'import', 'review', 'paper_plan', 'document_plan', 'document_generate', 'connection_test', 'feedback_review', 'similar_questions'] as const;
+export type AiRunKind = typeof AI_RUN_KINDS[number];
 export const AI_PAPER_MAX_QUESTIONS = 500;
 export interface AiPaperPlanItem { questionId: string; reason: string }
 export interface AiPaperPlanRetrieval { availableCount: number; matchedCount: number; reviewedCount: number; batches: number; interpreted: boolean; summary: string }
@@ -22,14 +23,34 @@ export function normalizeAiGradeItem(item: Omit<AiGradeItem, 'verdict'> & { verd
   const canDerive = item.score != null && item.maxPoints != null && item.maxPoints > 0;
   return { ...item, verdict: item.verdict ?? (canDerive ? aiScoreVerdict(item.score!, item.maxPoints!) : 'partial'), ...(!item.verdict && !canDerive ? { requiresRegrade: true as const } : {}) };
 }
-export interface AiImportResult { questions: QuestionInput[]; taxonomySuggestions: { domains: string[]; categories: string[]; tags: string[] } }
+export type AiImportMode = 'extract' | 'generate';
+export interface AiImportSource { mode: AiImportMode; name: string; url?: string; requirements?: string }
+export interface AiImportResult { questions: QuestionInput[]; taxonomySuggestions: { domains: string[]; categories: string[]; tags: string[] }; source?: AiImportSource }
 export interface AiReviewItem { questionId: string; verdict: 'valid' | 'needs_changes' | 'uncertain'; issues: string[]; suggestedChanges?: QuestionInput }
 export interface AiReviewResult { items: AiReviewItem[]; approvedIds: string[] }
-export interface AiRun<Result = AiExplanation | AiGradeResult | AiImportResult | AiReviewResult | AiPaperPlanResult> {
-  id: string; kind: AiRunKind; status: 'completed'; createdAt: string; model: string; warnings: string[];
-  questionIds: string[]; attemptId?: string; result: Result; appliedAt?: string;
+export interface AiValidationIssue { path: string; rule: string; message: string }
+export interface AiProviderAttempt {
+  index: number; startedAt: string; finishedAt?: string; durationMs?: number;
+  phase: string; inputBytes: number; outputBytes: number; httpStatus?: number; finishReason?: string;
+  status?: 'completed' | 'failed'; code?: string;
+}
+export interface AiDiagnostics {
+  startedAt: string; finishedAt: string; durationMs: number; stage: string; providerCalls: number;
+  inputBytes: number; outputBytes: number; httpStatus?: number; finishReason?: string; attempts: AiProviderAttempt[];
+}
+export interface AiFailure {
+  code: string; message: string; stage: string; retryable: boolean; recommendation: string; statusCode?: number;
+  jsonLocation?: { offset?: number; line?: number; column?: number }; validationIssues?: AiValidationIssue[];
+}
+export interface AiRunBase {
+  id: string; kind: AiRunKind; createdAt: string; model: string; warnings: string[];
+  questionIds: string[]; attemptId?: string; appliedAt?: string; jobId?: string; batchId?: string; feedbackId?: string; diagnostics?: AiDiagnostics;
   appliedScores?: string[]; appendedNotes?: string[]; importedQuestionIds?: string[]; correctedQuestionIds?: string[]; createdPaperId?: string;
 }
+export type AiRun<Result = AiExplanation | AiGradeResult | AiImportResult | AiReviewResult | AiPaperPlanResult> = AiRunBase & (
+  | { status: 'completed'; result: Result; failure?: never }
+  | { status: 'failed' | 'cancelled'; failure: AiFailure; diagnostics: AiDiagnostics; result?: never }
+);
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   enabled: false, baseUrl: '', model: '', hasKey: false, supportsImages: false, sendImages: false,
   timeoutSeconds: 60, maxTokens: 4096, updatedAt: '1970-01-01T00:00:00.000Z',

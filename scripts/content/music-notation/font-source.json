@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/steinbergmedia/bravura",
+  "revision": "37b194378b710cc40e406ab6c4b07608bb9548ae",
+  "files": [
+    {
+      "path": "redist/otf/Bravura.otf",
+      "file": "Bravura.otf",
+      "sha256": "cdf0f893ee1fdb64b7f6713d71ee0dcfc349c0ac01429a8e451b01a9e79f5f3b",
+      "bytes": 889228
+    },
+    {
+      "path": "LICENSE.txt",
+      "file": "LICENSE.txt",
+      "sha256": "bdca252186865f3b2c0e76da4a4e335c14ba1d37f80194fca254ddfa88e84fbf",
+      "bytes": 4420
+    }
+  ]
+}

@@ -16,8 +16,16 @@ export function dashboardStats(store:Store) {
   const db=store.database,field=db.expressions.field.bind(db.expressions),q=db.query;
   db.projections.ensure(['questions','papers']);
   const groups=db.all(q.selectFrom('question_read_model').select([field<string>('data','type').as('type'),field<string>('data','collection').as('collection')]).select(eb=>eb.fn.countAll<number>().as('count')).where(field('data','status'),'=','published').groupBy([field('data','type'),field('data','collection')]));
-  const stats={totalQuestions:0,generalQuestions:0,personalQuestions:0,totalPapers:0,totalDocuments:0,favoriteCount:0,dueCount:0,wrongCount:0,typeCounts:{} as Record<string,number>};
+  const stats={totalQuestions:0,generalQuestions:0,personalQuestions:0,totalPapers:0,totalDocuments:0,favoriteCount:0,dueCount:0,wrongCount:0,typeCounts:{} as Record<string,number>,domainQuestionCounts:{} as Record<string,{published:number;pending:number}>};
   for(const row of groups){const n=Number(row.count);stats.totalQuestions+=n;if(row.collection==='general')stats.generalQuestions+=n;if(row.collection==='personal')stats.personalQuestions+=n;stats.typeCounts[row.type]=(stats.typeCounts[row.type]||0)+n;}
+  const domainCounts=db.all(q.selectFrom('question_read_model as question')
+    .innerJoin(db.expressions.arrayElements('question.data','categoryIds').as('membership'),join=>join.onTrue())
+    .innerJoin('categories as category','category.id','membership.value')
+    .select([field<string>('category.data','domainId').as('domainId'),field<string>('question.data','status').as('status')])
+    .select(eb=>eb.fn.count<number>('question.id').distinct().as('count'))
+    .where(field('question.data','status'),'in',['published','pending'])
+    .groupBy([field('category.data','domainId'),field('question.data','status')]));
+  for(const row of domainCounts){const counts=stats.domainQuestionCounts[row.domainId] ||= {published:0,pending:0};counts[row.status as 'published'|'pending']=Number(row.count);}
   // Read tiny study metadata, never question bodies or Markdown notes.
   const states=db.all(q.selectFrom('study as s').innerJoin('question_read_model as q','q.id','s.id').select([field<string>('q.data','type').as('type'),field<boolean>('s.data','favorite').as('favorite'),field<number>('s.data','wrongCount').as('wrongCount'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt')]).where(field('q.data','status'),'=','published'));
   const stamp=Date.now();for(const state of states){if(state.favorite)stats.favoriteCount++;if(state.type==='group')continue;if(state.wrongCount>0)stats.wrongCount++;if(state.nextReviewAt&&Date.parse(state.nextReviewAt)<=stamp)stats.dueCount++;}

@@ -24,7 +24,7 @@ try {
   const api=async(path,method='GET',data)=>{const response=await page.request.fetch(origin+path,{method,...(data===undefined?{}:{data})});assert.ok(response.ok(),await response.text());return response.json();};
   await page.goto(origin+'/#/papers');await page.getByRole('heading',{name:'我的题集',exact:false}).waitFor();assert.equal(await page.locator('.sidebar a[href="#/banks"]').count(),0);
   await page.getByRole('heading',{name:'迁移后的学习题集',exact:true}).click();await page.getByRole('heading',{name:'题集内容',exact:false}).waitFor();const location=page.url();
-  assert.equal(await page.locator('.question-set-question-row').count(),20);await page.getByLabel('查看题目：顺序题目19',{exact:true}).click();
+  await page.getByLabel('查看题目：顺序题目19',{exact:true}).waitFor();assert.equal(await page.locator('.question-set-question-row').count(),20);await page.getByLabel('查看题目：顺序题目19',{exact:true}).click();
   const reader=page.locator('main');await reader.getByRole('heading',{name:'顺序题目19',exact:true}).first().waitFor();assert.match(page.url(),/#\/papers\/old-reference-set\/questions\/BROWSE-19/);assert.equal(await page.getByRole('dialog').count(),0);
   await reader.getByRole('link',{name:'下一题',exact:true}).click();await reader.getByRole('heading',{name:'顺序题目20',exact:true}).first().waitFor();assert.notEqual(page.url(),location);
   await reader.getByRole('button',{name:'展开答案与解析',exact:true}).click();await reader.getByText('保存的答案 20',{exact:true}).waitFor();
@@ -32,7 +32,7 @@ try {
   await reader.getByLabel('我的学习笔记',{exact:true}).fill('题集内保存的笔记');await reader.getByRole('button',{name:'保存笔记',exact:true}).click();await page.getByRole('status').filter({hasText:'学习记录已保存'}).waitFor();
   assert.equal((await api('/api/questions/BROWSE-20')).study.notes,'题集内保存的笔记');
   await reader.getByRole('link',{name:'上一题',exact:true}).click();await reader.getByRole('heading',{name:'顺序题目19',exact:true}).first().waitFor();await reader.getByRole('link',{name: /^返回题集(?:\s|$)/}).click();
-  assert.ok(!page.url().includes('/questions/'));assert.equal(await page.locator('.question-set-question-row').count(),20);checks.push('题集独立看题页面、跨页前后切换、答案及笔记保存正常，返回恢复原列表');
+  assert.ok(!page.url().includes('/questions/'));await page.getByLabel('查看题目：顺序题目19',{exact:true}).waitFor();assert.equal(await page.locator('.question-set-question-row').count(),20);checks.push('题集独立看题页面、跨页前后切换、答案及笔记保存正常，返回恢复原列表');
   await page.getByRole('navigation',{name:'题集题目分页',exact:true}).getByRole('button',{name:/下一页/}).click();await page.getByLabel('查看题目：顺序题目20',{exact:true}).click();await reader.getByRole('button',{name:'展开答案与解析',exact:true}).click();await reader.getByText('保存的答案 20',{exact:true}).waitFor();assert.equal(await reader.getByText('修改后的原题答案',{exact:true}).count(),0);
   await reader.getByRole('link',{name: /^返回题集(?:\s|$)/}).click();await page.getByRole('navigation',{name:'题集题目分页',exact:true}).getByText(/第 2 \/ 2 页/).waitFor();checks.push('返回题集保留列表页码，原题修改不替换题集快照');
   await page.setViewportSize({width:390,height:844});await page.getByLabel('查看题目：顺序题目20',{exact:true}).click();await reader.getByRole('heading',{name:'顺序题目20',exact:true}).first().waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.ok(await reader.evaluate(node=>node.scrollWidth<=node.clientWidth+1));await page.screenshot({path:output+'/question-viewer-mobile.png'});await reader.getByRole('link',{name: /^返回题集(?:\s|$)/}).click();checks.push('390px移动端题集与独立看题页面无横向溢出');

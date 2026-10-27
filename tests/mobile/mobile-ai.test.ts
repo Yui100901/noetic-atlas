@@ -13,11 +13,12 @@ test('AI in the production mobile WASM runtime persists and applies only confirm
   await build({configFile:false,logLevel:'error',define:{'process.env':'{}'},resolve:{alias:nativeAliases},build:{outDir:folder,emptyOutDir:false,minify:false,lib:{entry:resolve('mobile/runtime.ts'),formats:['es'],fileName:()=> 'runtime.mjs'}}});
   const {createLocalRuntime}=await import(pathToFileURL(resolve(folder,'runtime.mjs')).href);
   const sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
-  let durable:Uint8Array|undefined,failSave=false,calls=0;
+  let durable:Uint8Array|undefined,failSave=false,calls=0,invalidProvider=false;
   const storage={async load(){return durable?.slice();},async save(bytes:Uint8Array){if(failSave)throw new Error('disk full');durable=bytes.slice();}};
   const seed={schemaVersion:1,generatedAt:new Date().toISOString(),domains:[],categories:[],tags:[],questions:[],documents:[],papers:[]};
   let runtime=await createLocalRuntime(sql,seed,storage);
   const provider=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);assert.equal(req.headers.authorization,'Bearer mobile-test-key');const material=JSON.parse(body.messages[1].content);calls++;let result;
+    if(invalidProvider){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{invalid JSON'}}]}));return;}
     if(material.task.includes('逐项评价'))result={items:material.untrustedMaterial.items.map((item:any)=>({questionId:item.questionId,score:item.maxPoints===null?null:item.maxPoints/2,maxPoints:item.maxPoints,comment:'移动端评价：概念正确，可补充事务边界。',strengths:['概念明确'],improvements:['说明边界']}))};
     else result={explanationMarkdown:'移动端原子性解释',followUpsMarkdown:'追问日志恢复',pitfallsMarkdown:'并发与原子性的区别'};
     res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}]}));
@@ -50,5 +51,23 @@ test('AI in the production mobile WASM runtime persists and applies only confirm
     const applied=await api(`/api/ai/runs/${run.id}/apply`,'POST',{confirmed:true,applyScores:true,appendNotes:true});assert.equal(applied.attempt.subjectiveScore,4);
     const runsBefore=(await api('/api/ai/runs')).length;const bytesBefore=durable!.slice();failSave=true;await api('/api/ai/explain','POST',{questionId:question.id},507);failSave=false;
     assert.equal((await api('/api/ai/runs')).length,runsBefore);assert.deepEqual(durable,bytesBefore);assert.equal(calls,3);
+  });
+  await t.test('provider errors retain only safe failure audit across restart, and disk failure rolls it back',async()=>{
+    const notesBefore=(await api(`/api/questions/${question.id}`)).study.notes;
+    const runsBefore=(await api('/api/ai/runs')).length;
+    invalidProvider=true;
+    const response=await runtime.fetch('/api/ai/explain',{method:'POST',body:JSON.stringify({questionId:question.id})});
+    assert.equal(response.status,502);
+    const error=await response.json() as any;
+    assert.equal(error.error.code,'AI_INVALID_JSON');
+    const auditId=response.headers.get('x-atlas-ai-audit-id');assert.ok(auditId);
+    await runtime.close();runtime=await createLocalRuntime(sql,seed,storage);
+    const runs=await api('/api/ai/runs');assert.equal(runs.length,runsBefore+1);
+    const failed=runs.find((run:any)=>run.id===auditId);assert.equal(failed.status,'failed');assert.equal(failed.failure.code,'AI_INVALID_JSON');assert.equal(failed.result,undefined);
+    assert.ok(!JSON.stringify(failed).includes('mobile-test-key'));assert.ok(!JSON.stringify(failed).includes('{invalid JSON'));
+    assert.equal((await api(`/api/questions/${question.id}`)).study.notes,notesBefore);
+    const durableBefore=durable!.slice();failSave=true;
+    await api('/api/ai/explain','POST',{questionId:question.id},507);failSave=false;invalidProvider=false;
+    assert.deepEqual(durable,durableBefore);assert.equal((await api('/api/ai/runs')).length,runsBefore+1);
   });
 });

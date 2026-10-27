@@ -6,6 +6,7 @@ import type { LocalApp } from './shims/fastify';
 import type { SQLiteRecoveryBackup, SQLiteRestorePreview, SQLiteRestoreResult } from '../shared/models/sqlite-restore';
 import { prepareSQLiteRestore, shareableRecoveryBytes } from './restore-validation';
 import { databaseCounts, hasActiveExam } from './database/restore-database';
+import { pendingFailureAudit, replayFailureAudit } from './database/ai-audit-commit';
 import { dailyPushTimerDelay, dailyPushRefreshesAfter } from '../server/scheduling/daily-push';
 import { isDailyPushDue } from '../server/modules/daily-push/calendar';
 import type { DailyPushOverview, DailyPushSettings } from '../shared/models/daily-push';
@@ -56,7 +57,7 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       const pathname = new URL(url, 'https://localhost').pathname;
       // These queries carry JSON through POST rather than a long URL. They
       // must also work with read-only storage and never trigger a full save.
-      const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata','/api/learning/card-summaries'].includes(new URL(url,'https://localhost').pathname);
+      const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata','/api/learning/card-summaries','/api/question-feedback/summaries'].includes(new URL(url,'https://localhost').pathname);
       const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!readOnlyPost;
       // Freeze only the daily calendar for this serialized operation. A no-op
       // check must not export/rewrite a potentially large SQLite file, and the
@@ -73,12 +74,14 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       const write = mutation && !noDailyMutation;
       if (write && reloadRequired) return new Response(JSON.stringify({ error: { code: 'DATABASE_RESTORED', message: '数据库已恢复，请刷新应用后继续修改。' } }), { status: 409, headers: { 'Content-Type': 'application/json' } });
       const before = write ? database.export() : undefined;
+      const startedAt = Date.now();
       let response: Response;
       try { response = await app.inject(url, options); }
       catch (error) { if (write) database.restore(before!); throw error; }
       if (write) {
-        if (!response.ok) database.restore(before!);
-        else try { const bytes = database.export(); await storage.save(bytes); durableBaseline = bytes.slice(); revision++; }
+        const audit = !response.ok ? pendingFailureAudit(database, response, pathname, startedAt) : undefined;
+        if (!response.ok) { database.restore(before!); if (audit) replayFailureAudit(database, audit); }
+        if (response.ok || audit) try { const bytes = database.export(); await storage.save(bytes); durableBaseline = bytes.slice(); revision++; }
         catch {
           database.restore(before!);
           return new Response(JSON.stringify({ error: { code: 'LOCAL_STORAGE_FAILED', message: '保存到手机失败，本次修改已撤销。请检查剩余空间后重试，并及时导出备份。' } }), { status: 507, headers: { 'Content-Type': 'application/json' } });

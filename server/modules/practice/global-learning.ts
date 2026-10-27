@@ -99,7 +99,7 @@ function wrongCandidates(contexts:Context[]):GlobalCandidate[] {
 }
 function attemptOrigin(context:Context,entry:Entry,paperMap:Map<string,PaperMetadata>):LearningOrigin {
   const a=entry.attempt,paper=paperMap.get(context.paperId);
-  return {...(a.vocabularyDirection?{vocabularyDirection:a.vocabularyDirection}:{}),source:context.source,...(context.source==='paper'?{paperId:context.paperId,deleted:!paper,archived:!!paper?.archived}:{}),paperTitle:a.paperTitle||'随机练习',attemptId:a.id,historyAvailable:a.historyAvailable,paperVersion:a.paperVersion,startedAt:a.startedAt,submittedAt:a.submittedAt,questionId:entry.id,...(entry.answerState?{answerState:entry.answerState}:{}),wrongCount:context.wrongCounts.get(entry.key)||0};
+  return {...(a.practiceKind?{practiceKind:a.practiceKind}:{}),...(a.vocabularyDirection?{vocabularyDirection:a.vocabularyDirection}:{}),source:context.source,...(context.source==='paper'?{paperId:context.paperId,deleted:!paper,archived:!!paper?.archived}:{}),paperTitle:a.paperTitle||'随机练习',attemptId:a.id,historyAvailable:a.historyAvailable,paperVersion:a.paperVersion,startedAt:a.startedAt,submittedAt:a.submittedAt,questionId:entry.id,...(entry.answerState?{answerState:entry.answerState}:{}),wrongCount:context.wrongCounts.get(entry.key)||0};
 }
 function hydrate(store:Store,candidates:GlobalCandidate[],kind:GlobalLearningKind,contexts:Context[]):GlobalLearningQuestion[] {
   if(!candidates.length)return [];

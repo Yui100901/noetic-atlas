@@ -5,10 +5,12 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from 'vite';
+import { tsImport } from 'tsx/esm/api';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 const root = resolve(import.meta.dirname, '../..'), folder = resolve(root, 'test-results/web-loading');
-const checks = [], pageErrors = [], requests = [], unexpected = [], networkErrors = [];
+const checks = [], pageErrors = [], requests = [], unexpected = [], networkErrors = [], pendingModules = new Set();
+const { DEFAULT_SETTINGS } = await tsImport('../../shared/models/settings.ts', import.meta.url);
 await mkdir(folder, { recursive: true });
 const harness = `
 import React, {useState} from 'react';
@@ -31,8 +33,10 @@ function Harness(){
 }
 createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(Harness)));
 `;
+const fixturePreparationStarted = performance.now();
 const vite = await createServer({
   root, configFile: resolve(root, 'vite.config.ts'), cacheDir: resolve(folder, 'vite-cache'),
+  optimizeDeps: { entries: [resolve(root, 'index.html')] },
   server: { host: '127.0.0.1', port: 0, strictPort: false, open: false },
   plugins: [{
     name: 'qa-web-loading-fixture',
@@ -52,12 +56,22 @@ const vite = await createServer({
 let browser;
 try {
   await vite.listen();
+  // This checks request scheduling/cancellation, not the dev server's source
+  // transformation startup. Do not crawl generated QA HTML as app entries.
+  await vite.environments.client.warmupRequest('/web/app/main.tsx');
+  await vite.environments.client.warmupRequest('/qa-loading-harness.tsx');
+  await vite.environments.client.waitForRequestsIdle();
+  const fixturePreparationMs = Math.round(performance.now() - fixturePreparationStarted);
+  console.log('WEB_LOADING_PREPARATION ' + JSON.stringify({ fixturePreparationMs }));
   const origin = vite.resolvedUrls.local[0].replace(/\/$/, '');
   console.log('WEB_LOADING_FIXTURE ' + origin);
   browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined), headless: true });
   const page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   page.setDefaultTimeout(60_000);
   page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('request', request => pendingModules.add(request.url()));
+  page.on('requestfinished', request => pendingModules.delete(request.url()));
+  page.on('requestfailed', request => pendingModules.delete(request.url()));
   page.on('requestfailed', request => networkErrors.push({ url: request.url(), failure: request.failure() }));
   page.on('console', message => { if (message.type() === 'error') networkErrors.push({ console: message.text() }); });
   const stamp = new Date().toISOString(); let favorite = false;
@@ -69,6 +83,7 @@ try {
     sourceAnchor: null, createdAt: stamp, updatedAt: stamp,
   };
   const bootstrap = () => ({
+    settings: { ...structuredClone(DEFAULT_SETTINGS), reviewScheduling: { ...DEFAULT_SETTINGS.reviewScheduling, strategy: 'fixed' } },
     domains: [{ id: 'qa-domain', name: '通用学习', description: '', sortOrder: 0 }],
     categories: [{ id: 'qa-category', name: '基础知识', domainId: 'qa-domain', parentId: null, description: '', sortOrder: 0 }],
     tags: [{ id: 'qa-tag', name: '概念题', domainId: null, kind: 'method', description: '', color: '#3c7661' }],
@@ -80,8 +95,11 @@ try {
     requests.push(entry); let data, latency = 0;
     if (url.pathname === '/api/bootstrap') { data = bootstrap(); latency = 300; }
     else if (url.pathname === '/api/exams/sync') { data = { attempt: null }; latency = 350; }
+    else if (url.pathname === '/api/daily-push') data = { config: DEFAULT_SETTINGS.dailyPush, today: null, recent: [], recentLimit: 30, unreadCount: 0, nextDateKey: '2026-10-27' };
+    else if (url.pathname === '/api/question-feedback/summaries') data = { summaries: Object.fromEntries((request.postDataJSON()?.questionIds || []).map(id => [id, { openCount: 0, pendingCount: 0, confirmedCount: 0, partIds: [], wholeCount: 0, partCounts: {} }])) };
     else if (url.pathname === '/api/questions') data = { items: [{ ...question, study: { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 } }], total: 1, page: 1, pageSize: 20 };
     else if (url.pathname === '/api/questions/' + question.id) data = { ...question, study: { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 } };
+    else if (url.pathname === '/api/questions/' + question.id + '/statistics') data = { answered: 0, correct: 0, partial: 0, incorrect: 0, ungraded: 0, lastAnsweredAt: null };
     else if (url.pathname === '/api/ai/runs') data = [];
     else if (url.pathname === '/api/paper-drafts') data = [];
     else if (url.pathname === '/api/study/' + question.id && request.method() === 'PUT') {
@@ -170,10 +188,10 @@ try {
   checks.push('计时/输入等父级更新保持正文DOM，Markdown内容变化仍正常重解析');
   assert.deepEqual(unexpected, []); assert.deepEqual(pageErrors, []);
   checks.push('全部请求使用隔离本地fixture，无真实数据库、AI调用或页面异常');
-  const report = { passed: checks.length, checks, requests, pageErrors, database: 'none', server: 'Vite source fixture' };
+  const report = { passed: checks.length, checks, requests, pageErrors, database: 'none', server: 'Vite source fixture', fixturePreparationMs };
   await writeFile(resolve(folder, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   await rm(resolve(folder, 'failure.json'), { force: true });
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 } catch (error) {
-  await writeFile(resolve(folder, 'failure.json'), JSON.stringify({ error: String(error.stack || error), checks, requests, unexpected, pageErrors, networkErrors }, null, 2) + '\n'); throw error;
+  await writeFile(resolve(folder, 'failure.json'), JSON.stringify({ error: String(error.stack || error), checks, requests, unexpected, pageErrors, networkErrors, pendingModules: [...pendingModules] }, null, 2) + '\n'); throw error;
 } finally { await browser?.close(); await vite.close(); }

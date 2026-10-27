@@ -6,8 +6,10 @@ import { isNativeApp, nativeFetch } from '@platform';
 import { createSseParser } from '../../../shared/ai/sse';
 
 // View contracts mirror the local AI service; provider credentials never enter results.
-export type { AiSettings as AiSettingsView, AiRun as AiRunView, AiExplanation as AiExplanationResult, AiGradeItem, AiGradeResult, AiImportResult, AiReviewItem, AiReviewResult } from '../../../shared/ai/ai';
-export const aiRunApply = <Result=unknown>(id:string, options:{applyScores?:boolean;appendNotes?:boolean;questionIds?:string[]}) => send<{attempt?:Attempt;run:AiRun<Result>}>(`/api/ai/runs/${idPath(id)}/apply`, 'POST', { confirmed:true, ...options });
+export type { AiSettings as AiSettingsView, AiExplanation as AiExplanationResult, AiGradeItem, AiGradeResult, AiImportResult, AiReviewItem, AiReviewResult } from '../../../shared/ai/ai';
+/** Result tools only receive completed runs. History uses the complete AiRun union. */
+export type AiRunView<Result = unknown> = Extract<AiRun<Result>, { status: 'completed' }>;
+export const aiRunApply = <Result=unknown>(id:string, options:{applyScores?:boolean;appendNotes?:boolean;questionIds?:string[]}) => send<{attempt?:Attempt;run:AiRunView<Result>}>(`/api/ai/runs/${idPath(id)}/apply`, 'POST', { confirmed:true, ...options });
 
 export interface AiRequestOptions { onProgress?: (event: AiProgressUpdate) => void; signal?: AbortSignal }
 function aborted(signal?: AbortSignal) { if (signal?.aborted) throw new DOMException('已取消本次 AI 请求', 'AbortError'); }

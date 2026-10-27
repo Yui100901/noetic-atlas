@@ -7,6 +7,7 @@ const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(proces
 const code=`import {buildApp} from './server/index.ts';
 const app=await buildApp({databasePath:':memory:',seedPath:'no-global-learning-qa',staticRoot:'dist/web'});
 const call=async(method,url,payload)=>{const response=await app.inject({method,url,...(payload===undefined?{}:{payload})});if(response.statusCode>=400)throw Error(response.body);return response.json();};
+const settings=await call('GET','/api/settings');await call('PUT','/api/settings',{settings:{...settings,reviewScheduling:{...settings.reviewScheduling,strategy:'fixed'}}});
 const extra=Array.from({length:25},(_,index)=>({id:'G-PAGE-'+index,title:'分页错误'+index,type:'true_false',stemMarkdown:'分页材料 '+index,correctAnswers:['true'],status:'published'}));
 await call('POST','/api/import',{mode:'merge',data:{schemaVersion:1,domains:[],categories:[],tags:[],documents:[],papers:[],questions:[{id:'G-SHARED',title:'共享题的原始快照',type:'true_false',stemMarkdown:'题集保存的旧题干',correctAnswers:['true'],answerMarkdown:'题集保存的旧答案',status:'published'},{id:'G-LIB',title:'仅在知识题库收藏的题目',type:'short_answer',stemMarkdown:'从未加入题集的题目',answerMarkdown:'知识题库原始答案',status:'published'},...extra]}});
 const makeSet=(title,questionIds)=>call('POST','/api/papers',{title,mode:'manual',questionIds,scoring:{enabled:false}});

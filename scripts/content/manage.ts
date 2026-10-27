@@ -1,3 +1,4 @@
+import {normalizeQuestionBlankStems} from '../../shared/questions/blank-markers.js';
 /** Content tooling never promotes new questions or overwrites the user's rows. */
 import { existsSync } from 'node:fs';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
@@ -60,9 +61,10 @@ export function validatePack(raw:any) {
   for(const c of categories.values()){let at=c;const seen=new Set();while(at.parentId){if(seen.has(at.id))throw new Error('Category cycle');seen.add(at.id);const parent=categories.get(at.parentId);if(!parent||parent.domainId!==c.domainId)throw new Error('Invalid category parent');at=parent;}}
   const ids=new Set<string>();
   const questions=raw.questions.map((q:any)=>{
-    const value=questionSchema.parse(q) as Question;
+    const value=normalizeQuestionBlankStems(questionSchema.parse(q)) as Question;
     if(!value.id||ids.has(value.id)||value.status!=='pending'||value.collection!=='general'||value.sourceDocument||Object.hasOwn(q,'resumePriority')||q.study)throw new Error('New content must be unique, generic and pending: '+value.id);
-    if(!value.answerMarkdown.trim()||!value.explanationMarkdown.trim()||!value.categoryIds.length||!value.tagIds.length||!value.sourceRefs.length)throw new Error('Incomplete question: '+value.id);
+    // questionSchema owns field optionality. Pack taxonomy is checked only
+    // when supplied; authoring tools do not invent extra required fields.
     const questionDomains=new Set(value.categoryIds.map(id=>categories.get(id)?.domainId));
     if(value.categoryIds.some(id=>!categories.has(id))||value.tagIds.some(id=>!tags.has(id)||tags.get(id).domainId&&!questionDomains.has(tags.get(id).domainId)))throw new Error('Invalid taxonomy: '+value.id);
     ids.add(value.id);return value;

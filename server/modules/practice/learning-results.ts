@@ -7,7 +7,7 @@ import { normalizeScoring } from './scoring.js';
 import { learningJudgment, learningQuestionKey, type LearningJudgingItem } from './learning-state.js';
 import { isAnswerPresent } from '../../../shared/practice/attempt-timing.js';
 import { preserveQuestionHistory } from '../questions/history-store.js';
-import type { VocabularyDirection } from '../../../shared/models/types.js';
+import type { PaperPracticeKind, VocabularyDirection } from '../../../shared/models/types.js';
 
 const stamp = z.string().datetime({ offset: true });
 const itemSchema = z.object({
@@ -19,7 +19,7 @@ const itemSchema = z.object({
  * bodies and whole-paper scores. Wrong leaves retain their own reading material. */
 export const learningResultSchema = z.object({
   id, source: z.enum(['paper', 'quick']), paperId: id, paperTitle: z.string().max(300),
-  vocabularyDirection: z.enum(['word_to_meaning', 'meaning_to_word']).optional(),
+  practiceKind: z.enum(['standard','vocabulary','concept']).optional(), vocabularyDirection: z.enum(['word_to_meaning', 'meaning_to_word']).optional(),
   paperVersion: z.number().int().positive(), status: z.literal('submitted'),
   startedAt: stamp, submittedAt: stamp, updatedAt: stamp,
   elapsedSeconds: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
@@ -55,9 +55,10 @@ export function validateLearningResult(store: Store, input: unknown, importedAtt
     const expected = parse(learningResultSchema, resultFromAttempt(importedAttempt));
     // Old compact evidence omitted direction. Recover only from its retained
     // attempt, never from a paper whose current purpose may have changed.
+    if (result.practiceKind === undefined && expected.practiceKind !== undefined) result = { ...result, practiceKind: expected.practiceKind };
     if (result.vocabularyDirection === undefined && expected.vocabularyDirection !== undefined) result = { ...result, vocabularyDirection: expected.vocabularyDirection };
     if(!result.reset)result={...result,...(result.elapsedSeconds===undefined&&expected.elapsedSeconds!==undefined?{elapsedSeconds:expected.elapsedSeconds}:{}),items:result.items.map(item=>{const prior=expected.items.find(value=>value.id===item.id&&value.sourceQuestionId===item.sourceQuestionId);return {...item,...(item.answered===undefined?{answered:prior?.answered,...(item.judgment==='incorrect'&&prior?.judgment==='partial'?{judgment:'partial' as const}:{})}:{}),...(item.type===undefined&&prior?.type?{type:prior.type}:{}),...(item.categoryIds===undefined&&prior?.categoryIds?{categoryIds:prior.categoryIds}:{}),...(item.tagIds===undefined&&prior?.tagIds?{tagIds:prior.tagIds}:{}),...(item.difficulty===undefined&&prior?.difficulty!==undefined?{difficulty:prior.difficulty}:{})};})};
-    const origin = (value: LearningResult) => [value.id, value.source, value.paperId, value.paperTitle, value.paperVersion, value.startedAt, value.submittedAt, value.vocabularyDirection];
+    const origin = (value: LearningResult) => [value.id, value.source, value.paperId, value.paperTitle, value.paperVersion, value.startedAt, value.submittedAt, value.vocabularyDirection, value.practiceKind];
     // This maintenance marker is absent from genuine old backups. Preserve that
     // absence until the history migration can recover their retained answers.
     const evidence = ({ historyIndexed: _indexed, ...value }: LearningResult) => value;
@@ -78,7 +79,7 @@ export function resultFromAttempt(attempt: StoredAttempt): LearningResult {
     if (judgment?.wrong) { const { study: _state, partStudies: _parts, ...snapshot } = q; questions.push(snapshot); }
     return { id: q.id, answered:isAnswerPresent(answer), type:q.type as Exclude<typeof q.type,'group'>,categoryIds:[...q.categoryIds],tagIds:[...q.tagIds],...(q.difficulty===undefined?{}:{difficulty:q.difficulty}), ...(q.sourceQuestionId ? { sourceQuestionId: q.sourceQuestionId } : {}), ...(q.partId ? { partId: q.partId } : {}), ...(judgment ? { judgment: judgment.wrong ? judgment.verdict||judgment.answerState! : 'correct' as const } : {}) };
   });
-  return { id: attempt.id, historyIndexed:true, source: attempt.source || 'paper', paperId: attempt.paperId, paperTitle: attempt.paperTitle, paperVersion: attempt.paperVersion, ...(attempt.vocabularyDirection ? { vocabularyDirection: attempt.vocabularyDirection } : {}), ...(attempt.elapsedSeconds===undefined?{}:{elapsedSeconds:attempt.elapsedSeconds}), status: 'submitted', startedAt: attempt.startedAt, submittedAt: attempt.submittedAt!, updatedAt: attempt.updatedAt || attempt.submittedAt || attempt.startedAt, items, questions };
+  return { id: attempt.id, historyIndexed:true, ...(attempt.practiceKind ? {practiceKind:attempt.practiceKind} : {}), source: attempt.source || 'paper', paperId: attempt.paperId, paperTitle: attempt.paperTitle, paperVersion: attempt.paperVersion, ...(attempt.vocabularyDirection ? { vocabularyDirection: attempt.vocabularyDirection } : {}), ...(attempt.elapsedSeconds===undefined?{}:{elapsedSeconds:attempt.elapsedSeconds}), status: 'submitted', startedAt: attempt.startedAt, submittedAt: attempt.submittedAt!, updatedAt: attempt.updatedAt || attempt.submittedAt || attempt.startedAt, items, questions };
 }
 
 /** Call inside the same transaction as submit/grade and BEFORE history pruning. */
@@ -99,7 +100,7 @@ export function migrateLearningResults(store: Store): number {
 
 export interface LearningMetadata {
   id: string; source: 'paper' | 'quick' | null; paperId: string; paperTitle: string; paperVersion: number;
-  vocabularyDirection?: VocabularyDirection;
+  practiceKind?: PaperPracticeKind; vocabularyDirection?: VocabularyDirection;
   status: 'in_progress' | 'submitted'; startedAt: string; submittedAt: string | null; updatedAt: string | null;
   items: Array<LearningResultItem>; historyAvailable: boolean;
 }
@@ -115,12 +116,12 @@ export function learningMetadata(store: Store, options: { paperIds?: readonly st
     if (options.paperId) value = value.where(field('a.data', 'paperId'), '=', options.paperId);
     return value;
   };
-  const columns = [field<'paper' | 'quick' | null>('a.data', 'source').as('source'), field<string>('a.data', 'paperId').as('paperId'), field<string>('a.data', 'paperTitle').as('paperTitle'), field<number>('a.data', 'paperVersion').as('paperVersion'), field<'in_progress' | 'submitted'>('a.data', 'status').as('status'), field<string>('a.data', 'startedAt').as('startedAt'), field<string | null>('a.data', 'submittedAt').as('submittedAt'), field<string | null>('a.data', 'updatedAt').as('updatedAt')];
+  const columns = [field<PaperPracticeKind | null>('a.data','practiceKind').as('practiceKind'),field<'paper' | 'quick' | null>('a.data', 'source').as('source'), field<string>('a.data', 'paperId').as('paperId'), field<string>('a.data', 'paperTitle').as('paperTitle'), field<number>('a.data', 'paperVersion').as('paperVersion'), field<'in_progress' | 'submitted'>('a.data', 'status').as('status'), field<string>('a.data', 'startedAt').as('startedAt'), field<string | null>('a.data', 'submittedAt').as('submittedAt'), field<string | null>('a.data', 'updatedAt').as('updatedAt')];
   const saved = db.all(filter(db.query.selectFrom('learning_results as a').leftJoin('attempts as retained', 'retained.id', 'a.id').select('a.id').select(columns).select(eb => eb.fn.coalesce(field<VocabularyDirection | null>('a.data', 'vocabularyDirection'), field<VocabularyDirection | null>('retained.data', 'vocabularyDirection')).as('vocabularyDirection')).select([field<string>('a.data', 'items').as('items'), 'retained.id as retainedId'])));
   const fallback = db.all(filter(db.query.selectFrom('attempts as a').leftJoin('learning_results as saved', 'saved.id', 'a.id').select('a.id').select(columns).select(field<VocabularyDirection | null>('a.data', 'vocabularyDirection').as('vocabularyDirection')).select(db.expressions.attemptLearningItems('a.data').as('items')).where('saved.id', 'is', null)));
   return [
-    ...saved.map(row => ({ ...row, vocabularyDirection: row.vocabularyDirection || undefined, historyAvailable: !!row.retainedId, items: JSON.parse(row.items) as LearningResultItem[] })),
-    ...fallback.map(row => ({ ...row, vocabularyDirection: row.vocabularyDirection || undefined, historyAvailable: true, items: (JSON.parse(row.items) as LearningJudgingItem[]).map(item => { const judgment = row.status === 'submitted' ? learningJudgment(item) : undefined; return { id: item.id, ...(item.sourceQuestionId ? { sourceQuestionId: item.sourceQuestionId } : {}), ...((item as any).partId ? { partId: (item as any).partId } : {}), ...(judgment ? { judgment: judgment.wrong ? judgment.answerState! : 'correct' as const } : {}) }; }) })),
+    ...saved.map(row => ({ ...row, practiceKind: row.practiceKind || undefined, vocabularyDirection: row.vocabularyDirection || undefined, historyAvailable: !!row.retainedId, items: JSON.parse(row.items) as LearningResultItem[] })),
+    ...fallback.map(row => ({ ...row, practiceKind: row.practiceKind || undefined, vocabularyDirection: row.vocabularyDirection || undefined, historyAvailable: true, items: (JSON.parse(row.items) as LearningJudgingItem[]).map(item => { const judgment = row.status === 'submitted' ? learningJudgment(item) : undefined; return { id: item.id, ...(item.sourceQuestionId ? { sourceQuestionId: item.sourceQuestionId } : {}), ...((item as any).partId ? { partId: (item as any).partId } : {}), ...(judgment ? { judgment: judgment.wrong ? judgment.answerState! : 'correct' as const } : {}) }; }) })),
   ].sort((a, b) => Date.parse(b.submittedAt || b.updatedAt || b.startedAt) - Date.parse(a.submittedAt || a.updatedAt || a.startedAt) || b.id.localeCompare(a.id));
 }
 

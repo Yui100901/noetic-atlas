@@ -8,9 +8,10 @@ import { cleanLearningRecord } from '../../shared/questions/learning-records.js'
 import { QuestionQueries, type QuestionSelection } from '../modules/questions/queries.js';
 import { emptyStudy, studyPartKey } from '../../shared/questions/study-state.js';
 import type { DocumentDraft } from '../../shared/models/document-drafts.js';
+import { enrichQuestionsWithFeedback } from '../modules/quality-feedback/service.js';
 
 export type Entity = Domain | Category | Tag | Question | QuestionBank | DocumentRecord | StudyState | Paper | Attempt;
-export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'review_cards', 'review_events', 'question_banks', 'settings', 'assets', 'paper_drafts', 'document_drafts', 'daily_pushes'] as const;
+export const tables = ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'review_cards', 'review_events', 'question_banks', 'settings', 'assets', 'paper_drafts', 'document_drafts', 'daily_pushes', 'question_feedback', 'quality_scans', 'quality_issues'] as const;
 export type Table = typeof tables[number];
 export const now = () => new Date().toISOString();
 export const nextStamp = (previous?: string) => new Date(Math.max(Date.now(), previous ? Date.parse(previous) + 1 : 0)).toISOString();
@@ -114,7 +115,7 @@ export class Store {
   }
   study(id: string, partId?: string): StudyState { return (partId === undefined ? this.get<StudyState>('study', id) : this.get<StudyState>('study_parts', studyPartKey(id, partId))) ?? emptyStudy(id, partId); }
   putStudy(state: StudyState) { this.put(state.partId === undefined ? 'study' : 'study_parts', state.partId === undefined ? state.questionId : studyPartKey(state.questionId, state.partId), state); }
-  question(id: string): Question { const q = this.require<Question>('questions', id); return { ...q, study: this.study(id), ...(q.type === 'group' ? { partStudies: (q.parts || []).map(part => this.study(id, part.id)) } : {}) }; }
+  question(id: string): Question { const q = this.require<Question>('questions', id); return enrichQuestionsWithFeedback(this, [{ ...q, study: this.study(id), ...(q.type === 'group' ? { partStudies: (q.parts || []).map(part => this.study(id, part.id)) } : {}) }])[0]!; }
   private questionSelection(query:Record<string,any>):QuestionSelection {
     const paperQuestions=query.paperId?this.require<Paper>('papers',query.paperId).questionIds:undefined;
     const categories=query.categoryId?[...this.categoryDescendants(query.categoryId)]:undefined;
@@ -125,7 +126,7 @@ export class Store {
     return {paperQuestions,categories,domainCategories,tags};
   }
   questions(query:Record<string,any>={}):Question[]{return this.questionQueries.all(query,this.questionSelection(query));}
-  questionPage(query:Record<string,any>={}):QuestionPage{return this.questionQueries.page(query,this.questionSelection(query));}
+  questionPage(query:Record<string,any>={}):QuestionPage{const page=this.questionQueries.page(query,this.questionSelection(query));return {...page,items:enrichQuestionsWithFeedback(this,page.items)};}
   questionCount(query:Record<string,any>={}):number{return this.questionQueries.count(query,this.questionSelection(query));}
   questionMetadata(query:Record<string,any>={}){return this.questionQueries.metadata(query,this.questionSelection(query));}
   questionMetadataByIds(ids:string[]){return this.questionQueries.metadataByIds(ids);}

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { conceptPromptIsSafe } from '../../shared/questions/concept.js';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: unknown) { super(message); }
@@ -14,6 +15,9 @@ const ids = z.array(id).max(500).refine(a => new Set(a).size === a.length, '引�
 export const types = z.enum(['short_answer', 'true_false', 'single_choice', 'multiple_choice', 'fill_blank', 'essay', 'group']);
 const leafTypes = z.enum(['short_answer', 'true_false', 'single_choice', 'multiple_choice', 'fill_blank', 'essay']);
 export const blankSchema = z.object({ id: id.refine(v => !v.includes('::'), '空位ID不能含::'), label: name, answers: z.array(z.string().min(1).max(1000)).min(1).max(30), caseSensitive: z.boolean().default(false), trim: z.boolean().default(true) }).strict();
+// This schema owns field optionality across authoring, imports and quality
+// structure checks. Optional prose stays optional even for subjective items;
+// checkLeaf below owns the conditional grading requirements for each type.
 const answerFields = { title: name, stemMarkdown: text.min(1), answerMarkdown: text.default(''), explanationMarkdown: text.default(''), options: z.array(z.object({ key: z.string().min(1).max(20), text })).max(26).default([]), correctAnswers: z.array(z.string().max(20)).max(26).default([]), blanks: z.array(blankSchema).max(30).optional() };
 function checkLeaf(q: { type: string; options: {key:string}[]; correctAnswers: string[]; blanks?: z.infer<typeof blankSchema>[] }, ctx: z.RefinementCtx) {
   const keys = q.options.map(o => o.key);
@@ -40,9 +44,19 @@ export const vocabularySchema = z.object({
   acceptedAnswers: z.array(z.string().trim().min(1).max(1000)).min(1).max(30),
   pronunciations: z.array(z.object({ label: z.string().min(1).max(100), ipa: z.string().min(1).max(1000).optional(), kana: z.string().min(1).max(1000).optional(), romaji: z.string().min(1).max(1000).optional(), sourceLabel: z.string().min(1).max(500), sourceUrl: z.string().url().max(3000).refine(value=>/^https?:\/\//.test(value)), license: z.string().min(1).max(300), method: z.enum(['source','transliteration','expanded','manual']) }).strict()).min(1).max(40),
 }).strict().superRefine((value,context)=>{if(value.pronunciations.some(item=>value.language==='en'?!item.ipa:!item.kana||!item.romaji))context.addIssue({code:'custom',message:'英语读音需IPA，日语读音需假名和罗马音'});});
+export const conceptSchema = z.object({
+  term: z.string().trim().min(1).max(300), meaningPrompt: z.string().trim().min(1).max(3000),
+  acceptedAnswers: z.array(z.string().trim().min(1).max(300)).min(1).max(30),
+}).strict().superRefine((value, context) => {
+  if (!value.acceptedAnswers.some(answer => answer.normalize('NFKC').trim().toLowerCase() === value.term.normalize('NFKC').trim().toLowerCase())) context.addIssue({ code: 'custom', message: '概念答案须包含主概念名称' });
+  if (!conceptPromptIsSafe(value)) context.addIssue({ code: 'custom', message: '概念独立定义不能含目标词、别称或答案链接' });
+});
+/** Canonical question contract. Do not add independent required-field lists in
+ * UI, generic content tooling or deterministic quality rules. */
 export const questionSchema = z.object({
   id: id.optional(), ...answerFields, type: types, parts: z.array(questionPartSchema).max(30).optional(),
   vocabulary: vocabularySchema.optional(),
+  concept: conceptSchema.optional(),
   difficulty: z.number().int().min(1).max(4).default(1), depth: z.number().int().min(1).max(4).default(1), frequency: z.number().int().min(0).max(3).default(0),
   frequencyScope: text.default(''), frequencyBasis: text.default('经验估计，非统计频率'), collection: collection.default('general'), status: z.enum(['published', 'pending', 'draft', 'archived']).default('published'),
   categoryIds: ids.default([]), tagIds: ids.default([]), sourceRefs: z.array(z.object({ label: z.string().max(500), url: z.string().max(3000).refine(v => /^(https?:\/\/|#\/)/i.test(v), '仅支持 HTTP(S) 来源或站内链接') })).max(100).default([]),
@@ -50,6 +64,7 @@ export const questionSchema = z.object({
   createdAt: stamp.optional(), updatedAt: stamp.optional(),
 }).superRefine((q, ctx) => {
   checkLeaf(q, ctx);
+  if (q.concept && (q.vocabulary || !['short_answer','fill_blank'].includes(q.type))) ctx.addIssue({ code: 'custom', message: '概念信息仅适用于概念简答卡或其逆向作答快照，不可兼作语言词卡' });
   if (q.type === 'group') {
     if (!q.parts || q.parts.length < 2) ctx.addIssue({ code: 'custom', message: '组合题需要2至30个独立子题' });
     if (new Set(q.parts?.map(p => p.id)).size !== q.parts?.length) ctx.addIssue({ code: 'custom', message: '子题ID不能重复' });
@@ -80,7 +95,7 @@ export const scoringInputSchema = z.object({ enabled: z.boolean(), totalPoints: 
 // Stored fields include calculated values, which are checked against snapshots
 // on import rather than silently discarding a corrupted scoring configuration.
 export const storedScoringSchema = z.object({ enabled: z.boolean(), totalPoints: moneySchema, questionPoints: z.record(leafId, moneySchema), objectivePercent: z.number().finite().min(0).max(100), actualObjectivePercent: z.number().finite().min(0).max(100), objectivePoints: moneySchema, subjectivePoints: moneySchema, pointsByType: typePointsSchema.refine(p => ['short_answer','true_false','single_choice','multiple_choice'].every(t => p[t as keyof typeof p] !== undefined), '旧有四种题型分值不可缺项'), scheme: z.enum(['legacy', 'custom', 'none']) }).strict();
-export const paperInputSchema = z.object({ id: id.optional(), title: name, description: text.default(''), mode: z.enum(['manual', 'random']), practiceKind: z.enum(['standard','vocabulary']).default('standard'), organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null), questionIds: z.array(id).max(50_000).refine(a=>new Set(a).size===a.length, '题集题号不可重复').optional(), filters: filtersSchema.nullable().optional(), count: z.number().int().min(1).max(500).optional(), scoring: scoringInputSchema.optional() });
+export const paperInputSchema = z.object({ id: id.optional(), title: name, description: text.default(''), mode: z.enum(['manual', 'random']), practiceKind: z.enum(['standard','vocabulary','concept']).default('standard'), organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null), questionIds: z.array(id).max(50_000).refine(a=>new Set(a).size===a.length, '题集题号不可重复').optional(), filters: filtersSchema.nullable().optional(), count: z.number().int().min(1).max(500).optional(), scoring: scoringInputSchema.optional() });
 export const verdictSchema = z.enum(['correct','partial','incorrect']);
 export const answerSchema = z.object({ value: z.union([z.string().max(100_000), z.array(z.string().max(1000)).max(30)]), selfScore: moneySchema.nullable().optional(), mastery: z.number().int().min(0).max(3).nullable().optional(), verdict: verdictSchema.nullable().optional() });
 export const answersSchema = z.record(z.string(), answerSchema).refine(v => Object.keys(v).length <= 500, '单次最多500个作答项');

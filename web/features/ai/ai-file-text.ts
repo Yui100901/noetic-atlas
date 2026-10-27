@@ -13,7 +13,7 @@ export async function extractQuestionFile(file:File):Promise<{text:string;messag
     });
     try {
       const doc=await task.promise;
-      if(doc.numPages>150)throw new Error(`文件共有${doc.numPages}页；单次最多150页，请先拆分PDF。`);
+      if(doc.numPages>150)throw new Error(`文件共有${doc.numPages}页；单次最多150页，请改用“多文件 / 教材分批”，可直接选择本文件，无需外部拆分PDF。`);
       const pages:string[]=[];
       for(let pageNumber=1;pageNumber<=doc.numPages;pageNumber++) {
         const page=await doc.getPage(pageNumber);const content=await page.getTextContent();

@@ -11,9 +11,9 @@ const root = resolve(import.meta.dirname, '../..');
 const output = resolve(root, 'test-results/learning-reset-ui');
 const { DEFAULT_SETTINGS } = await tsImport('../../shared/models/settings.ts', import.meta.url);
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href : 'playwright');
-const vite = await createServer({ root, logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false } });
+const vite = await createServer({ root, cacheDir: resolve(output, 'vite-cache'), logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false } });
 let browser, page;
-const checks = [], errors = [], unexpected = [], submissions = [];
+const checks = [], errors = [], unexpected = [], submissions = [], pendingModules = new Set();
 let previews = 0, settingsWrites = 0;
 const preview = { counts: { states: 6, partStates: 4, reviews: 9, results: 12 }, retained: { attempts: 15, drafts: 2 } };
 await mkdir(output, { recursive: true });
@@ -23,11 +23,15 @@ try {
   browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined), headless: true });
   page = await browser.newPage({ viewport: { width: 1360, height: 940 } });
   page.setDefaultTimeout(20000); page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => pendingModules.add(request.url()));
+  page.on('requestfinished', request => pendingModules.delete(request.url()));
+  page.on('requestfailed', request => pendingModules.delete(request.url()));
   await page.route('**/api/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     const fulfill = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (path === '/api/bootstrap') return fulfill({ domains: [], categories: [], tags: [], settings: DEFAULT_SETTINGS, stats: { totalQuestions: 0 }, ai: { available: false, message: '' } });
     if (path === '/api/exams/sync') return fulfill({ attempt: null });
+    if (path === '/api/daily-push') return fulfill({ config: DEFAULT_SETTINGS.dailyPush, today: null, recent: [], recentLimit: 30, unreadCount: 0, nextDateKey: '2026-10-27' });
     if (path === '/api/settings') {
       if (request.method() !== 'GET') settingsWrites++;
       return fulfill(DEFAULT_SETTINGS);
@@ -87,5 +91,5 @@ try {
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
   const report = { passed: checks.length, checks, errors, unexpected, previewRequests: previews, resetRequests: submissions.length, settingsWrites, databaseAccessed: false };
   await writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
-} catch (error) { await page?.screenshot({ path: resolve(output, 'failure.png') }).catch(() => {}); throw error; }
+} catch (error) { await page?.screenshot({ path: resolve(output, 'failure.png') }).catch(() => {}); await writeFile(resolve(output, 'failure.json'), JSON.stringify({ message: error.message, pendingModules: [...pendingModules], errors, unexpected, checks }, null, 2)); throw error; }
 finally { await browser?.close(); await vite.close(); }

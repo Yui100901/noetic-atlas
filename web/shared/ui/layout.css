@@ -85,3 +85,5 @@
   .modal-heading h2 { font-size: 17px; }
 }
 @media (max-width: 390px) { .form-grid { grid-template-columns: 1fr; } }
+/* Overview counts remain readable when a domain has pending imports. */
+.domain-card > div > .domain-card-counts { flex-wrap: wrap; row-gap: 3px; }

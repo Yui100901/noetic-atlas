@@ -18,7 +18,7 @@ export function AiRunHeading({run,title}:{run:AiRunView;title:string}) {
 }
 export function AiQuestionTools({question,onUpdated,beforeAppendNote}:{question:Question;onUpdated?:()=>void;beforeAppendNote?:()=>Promise<void>}) {
   const progress=useAiProgress();const {toast,reload}=useApp();const [run,setRun]=useState<AiRunView<AiExplanationResult>|null>(null);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [focus,setFocus]=useState('');
-  const cached=useResource<AiRunView<AiExplanationResult>[]>(`/api/ai/runs?${qs({kind:'explain',questionId:question.id})}`);
+  const cached=useResource<AiRunView<AiExplanationResult>[]>(`/api/ai/runs?${qs({kind:'explain',status:'completed',questionId:question.id})}`);
   useEffect(()=>{setRun(cached.data?.[0]||null);},[cached.data,question.id]);
   const explain=async()=>{setBusy(true);setError('');try{setRun(await progress.run<AiRunView<AiExplanationResult>>('/api/ai/explain',{questionId:question.id,...(focus?{partId:focus}:{})}));cached.refresh();}catch(err){setError(aiFailureMessage(err));}finally{setBusy(false);}};
   const note=async()=>{if(!run)return;setBusy(true);setError('');try{await beforeAppendNote?.();await aiRunApply(run.id,{appendNotes:true});toast('AI解析已追加到学习笔记');reload();onUpdated?.();}catch(err){setError(aiFailureMessage(err));}finally{setBusy(false);}};

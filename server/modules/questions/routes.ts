@@ -1,3 +1,4 @@
+import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Question } from '../../../shared/models/types.js';
@@ -21,12 +22,12 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/questions/:id', async request => store.question(getId(request)));
   app.post('/api/questions/metadata', async request => store.questionMetadataByIds(parse(questionMetadataInputSchema,request.body).ids));
   app.post('/api/questions', async (request, reply) => {
-    const input = parse(questionSchema, request.body); assertNewQuestionId(input.id); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
+    const input = normalizeQuestionBlankStems(parse(questionSchema, request.body)); assertNewQuestionId(input.id); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
     const q = { ...input, status: input.status === 'draft' ? 'draft' : 'pending', id: input.id || makeId('q'), createdAt: now(), updatedAt: now() } as Question;
     store.insert('questions', q.id, q); return reply.code(201).send(store.question(q.id));
   });
   app.put('/api/questions/:id', async request => {
-    const qid = getId(request); const previous = store.require<Question>('questions', qid); const input = parse(questionSchema, request.body);
+    const qid = getId(request); const previous = store.require<Question>('questions', qid); const input = normalizeQuestionBlankStems(parse(questionSchema, request.body));
     if (input.id && input.id !== qid) fail(400, 'ID_IMMUTABLE', '题号不能在编辑时更换'); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
     if (input.updatedAt && input.updatedAt !== previous.updatedAt) fail(409, 'QUESTION_VERSION_CONFLICT', '题目已被修改，请刷新后再编辑');
     if (input.status === 'published' && previous.status !== 'published') fail(409, 'REVIEW_REQUIRED', '未发布题目必须先送审，再通过用户确认审核');
@@ -57,7 +58,8 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   app.post('/api/questions/pending/import', async request => {
     const { data } = parse(z.object({ data: pendingEnvelopeSchema, confirmed: z.literal(true) }).strict(), request.body);
     return store.transaction(() => {
-      const entries = data.questions.map(input => {
+      const entries = data.questions.map(raw => {
+        const input=normalizeQuestionBlankStems(raw);
         const q = store.require<Question>('questions', input.id!);
         if (q.status !== 'pending') fail(409, 'QUESTION_NOT_PENDING', `只能更新现有待审核题目：${q.id}`);
         if (q.updatedAt !== input.updatedAt) fail(409, 'QUESTION_VERSION_CONFLICT', `题目已被修改，未覆盖更新：${q.id}`);

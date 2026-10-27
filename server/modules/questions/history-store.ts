@@ -26,7 +26,7 @@ export const questionHistorySchema = z.object({
     const q = record.detail.question;
     if (!isAnswerPresent(record.detail.answer) || q.type === 'group' || q.id !== record.leafId || (q.sourceQuestionId || q.id) !== record.questionId || q.partId !== record.partId) context.addIssue({code:'custom',message:'单题历史必须包含对应的实际作答与小题快照'});
     if (q.partId && (q.groupId !== record.questionId || q.groupTitle === undefined || q.groupStemMarkdown === undefined || q.partIndex === undefined)) context.addIssue({code:'custom',message:'单题历史缺少公共材料'});
-    if (record.vocabularyDirection && (!q.vocabulary || q.partId || q.type !== (record.vocabularyDirection === 'meaning_to_word' ? 'fill_blank' : 'short_answer'))) context.addIssue({code:'custom',message:'单题历史词汇方向与实际题目类型不一致'});
+    if (record.vocabularyDirection && (!(q.vocabulary || q.concept) || q.partId || q.type !== (record.vocabularyDirection === 'meaning_to_word' ? 'fill_blank' : 'short_answer'))) context.addIssue({code:'custom',message:'单题历史词汇方向与实际题目类型不一致'});
     const state=answerState(q,record.detail.answer,true,record.points??undefined);
     const score=record.points==null?null:q.type==='short_answer'||q.type==='essay'?record.detail.answer.selfScore??null:state==='correct'?record.points:0;
     if (state !== record.verdict || score !== record.score) context.addIssue({code:'custom',message:'单题历史判定与答案不一致'});

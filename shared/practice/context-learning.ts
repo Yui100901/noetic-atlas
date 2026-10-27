@@ -1,4 +1,4 @@
-import type { Question, StudyState, VocabularyDirection } from '../models/types.js';
+import type { Question, StudyState, VocabularyDirection, PaperPracticeKind } from '../models/types.js';
 
 export type LearningSource = 'paper' | 'quick';
 export interface LearningContext { source: LearningSource; paperId?: string }
@@ -9,7 +9,7 @@ export interface ContextLearningSummary extends LearningContext {
   suggestions: string[];
 }
 export interface AttemptHistoryItem {
-  vocabularyDirection?: VocabularyDirection;
+  practiceKind?: PaperPracticeKind; vocabularyDirection?: VocabularyDirection;
   id: string; source: LearningSource; paperId: string; paperTitle: string; paperVersion: number;
   status: 'in_progress' | 'submitted'; practiceMode: 'practice' | 'exam';
   startedAt: string; updatedAt: string; submittedAt: string | null;

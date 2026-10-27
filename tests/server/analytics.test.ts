@@ -29,6 +29,8 @@ function fixture(t:test.TestContext){
 }
 function submitted(store:Store,paper:StoredPaper,answers:Parameters<typeof submitAttempt>[2],at:string,elapsedSeconds?:number){
   const attempt=submitAttempt(store,createAttempt(store,paper),answers);attempt.startedAt=new Date(Date.parse(at)-60000).toISOString();attempt.submittedAt=at;attempt.updatedAt=at;
+  // This fixture intentionally represents legacy/missing timing metadata.
+  delete attempt.practiceTiming;
   if(elapsedSeconds===undefined)delete attempt.elapsedSeconds;else attempt.elapsedSeconds=elapsedSeconds;
   store.put('attempts',attempt.id,attempt);preserveLearningResults(store,attempt);return attempt;
 }

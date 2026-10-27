@@ -87,6 +87,10 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 
 ## 统一搜索
 
+`GET /api/bootstrap`的`stats.domainQuestionCounts`按领域返回`{published,pending}`。同领域多分类去重，跨领域分别计数；草稿与归档不计，零题领域由客户端显示0。计数使用紧凑题目元数据与当前分类归属，不载入题干、答案或学习笔记。
+
+题目可含`concept:{term,meaningPrompt,acceptedAnswers}`，仅适用于简答题。`meaningPrompt`是独立短定义且不能包含主词或可接受别称。`Paper.practiceKind`支持`standard|vocabulary|concept`；概念题集复用`vocabularyDirection:word_to_meaning|meaning_to_word`传输值，界面按概念语境显示方向，不要求语言字段或读音。逆向作答隐藏概念名与解释，并按主词及收录别称核对；两个方向的FSRS计划分开保存。
+
 `GET /api/search?q=关键词&type=all&sort=relevance&page=1&pageSize=20&includeUnpublished=false`。type可选`all|question|paper|document|note|domain|category|tag`，sort为`relevance|updatedAt`，pageSize为10／20／50／100。q最多100字符、8个空格分隔词，NFKC规范化、忽略大小写并取交集；SQL符号按字面匹配。空词返回零结果，不扫描或维护搜索投影；未知参数与非法值返回400。
 
 返回`query、type、sort、includeUnpublished、page、pageSize、total、totalAll、counts、items、scope`。counts按所有类型计算，不随所选type变化；total为当前类型命中量，totalAll为合计。items只含当前页的key/type/id/title/excerpt/href/description、matchIn、domainIds及可选状态、原题／小题、更新时间。matchIn为title/id/content/reference；reference可匹配答案解析，响应只提供安全题干摘要及匹配标识，不返回参考答案全文。组合小题归原题结果，笔记按整题和小题独立；领域、分类、标签href指向题库筛选。
@@ -123,13 +127,16 @@ today及recent的每条记录包含`paperAvailable`和`progress`。progress的st
 - `GET /api/attempts`：按 paperId、source=paper|quick、status=in_progress|submitted 与分页查询。
 - `GET /api/attempts/:id`：作答快照；未交卷隐藏答案、解析和填空标准答案。
 - `PUT /api/attempts/:id`：`{answers:Record<questionId,{value}>}`，合并并持久化本次传入答案，不新建草稿。
+- `POST /api/attempts/:id/timing`：普通练习计时。开始或恢复时传`{action:'resume',sessionId,expectedSessionId}`，首次`expectedSessionId`为null，其后取已读取的当前会话ID；状态变化返回409，须重新读后按用户当前页面状态决定是否重试。检查点及暂停传`{action:'checkpoint'|'pause',sessionId,elapsedMilliseconds}`，毫秒数为该会话从零开始的单调累计，不是整份作答的累计。返回Attempt及`practiceTiming`。保存以最大已确认会话值增量累计；重复暂停、较旧检查点和过期会话不重复计时。考试不能使用此接口。
 - `POST /api/attempts/:id/submit`：可选 `{answers}`，交卷并计算客观题得分，固定 elapsedSeconds；重复交卷不重复累计错题。
 - `PUT /api/attempts/:id/review`：`{scores?,mastery?,verdicts?,ratings?}`，交卷后保存主观评分、掌握自评、correct／partial／incorrect 判定或本次回忆反馈；`ratings`按叶题ID传入`again|hard|good|easy|null`。数字评分限主观题 0 至快照满分，null 撤销评分。计分题判定必须与分值一致；不计分题可以只判对错。不能修改客观得分。
 - `GET /api/exams/active`：`{attempt:Attempt|null}`，查询当前考试。
 - `POST /api/exams/sync`：同步到期状态，返回当前考试；`POST /api/attempts/:id/sync` 同步一份作答并返回 Attempt。
 - `POST /api/quick-practice`：指定 questionId，或使用 filters 与 excludeQuestionId 随机单题自测；`POST /api/attempts/:id/reveal` 仅允许随机／单题会话提前查看解析。
 
-计时依据 startedAt、deadlineAt 与持久化时间戳，页面刷新或休眠不依赖 interval 累加。考试进行中网页路由固定在考试页面；API 也限制使用其他功能，交卷完成后解除。到期通过界面或后续请求同步自动交卷，仅使用到期前已经保存的答案；到期后的请求不能替换答案。考试过期交卷的 submittedAt 固定为 deadlineAt，并记录 autoSubmitted。
+普通练习只累计已确认的前台作答时段，GET及答案自动保存不会启动或推进计时。`practiceTiming`保存`elapsedMilliseconds、sessionId、sessionElapsedMilliseconds、sessionStartedAt、running`，其中时间戳只作会话信息，不用于补算离页时长；客户端使用单调时钟显示未确认的当前时段，前台每30秒保存检查点，离页／后台／交卷时发送最终暂停。提交前先保存当前时段，提交后冻结elapsedSeconds；异常结束而未发送暂停时只保留最近检查点，不把关闭间隔补入。旧普通草稿以已保存elapsedSeconds继续，既有已提交用时保留。
+
+考试仍依据startedAt和deadlineAt的绝对时间，刷新或休眠不暂停。考试进行中网页路由固定在考试页面；API也限制使用其他功能，交卷完成后解除。到期通过界面或后续请求同步自动交卷，仅使用到期前已经保存的答案；到期后的请求不能替换答案。考试过期交卷的submittedAt固定为deadlineAt，并记录autoSubmitted。
 
 作答页不挂载学习笔记编辑器，也不为展示学习控件额外请求原题内容或历史统计。笔记在题库和题集查阅组件中编辑；随机自测仍允许显式调用 reveal 查看参考解析，交卷后才展示阅卷与本次掌握自评。
 
@@ -242,6 +249,33 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 图片需同时开启 supportsImages 与 sendImages，仅发送用户选中资料中的托管／合法内嵌栅格图片，最多 8 张、Base64 总量 8 MiB；不自动下载远程图片。未发送、缺失或超限图片写入警告，阻止自动发布。推荐组题始终只使用文字摘要，不传图片。
 
 单次模型文字输入上限 600000 字节，完整答案上限 2 MiB；提供商 SSE 传输另有 32 MiB 字节上限，客户端进度流累计接收上限 16000000 字节。分批组题按每次提供商请求执行超时和输出限制，不将整份大卷塞入一次响应。不透出提供商原始错误正文。常见错误为 `AI_DISABLED`、`AI_CANCELLED`、`AI_TIMEOUT`、`AI_PROVIDER_ERROR`、`AI_INVALID_JSON`、`AI_INVALID_OUTPUT`、`AI_OUTPUT_TRUNCATED`、`AI_SCORE_OUT_OF_RANGE` 和版本冲突。
+
+## 审核与统一质量管理
+
+题库准入仍由审核接口负责；用户反馈、规则发现、内容改进统一使用质量问题队列，处理不改发布状态、标准答案或学习成绩。参考来源可省略或为空数组，不生成缺来源问题；已填写来源的结构与地址仍校验。独立解析可省略或为空，答案可以已含完整解释，不生成空解析问题。
+
+完整字段必填性、默认值及各题型的条件结构见[题目字段与质量规则](./docs/题目字段与质量规则.md)。以`questionSchema`为结构契约，表单和通用导入不另加必填；客观题的判分答案与可选的答案说明文本分开。
+
+| 接口 | 行为与边界 |
+| --- | --- |
+| `POST /api/question-feedback` | `{questionId,partId?,kind,description,expectedUpdatedAt?}`；事务内保存一条反馈及对应质量待办，同题多条反馈独立保留。 |
+| `POST /api/question-feedback/summaries` | 批量获取题目疑似标记；只统计待处理的用户反馈，不把扫描AI上下文计作用户反馈。 |
+| `GET /api/content-quality/overview` | `totalQuestions/activeQuestions` 为去重根题数，`totalIssues/counts` 为问题项数；包含规则版本和覆盖边界，读取不启动扫描或模型。 |
+| `GET /api/content-quality/questions` | 先按根题号分组再分页，`total` 为匹配题目数；每项含 `questionId/questionTitle/sourceAvailable/issueCount/matchedIssueCount/activeIssueCount/counts/origins/severity/updatedAt`。支持与问题项列表相同的来源、状态、题号、领域、严重度、规则及关键词筛选；匹配数只算筛选命中项，其余汇总包括该题全部非停用问题项。 |
+| `GET /api/content-quality/issues` | 独立问题项分页，支持 `origin=all\|scan\|feedback`、`feedbackId`、`questionId`、领域、严重度、规则、状态及关键词；用于题内列表、明确选择问题项和编辑保存前核对。 |
+| `GET /api/content-quality/issues/:id` | 返回 `{issue,question,relatedQuestions,feedbacks}`；含当前原题、关联候选、反馈原文／AI分析及版本变化提示。 |
+| `POST /api/content-quality/scans` | `{filters?}` 建立扫描；`POST /scans/:id/process` 每批1—200题；支持继续、取消与历史。 |
+| `POST /api/content-quality/issues/:id/resolve` | `{status,note,expectedUpdatedAt}`；`confirmed/resolved/dismissed` 必须提供备注，版本冲突拒绝；关联反馈状态在同一事务内同步。 |
+| `POST /api/content-quality/issues/resolve` | `{ids,status,note,expectedUpdatedAt}`；最多100项，版本表按问题ID传入，整批原子处理。 |
+| `POST /api/content-quality/issues/:id/review-context` | `{expectedUpdatedAt}` → `{issue,feedback}`；按原问题幂等准备AI上下文，不创建第二条待办。 |
+| `POST /api/content-quality/review-contexts` | `{ids,expectedUpdatedAt}` → `{items:[{issue,feedback}]}`；最多20项，准备阶段不调用模型。 |
+| `POST /api/question-feedback/ai-review` | 使用准备结果的反馈ID和反馈版本运行有进度的AI复核；成功、失败逐项保留，AI建议不自动改处理状态。 |
+
+题目分组是只读视图，不迁移、合并或删除证据。公共材料及小题问题按根题聚合，各问题项仍保留自己的ID、版本、来源、状态及AI上下文；单项处理不影响同题其他项。题目已删除时保留分组和历史标题。分组接口始终排除停用规则；原问题项显式深链的历史读取行为保留。
+
+质量状态为 `open/confirmed/resolved/dismissed/stale`；用户反馈的 `pending` 对应 `open`。来源变化后拒绝陈旧AI结果；修正原题后重新扫描，才能以依据关闭旧问题。扫描的系统上下文使用 `origin=quality`，关联原质量问题，保留证据而不冒充用户提交。历史反馈处理接口保留并委托同一质量状态服务。
+
+启动、可信JSON导入及原生恢复幂等补齐历史反馈关联，拒绝跨题／小题、重复归属或缺失引用；删除旧 `missing_source` 自动问题，清理无人工处理及关联证据的旧 `missing_explanation` 提示，后者已有人工／AI证据则留作历史且不计入列表统计；显式feedbackId或issueId可查看，停用规则拒绝AI复核。保留历史扫描计数和人工反馈。题目、历史卷面及学习记录不因本次迁移改写。普通内容分享不携带私人质量记录。
 
 ## 分享、导出与迁移
 

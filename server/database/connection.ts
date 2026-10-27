@@ -47,6 +47,14 @@ export class DatabaseConnection {
       ['documents_archived_updated_idx','documents',['_archived','updatedAt']],
       ['document_drafts_context_updated_idx','document_drafts',['documentId','updatedAt']],
       ['questions_type_title_idx','questions',['type','title']],
+      ['question_feedback_question_status_idx','question_feedback',['questionId','status']],
+      ['quality_fingerprints_prompt_idx','quality_fingerprints',['promptHash']],
+      ['quality_issues_question_status_idx','quality_issues',['questionId','status']],
+      ['quality_issues_status_rule_idx','quality_issues',['status','rule','severity']],
+      ['quality_scans_created_idx','quality_scans',['createdAt']],
+      ['question_feedback_status_updated_idx','question_feedback',['status','updatedAt']],
+      ['ai_runs_status_created_idx','ai_runs',['status','createdAt']],
+      ['ai_runs_job_created_idx','ai_runs',['jobId','createdAt']],
     ] as const) {
       this.run(this.query.schema.createIndex(name).ifNotExists().on(table).expression(sql.join(fields.map(key=>this.expressions.field('data',key)))));
     }

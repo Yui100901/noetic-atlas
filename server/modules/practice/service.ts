@@ -1,3 +1,4 @@
+import {questionStemMarkdown} from '../../../shared/questions/blank-markers.js';
 import { randomInt } from 'node:crypto';
 import type { AnswerVerdict, Attempt, AttemptAnswer, ExamQuestion, Paper, PaperFilters, PaperPracticeKind, Question, ScoringInput, VocabularyDirection } from '../../../shared/models/types.js';
 import { Store, makeId, now, nextStamp } from '../../core/store.js';
@@ -8,15 +9,17 @@ import { distributeGroupPoints, flattenQuestions, validatePaperAnswers, type Sto
 import { applyAttemptRetention, getSettings } from '../settings/routes.js';
 import { validateAssetReferences } from '../assets/routes.js';
 import { answerState, attemptElapsedSeconds, examExpired, isAnswerPresent } from '../../../shared/practice/attempt-timing.js';
+import { forwardConceptQuestion, isConceptQuestion, resolveConceptQuestion, reverseConceptQuestion, validateConceptPaperSnapshot } from './concept-practice.js';
 import { isVocabularyQuestion, resolveVocabularyQuestion, reverseVocabularyQuestion, validateVocabularyPaperSnapshot } from './vocabulary-practice.js';
 import { preserveLearningResults } from './learning-results.js';
 import type { ReviewRating } from '../../../shared/models/adaptive-review.js';
 import { syncAttemptReviewEvents } from '../review-scheduler/service.js';
+import { freezePracticeTiming, initialPracticeTiming, validatePracticeTiming } from './practice-timing.js';
 
 export interface StoredPaper extends Paper { snapshot: Question[] }
 export interface StoredAttempt extends Omit<Attempt, 'questions'> { questions: StoredLeafQuestion[] }
 export function examQuestion(q: StoredLeafQuestion, points?: number): ExamQuestion {
-  return { id: q.id, sourceQuestionId: q.sourceQuestionId || q.id, title: q.title, type: q.type, stemMarkdown: q.stemMarkdown, options: q.options, difficulty: q.difficulty, depth: q.depth, frequency: q.frequency, collection: q.collection, points, blanks: q.blanks?.map(({ answers: _answers, ...b }) => b), groupId: q.groupId, groupTitle: q.groupTitle, groupStemMarkdown: q.groupStemMarkdown, partId: q.partId, partIndex: q.partIndex };
+  return { id: q.id, sourceQuestionId: q.sourceQuestionId || q.id, title: questionStemMarkdown({type:q.type,stemMarkdown:q.title}), type: q.type, stemMarkdown: questionStemMarkdown(q), options: q.options, difficulty: q.difficulty, depth: q.depth, frequency: q.frequency, collection: q.collection, points, blanks: q.blanks?.map(({ answers: _answers, ...b }) => b), groupId: q.groupId, groupTitle: q.groupTitle, groupStemMarkdown: q.groupStemMarkdown, partId: q.partId, partIndex: q.partIndex };
 }
 export function expandPaper(p: StoredPaper, maxAnswers = 1_500_000) {
   validatePaperAnswers(p.snapshot, maxAnswers);
@@ -43,7 +46,7 @@ export function attemptView(a: StoredAttempt): Attempt {
   const pendingSubjectiveCount = scoring.enabled ? subjective.length - gradedSubjectiveCount : 0;
   const gradingStatus = !scoring.enabled ? 'not_applicable' : !pendingSubjectiveCount && a.status === 'submitted' ? 'complete' : gradedSubjectiveCount ? 'partial' : 'pending';
   const totalScore = scoring.enabled && a.status === 'submitted' && !pendingSubjectiveCount ? fromCents(cents(a.objectiveScore) + cents(a.subjectiveScore)) : null;
-  return { ...a, elapsedSeconds: attemptElapsedSeconds(a), answerStates: Object.fromEntries(a.questions.map(q => [q.id, answerState(q, a.answers[q.id], a.status === 'submitted', scoring.enabled ? scoring.questionPoints[q.id] : undefined)])), source: a.source || 'paper', updatedAt: a.updatedAt || a.startedAt, scoring, gradedSubjectiveCount, pendingSubjectiveCount, gradingStatus, totalScore, questions: a.questions.map(q => a.status === 'submitted' || (a.source === 'quick' && a.referenceViewedAt) ? { ...examQuestion(q, scoring.questionPoints[q.id]), blanks: q.blanks, answerMarkdown: q.answerMarkdown, explanationMarkdown: q.explanationMarkdown, correctAnswers: q.correctAnswers, sourceRefs: q.sourceRefs, vocabulary: q.vocabulary } : examQuestion(q, scoring.questionPoints[q.id])) };
+  return { ...a, elapsedSeconds: attemptElapsedSeconds(a), answerStates: Object.fromEntries(a.questions.map(q => [q.id, answerState(q, a.answers[q.id], a.status === 'submitted', scoring.enabled ? scoring.questionPoints[q.id] : undefined)])), source: a.source || 'paper', updatedAt: a.updatedAt || a.startedAt, scoring, gradedSubjectiveCount, pendingSubjectiveCount, gradingStatus, totalScore, questions: a.questions.map(q => a.status === 'submitted' || (a.source === 'quick' && a.referenceViewedAt) ? { ...examQuestion(q, scoring.questionPoints[q.id]), blanks: q.blanks, answerMarkdown: q.answerMarkdown, explanationMarkdown: q.explanationMarkdown, correctAnswers: q.correctAnswers, sourceRefs: q.sourceRefs, vocabulary: q.vocabulary, concept: q.concept } : examQuestion(q, scoring.questionPoints[q.id])) };
 }
 export function buildPaper(store: Store, input: { id?: string; title: string; description: string; mode: 'manual' | 'random'; practiceKind?: PaperPracticeKind; organization?: 'domain' | 'other'; domainId?: string | null; questionIds?: string[]; filters?: PaperFilters | null; count?: number; scoring?: ScoringInput }, previous?: StoredPaper): StoredPaper {
   if (input.id === QUICK_PAPER_ID) fail(400, 'RESERVED_PAPER_ID', '随机单题标识不能用作试卷ID');
@@ -65,7 +68,7 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
       return q;
     });
   } else {
-    const pool = store.questions(input.filters || {}).filter(question => practiceKind !== 'vocabulary' || isVocabularyQuestion(question));
+    const pool = store.questions(input.filters || {}).filter(question => practiceKind === 'concept' ? isConceptQuestion(question) : practiceKind !== 'vocabulary' || isVocabularyQuestion(question));
     // Unbiased Fisher–Yates; each eligible question is sampled at most once.
     for (let i = pool.length - 1; i > 0; i--) { const j = randomInt(0, i + 1); [pool[i], pool[j]] = [pool[j]!, pool[i]!]; }
     if (scoringInput.enabled) {
@@ -79,15 +82,16 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
       selected = pool.slice(0, count);
     }
   }
-  const snapshot = selected.map(q => { const { study: _study, partStudies: _parts, ...clean } = practiceKind === 'vocabulary' ? resolveVocabularyQuestion(store, q) : q; return clean; });
+  const snapshot = selected.map(q => { const { study: _study, partStudies: _parts, ...clean } = practiceKind === 'vocabulary' ? resolveVocabularyQuestion(store, q) : practiceKind === 'concept' ? resolveConceptQuestion(store, q) : q; return clean; });
   if (practiceKind === 'vocabulary') validateVocabularyPaperSnapshot(snapshot);
+  if (practiceKind === 'concept') validateConceptPaperSnapshot(snapshot);
   validatePaperAnswers(snapshot,input.mode==='manual'?1_500_000:500);
   const scoring = normalizeScoring(snapshot, scoringInput);
   return { ...(previous?.legacyBankId ? {legacyBankId:previous.legacyBankId}:{}), id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, mode: input.mode, practiceKind, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
 }
 export function createAttempt(store: Store, paper: StoredPaper, options: { mode?: 'practice' | 'exam'; durationMinutes?: number; count?: number; selection?: 'ordered' | 'random'; vocabularyDirection?: VocabularyDirection } = {}): StoredAttempt {
-  if (options.vocabularyDirection && paper.practiceKind !== 'vocabulary') fail(400, 'VOCABULARY_PAPER_REQUIRED', '请先将题集类型设置为词汇题集，再选择词汇练习方向');
-  const vocabularyDirection = paper.practiceKind === 'vocabulary' ? options.vocabularyDirection || 'word_to_meaning' : undefined;
+  if (options.vocabularyDirection && !['vocabulary','concept'].includes(paper.practiceKind || 'standard')) fail(400, 'VOCABULARY_PAPER_REQUIRED', '请先将题集类型设置为词汇题集或概念题集，再选择双向练习方向');
+  const vocabularyDirection = ['vocabulary','concept'].includes(paper.practiceKind || 'standard') ? options.vocabularyDirection || 'word_to_meaning' : undefined;
   const practiceMode = options.mode || 'practice';
   if (practiceMode === 'exam') {
     syncExams(store);
@@ -111,14 +115,14 @@ export function createAttempt(store: Store, paper: StoredPaper, options: { mode?
     sessionPaper = {...paper, snapshot, questionIds:snapshot.map(q=>q.id), questionCount:snapshot.length, scoring};
   }
   if (vocabularyDirection) {
-    const snapshot = sessionPaper.snapshot.map(question => resolveVocabularyQuestion(store, question));
-    const directed = vocabularyDirection === 'meaning_to_word' ? snapshot.map(reverseVocabularyQuestion) : snapshot;
+    const snapshot = sessionPaper.snapshot.map(question => paper.practiceKind === 'concept' ? resolveConceptQuestion(store, question) : resolveVocabularyQuestion(store, question));
+    const directed = vocabularyDirection === 'meaning_to_word' ? snapshot.map(question => paper.practiceKind === 'concept' ? reverseConceptQuestion(question) : reverseVocabularyQuestion(question)) : paper.practiceKind === 'concept' ? snapshot.map(forwardConceptQuestion) : snapshot;
     const originalScoring = normalizeScoring(sessionPaper.snapshot, sessionPaper.scoring);
     const scoring = normalizeScoring(directed, { enabled: originalScoring.enabled, totalPoints: originalScoring.enabled ? originalScoring.totalPoints : undefined, questionPoints: originalScoring.questionPoints, objectivePercent: originalScoring.objectivePercent, pointsByType: originalScoring.pointsByType });
     sessionPaper = { ...sessionPaper, snapshot: directed, scoring };
   }
   const { questions, scoring } = expandPaper(sessionPaper, 500), stamp = draftStamp(store, 'paper', paper.id), startedAt = now();
-  const a: StoredAttempt = { ...(vocabularyDirection ? { vocabularyDirection } : {}), practiceMode, durationMinutes, deadlineAt: durationMinutes == null ? null : new Date(Date.parse(startedAt) + durationMinutes * 60000).toISOString(), elapsedSeconds: 0, autoSubmitted: false, id: makeId('attempt'), source: 'paper', paperId: paper.id, paperTitle: paper.title, paperVersion: paper.version, status: 'in_progress', questions: structuredClone(questions), scoring: structuredClone(scoring), answers: {}, objectiveScore: 0, objectiveMax: scoring.objectivePoints, subjectiveScore: 0, subjectiveMax: scoring.subjectivePoints, startedAt, updatedAt: stamp, submittedAt: null };
+  const a: StoredAttempt = { practiceKind: paper.practiceKind || 'standard', ...(vocabularyDirection ? { vocabularyDirection } : {}), ...(practiceMode === 'practice' ? { practiceTiming: initialPracticeTiming() } : {}), practiceMode, durationMinutes, deadlineAt: durationMinutes == null ? null : new Date(Date.parse(startedAt) + durationMinutes * 60000).toISOString(), elapsedSeconds: 0, autoSubmitted: false, id: makeId('attempt'), source: 'paper', paperId: paper.id, paperTitle: paper.title, paperVersion: paper.version, status: 'in_progress', questions: structuredClone(questions), scoring: structuredClone(scoring), answers: {}, objectiveScore: 0, objectiveMax: scoring.objectivePoints, subjectiveScore: 0, subjectiveMax: scoring.subjectivePoints, startedAt, updatedAt: stamp, submittedAt: null };
   store.transaction(() => { store.insert('attempts', a.id, a); trimDrafts(store, a); }); return a;
 }
 /** Explicit POST synchronization is important for offline storage: successful writes
@@ -144,6 +148,7 @@ export function syncExams(store: Store): void {
   for(const row of rows){const attempt=JSON.parse(row.data) as StoredAttempt;if(examExpired(attempt))submitAttempt(store,attempt);}
 }
 export function validateAttemptTiming(attempt: StoredAttempt): void {
+  validatePracticeTiming(attempt);
   const bad = () => fail(400, 'INVALID_ATTEMPT_TIMING', '作答计时、考试期限或自动交卷标记不一致');
   if (attempt.elapsedSeconds != null && (!Number.isInteger(attempt.elapsedSeconds) || attempt.elapsedSeconds < 0)) bad();
   if (attempt.practiceMode === 'exam') {
@@ -167,7 +172,7 @@ export function createQuickAttempt(store: Store, input: { questionId?: string; e
   const q = pool[randomInt(0, pool.length)]!;
   if (q.status !== 'published') fail(400, 'QUESTION_UNAVAILABLE', '仅已发布题目可以开始单题自测');
   const stamp = draftStamp(store, 'quick', QUICK_PAPER_ID), questions = flattenQuestions([q]).map(({ study: _study, ...clean }) => clean), scoring = normalizeScoring(questions, { enabled: false });
-  const a: StoredAttempt = { id: makeId('attempt'), source: 'quick', paperId: QUICK_PAPER_ID, paperTitle: q.title, paperVersion: 1, status: 'in_progress', questions, scoring, answers: {}, objectiveScore: 0, objectiveMax: 0, subjectiveScore: 0, subjectiveMax: 0, startedAt: stamp, updatedAt: stamp, submittedAt: null };
+  const a: StoredAttempt = { id: makeId('attempt'), source: 'quick', paperId: QUICK_PAPER_ID, paperTitle: q.title, paperVersion: 1, status: 'in_progress', practiceMode: 'practice', elapsedSeconds: 0, practiceTiming: initialPracticeTiming(), questions, scoring, answers: {}, objectiveScore: 0, objectiveMax: 0, subjectiveScore: 0, subjectiveMax: 0, startedAt: stamp, updatedAt: stamp, submittedAt: null };
   store.transaction(() => { store.insert('attempts', a.id, a); trimDrafts(store, a); }); return a;
 }
 export function trimDrafts(store: Store, attempt: StoredAttempt) {
@@ -207,7 +212,15 @@ export function isCorrect(q: Question, answer?: AttemptAnswer) {
 }
 export function validateAttemptSnapshot(attempt: StoredAttempt) {
   validateAttemptTiming(attempt);
-  if (attempt.vocabularyDirection) {
+  if (attempt.vocabularyDirection && attempt.practiceKind === 'concept') {
+    if (attempt.source === 'quick') fail(400, 'INVALID_CONCEPT_ATTEMPT', '概念双向练习归属概念题集');
+    if (attempt.vocabularyDirection === 'word_to_meaning') validateConceptPaperSnapshot(attempt.questions);
+    else for (const q of attempt.questions) {
+      if (!q.concept || q.type !== 'fill_blank' || q.title !== '看描述想概念' || q.groupId || q.partId) fail(400, 'INVALID_CONCEPT_ATTEMPT', '概念逆向快照无效');
+      const expected = reverseConceptQuestion({ ...q, type: 'short_answer' });
+      if (q.stemMarkdown !== expected.stemMarkdown || JSON.stringify(q.blanks) !== JSON.stringify(expected.blanks) || q.options.length || q.correctAnswers.length || q.parts) fail(400, 'INVALID_CONCEPT_ATTEMPT', '概念提示或别称与原卡不一致');
+    }
+  } else if (attempt.vocabularyDirection) {
     if (attempt.source === 'quick' && (attempt.vocabularyDirection !== 'meaning_to_word' || attempt.questions.length !== 1 || attempt.paperTitle !== '看释义想单词')) fail(400, 'INVALID_VOCABULARY_ATTEMPT', '旧词汇单题历史的来源与快照不一致');
     if (attempt.vocabularyDirection === 'word_to_meaning') validateVocabularyPaperSnapshot(attempt.questions);
     else for (const q of attempt.questions) {
@@ -249,6 +262,7 @@ export function submitAttempt(store: Store, attempt: StoredAttempt, answers?: Re
   if (!expired && answers) validateAssetReferences(store, answers, getSettings(store));
   if (!expired && answers) mergeAnswers(attempt, answers);
   attempt.autoSubmitted = expired;
+  freezePracticeTiming(attempt);
   attempt.elapsedSeconds = attemptElapsedSeconds(attempt);
   const scoring = normalizeScoring(attempt.questions, attempt.scoring);
   attempt.scoring = scoring;
@@ -337,7 +351,7 @@ export function paperMarkdown(paper: StoredPaper, answers: boolean): string {
   const { questions, scoring } = expandPaper(paper);
   return [`# ${paper.title}`, '', paper.description, '', `共 ${paper.questionCount} 道题 / ${questions.length} 个作答项；版本 ${paper.version}；${scoring.enabled ? `总分 ${scoring.totalPoints} 分，客观 ${scoring.objectivePoints} 分 / 主观 ${scoring.subjectivePoints} 分` : '本卷不计分'}。`, '', ...questions.flatMap((q, i) => [
     ...(q.groupId && q.partIndex === 0 ? [`## 公共材料：${q.groupTitle}`, '', q.groupStemMarkdown || '', ''] : []),
-    `## ${i + 1}. ${q.title}`, '', `题号：${q.id} · D${q.difficulty}/L${q.depth}/F${q.frequency}${scoring.enabled ? ` · ${scoring.questionPoints[q.id]} 分` : ' · 不计分'}`, '', q.stemMarkdown, '', ...q.options.map(o => `- ${o.key}. ${o.text}`), '',
+    `## ${i + 1}. ${q.title}`, '', `题号：${q.id} · D${q.difficulty}/L${q.depth}/F${q.frequency}${scoring.enabled ? ` · ${scoring.questionPoints[q.id]} 分` : ' · 不计分'}`, '', questionStemMarkdown(q), '', ...q.options.map(o => `- ${o.key}. ${o.text}`), '',
     ...(q.blanks || []).map(b => `${b.label}：${answers ? b.answers.join(' / ') : '________________'}`), '',
     `[定位原题与答案解析](#/questions/${encodeURIComponent(q.sourceQuestionId || q.id)})`, '', ...(answers ? ['### 参考答案', '', q.answerMarkdown || q.correctAnswers.join('、'), '', '### 解析', '', q.explanationMarkdown, ''] : []),
   ])].join('\n');

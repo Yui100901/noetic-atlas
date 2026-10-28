@@ -1,6 +1,9 @@
 .markdown-editor {min-width:0;max-width:100%;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--theme-surface,#fffefa);}
 .markdown-editor .markdown-editor-heading {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 13px;background:var(--theme-inset,#f5f7f0);border-bottom:1px solid var(--border);}
 .markdown-editor-heading>.field-label {margin:0;font-size:12px;}
+.markdown-editor-heading-actions {display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px;min-width:0;}
+.markdown-editor .markdown-editor-tools-toggle {padding:5px 8px;min-height:34px;background:transparent;font-size:11px;}
+.markdown-editor .markdown-editor-tools-toggle[aria-expanded=true] {background:var(--theme-surface,#fff);color:var(--theme-primary-strong,var(--green));}
 .markdown-editor .markdown-editor-tabs {display:flex;align-items:center;gap:4px;}
 .markdown-editor-tabs>button {min-height:34px;padding:5px 12px;border-color:transparent;background:transparent;font-size:12px;}
 .markdown-editor-tabs>button[aria-selected=true] {background:var(--theme-surface,#fff);border-color:var(--border);color:var(--theme-primary-strong,var(--green));font-weight:650;}
@@ -20,6 +23,15 @@
 .markdown-editor-preview .markdown {font-size:14px;}
 .markdown-editor-preview .markdown table {display:block;max-width:100%;overflow-x:auto;}
 .markdown-editor-empty {font-size:13px;color:var(--muted);}
+.markdown-editor .markdown-editor-hint {margin:0;padding:9px 12px;color:var(--muted);font-size:11px;line-height:1.7;border-bottom:1px solid var(--border);}
+.markdown-editor .markdown-editor-message {margin:0;padding:9px 12px;background:var(--theme-warning-soft,#fff5df);color:var(--theme-warning,#78540e);font-size:12px;line-height:1.7;overflow-wrap:anywhere;}
+.markdown-editor.markdown-editor-sized textarea.markdown-editor-source {min-height:0;}
+.markdown-editor.markdown-editor-sized .markdown-editor-preview {min-height:calc(var(--markdown-editor-rows,5) * 1.85 * 13px + 30px);}
+.markdown-editor-compact .markdown-editor-heading {padding:7px 10px;gap:6px;}
+.markdown-editor-compact .markdown-editor-heading-actions {gap:4px;}
+.markdown-editor-compact .markdown-editor-heading .field-label {max-width:100%;overflow-wrap:anywhere;}
+.markdown-editor-compact .markdown-editor-footer {padding:6px 10px;}
 .markdown-editor .markdown-editor-footer {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:5px 14px;border-top:1px solid var(--border);padding:8px 12px;color:var(--muted);font-size:10px;}
 .markdown-editor [hidden] {display:none!important;}
 @media(max-width:600px){.markdown-editor .markdown-editor-heading {padding:9px 10px;}.markdown-editor .markdown-editor-toolbar {gap:3px;padding:6px;}.markdown-editor .markdown-tool-item>button {width:36px;height:36px;min-height:36px;}.markdown-editor .markdown-tool-separated {margin-left:2px;padding-left:3px;}.markdown-editor textarea.markdown-editor-source {min-height:320px;font-size:14px;padding:12px;}.markdown-editor .markdown-editor-preview {min-height:320px;padding:13px;}.markdown-editor .markdown-editor-attachment {align-items:flex-start;flex-direction:column;gap:5px;}.markdown-editor .markdown-editor-footer {font-size:10px;}.markdown-editor .markdown-editor-tabs>button {min-height:36px;}}
+@media(max-width:600px){.markdown-editor.markdown-editor-sized .markdown-editor-preview {min-height:calc(var(--markdown-editor-rows,5) * 1.85 * 14px + 24px);}.markdown-editor-compact .markdown-editor-heading-actions {flex:1;}.markdown-editor-compact .markdown-editor-tools-toggle {min-height:36px;}}

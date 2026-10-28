@@ -15,6 +15,7 @@ import { ReportQuestionAction } from '../quality-feedback/report-question';
 import { ReviewSchedulingPanel } from '../review-scheduler/review-scheduling';
 import type { ReviewDirection } from '../../../shared/models/adaptive-review';
 import { SimilarQuestionsLauncher, SimilarQuestionsPanel, type SimilarQuestionsMode } from './similar-questions';
+import { MarkdownEditor } from '../../shared/ui/markdown-editor';
 
 export interface QuestionSnapshot extends Question {
   sourceQuestionId?: string;
@@ -92,7 +93,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
         {source.loading ? <Loading text="正在读取学习记录…" /> : !live ? <div className="notice info">{contentSource === 'current' ? '当前原题已删除或暂时无法读取，仍展示打开窗口时读取的内容；关闭窗口刷新后重新确认。' : '原题已删除或暂时无法读取，仍可查看题集保存的完整题目与解析。'}当前无法保存原题学习记录。{source.error && <button type="button" className="button" onClick={source.refresh}>重试学习记录</button>}</div> : <>
           {(!reverse || answerOpen) && <section className="card question-viewer-notes">
             <h3><Bookmark size={17} />{partId !== undefined ? '本小题的学习笔记' : '我的学习笔记'}</h3>
-            <Field label="我的学习笔记"><textarea rows={5} value={notes} onChange={event => setNotes(event.target.value)} placeholder="记录理解、错误原因和下一次要验证的问题…" /></Field>
+            <MarkdownEditor label="我的学习笔记" heading="学习笔记 Markdown" rows={5} compact maxLength={500000} allowImages={false} disabled={busy} value={notes} onChange={setNotes} placeholder="记录理解、错误原因和下一次要验证的问题…" />
             <div className="form-actions"><span className="muted">{dirty ? '有未保存的笔记' : '笔记已同步'}</span><button type="button" className="button primary" disabled={busy || !dirty} onClick={() => void updateStudy({ notes })}>保存笔记</button></div>
           </section>}
           {partId !== undefined && source.data && <LegacyGroupStudy question={source.data} />}

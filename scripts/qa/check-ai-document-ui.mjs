@@ -23,6 +23,13 @@ try {
   const state = async () => (await (await page.request.get(origin + '/qa/ai-document')).json());
   const job = async id => (await (await page.request.get(origin + '/api/ai/document-jobs/' + id)).json());
   const settle = async (check, label) => { for (let tick = 0; tick < 150; tick++) { if (await check()) return; await delay(100); } throw new Error('Timed out: ' + label); };
+  const restoreDraft = async kind => {
+    const controls=page.locator(`[data-draft-kind="${kind}"]`);await controls.waitFor();
+    await page.waitForFunction(value=>{const section=document.querySelector(`[data-draft-kind="${value}"]`);return section&&(section.querySelector('[role="dialog"]')||Array.from(section.querySelectorAll('button')).some(button=>button.textContent.trim()==='保存草稿'&&!button.disabled));},kind);
+    const choices=controls.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});
+    if(await choices.isVisible()){await choices.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await choices.waitFor({state:'hidden'});}
+    await page.waitForFunction(value=>Array.from(document.querySelector(`[data-draft-kind="${value}"]`)?.querySelectorAll('button')||[]).some(button=>button.textContent.trim()==='保存草稿'&&!button.disabled),kind);
+  };
   await page.goto(origin + '/#/ai?tab=documents'); await page.getByLabel('AI分批原始文件', { exact: true }).waitFor({ state: 'attached' });
   let book, bookPages;
   try { book = await readFile('test-results/ai-live-textbook/thinkpython2-source.pdf'); bookPages = (await PDFDocument.load(book)).getPageCount(); }
@@ -54,7 +61,7 @@ try {
   await page.locator(`[data-document-block="${failedBlock.id}"]`).getByRole('link', { name: '查看具体失败记录', exact: true }).click();
   await page.getByRole('dialog', { name: 'AI处理失败详情', exact: true }).waitFor(); const failureText = await page.getByRole('dialog').innerText(); assert.match(failureText, /AI_PROVIDER_ERROR/); assert.match(failureText, /503/); assert.doesNotMatch(failureText, /PRIVATE_PROVIDER_BODY_SHOULD_NOT_APPEAR|qa-placeholder/); checks.push('失败历史展示具体HTTP/阶段/建议且不泄露提供商正文或密钥'); await page.screenshot({ path: resolve(folder, 'history-failure.png'), fullPage: true });
   await page.getByRole('button', { name: '关闭', exact: true }).click(); await page.getByLabel('AI记录状态', { exact: true }).selectOption('failed'); await page.locator('.ai-history-item').first().waitFor(); assert.equal(await page.locator('.ai-history-item').count(), 2); checks.push('AI历史支持失败筛选，任务和分块可追溯');
-  await page.goto(origin + '/#/ai?tab=documents&job=' + id); await page.getByRole('region', { name: '教材分批任务' }).waitFor(); await page.getByRole('button', { name: /^重试失败出题/ }).click(); await settle(async () => (await job(id)).questionCount === 3 && (await job(id)).failedBlocks === 0, 'retry generation');
+  await page.goto(origin + '/#/ai?tab=documents&job=' + id);await restoreDraft('documents');await restoreDraft('document-job'); await page.getByRole('region', { name: '教材分批任务' }).waitFor(); await page.getByRole('button', { name: /^重试失败出题/ }).click(); await settle(async () => (await job(id)).questionCount === 3 && (await job(id)).failedBlocks === 0, 'retry generation');
   assert.equal((await state()).requests.filter(item => item.kind === 'generate').length, 4); checks.push('重新打开任务继续，仅重试失败出题并沿用每块预算');
   const beforeImport = await job(id), first = beforeImport.blocks[0]; await page.locator(`[data-document-block="${first.id}"]`).getByRole('button', { name: /^展开知识块/ }).click();
   await page.getByText('编辑本块完整题目 JSON', { exact: true }).click(); const editor = page.getByLabel(`知识块 ${first.label} 题目JSON`, { exact: true }); const preview = JSON.parse(await editor.inputValue());
@@ -64,7 +71,10 @@ try {
   await page.getByRole('button', { name: /^确认选中预览到待审核/ }).click(); await settle(async () => (await state()).questions.total === 3, 'pending import');
   const imported = (await state()).questions.items; assert.ok(imported.every(question => question.status === 'pending')); assert.ok(imported.some(question => question.title === '用户核对后的变量题')); assert.ok(imported.every(question => question.categoryIds.includes('document-python') && question.sourceRefs[0].url === 'https://example.invalid/textbook')); checks.push('编辑预览后显式确认新增3题且统一待审核，来源与分类保留');
   assert.equal(await page.getByRole('button', { name: /^确认选中预览到待审核/ }).isDisabled(), true); checks.push('已导入批次不允许重复确认'); await page.screenshot({ path: resolve(folder, 'document-desktop.png'), fullPage: true });
-  await page.setViewportSize({ width: 390, height: 844 }); await page.reload(); await page.getByRole('region', { name: '教材分批任务' }).waitFor(); await settle(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'mobile width'); await page.screenshot({ path: resolve(folder, 'document-mobile.png'), fullPage: true }); checks.push('390px分批任务及预览无横向溢出，刷新保留任务');
+  // Flush both parent inputs and task edits through their visible controls
+  // before refreshing; then explicitly continue each saved context.
+  for(const kind of ['documents','document-job']){const controls=page.locator(`[data-draft-kind="${kind}"]`);await controls.getByRole('button',{name:'保存草稿',exact:true}).click();await restoreDraft(kind);}
+  await page.setViewportSize({ width: 390, height: 844 }); await page.reload();await restoreDraft('documents');await restoreDraft('document-job'); await page.getByRole('region', { name: '教材分批任务' }).waitFor(); await settle(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'mobile width'); await page.screenshot({ path: resolve(folder, 'document-mobile.png'), fullPage: true }); checks.push('390px分批任务及预览无横向溢出，刷新后选择草稿可恢复教材任务和编辑上下文');
   assert.deepEqual(pageErrors, []); assert.deepEqual(unexpectedNetwork, []); checks.push('零浏览器异常和外部请求，全部写入隔离内存库');
   const report = { passed: checks.length, checks, pageErrors, unexpectedNetwork, sourcePages: bookPages, database: ':memory:', provider: 'loopback-only' }; await writeFile(resolve(folder, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } catch (error) { await writeFile(resolve(folder, 'failure.json'), JSON.stringify({ error: String(error.stack || error), checks, pageErrors, unexpectedNetwork, stderr }, null, 2)); throw error; }

@@ -17,6 +17,7 @@ import { registerDocumentDraftRoutes } from './modules/library/document-drafts.j
 import { registerSharingRoutes } from './modules/sharing/routes.js';
 import { ensureAiStorage, registerAiRoutes, getPublicAiSettings } from './modules/ai/routes.js';
 import { registerAiDocumentRoutes } from './modules/ai/document-routes.js';
+import { registerAiWorkspaceDraftRoutes } from './modules/ai/workspace-drafts.js';
 import { registerQuestionFeedbackRoutes } from './modules/quality-feedback/routes.js';
 import { registerPaperDraftRoutes } from './modules/practice/paper-drafts.js';
 import { registerApiDocs } from './http/openapi.js';
@@ -87,6 +88,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerSharingRoutes(app, store);
   registerAiRoutes(app, store, { native: options.native });
   registerAiDocumentRoutes(app, store, { native: options.native });
+  registerAiWorkspaceDraftRoutes(app, store);
   registerQuestionFeedbackRoutes(app, store, { native: options.native });
   registerPaperDraftRoutes(app, store);
   registerQuestionRoutes(app, store);

@@ -28,6 +28,7 @@ import { ratingSchema, reviewCardSchema, reviewEventSchema } from '../review-sch
 import { mirrorReviewStudy, validateReviewImport } from '../review-scheduler/service.js';
 import { questionFeedbackSchema } from '../quality-feedback/schema.js';
 import { practiceTimingStateSchema } from '../practice/practice-timing.js';
+import { aiWorkspaceDraftSchema } from '../ai/workspace-draft-schema.js';
 
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
@@ -53,13 +54,14 @@ const envelopeSchema = z.object({
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
   documentDrafts: z.array(documentDraftSchema).default([]),
+  aiWorkspaceDrafts: z.array(aiWorkspaceDraftSchema).default([]),
   questionHistory:z.array(questionHistorySchema).default([]),
   dailyPushes:z.array(dailyPushRecordSchema).default([]),
   reviewCards: z.array(reviewCardSchema).default([]), reviewEvents: z.array(reviewEventSchema).default([]),
   questionFeedback: z.array(questionFeedbackSchema).default([]),
   qualityScans: z.array(qualityScanSchema).default([]), qualityIssues: z.array(qualityIssueSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
+const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -142,6 +144,7 @@ export function importData(store: Store, raw: unknown) {
     insert('paper_drafts', data.paperDrafts);
     for (const draft of data.documentDrafts) if (!store.get('document_drafts', draft.id)) validateDocumentDraftState(store, draft.state, true);
     insert('document_drafts', data.documentDrafts);
+    insert('ai_workspace_drafts', data.aiWorkspaceDrafts);
     for (const state of data.study) store.require('questions', state.questionId);
     insert('study', data.study, 'questionId');
     // Keep removed-part history in a backup without assigning it to another

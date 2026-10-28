@@ -5,7 +5,7 @@ import type { SQLiteRecoveryBackup, SQLiteRestorePreview } from '../../../shared
 import { ErrorNotice } from '../../shared/ui/components';
 import './sqlite-restore.css';
 
-const labels: Record<string, string> = { questions: '题目', papers: '题集', documents: '资料', assets: '图片/PDF', attempts: '作答历史', learning_results: '独立学习结果', question_history: '单题历史', study: '整题学习记录', study_parts: '小题学习记录', reviews: '复习记录', review_cards: '自适应复习卡片', review_events: '自适应复习事件', daily_pushes: '每日推荐记录', domains: '领域', categories: '分类', tags: '标签', paper_drafts: '组题草稿', document_drafts: '资料编辑草稿', settings: '系统配置', ai_settings: 'AI 配置', ai_runs: 'AI 分析历史', ai_import_jobs: 'AI 教材处理任务' };
+const labels: Record<string, string> = { questions: '题目', papers: '题集', documents: '资料', assets: '图片/PDF', attempts: '作答历史', learning_results: '独立学习结果', question_history: '单题历史', study: '整题学习记录', study_parts: '小题学习记录', reviews: '复习记录', review_cards: '自适应复习卡片', review_events: '自适应复习事件', daily_pushes: '每日推荐记录', domains: '领域', categories: '分类', tags: '标签', paper_drafts: '组题草稿', document_drafts: '资料编辑草稿', ai_workspace_drafts: 'AI工作台草稿', settings: '系统配置', ai_settings: 'AI 配置', ai_runs: 'AI 分析历史', ai_import_jobs: 'AI 教材处理任务' };
 labels.question_feedback = '题目反馈';
 labels.quality_scans='内容质量扫描'; labels.quality_issues='内容质量问题';
 const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MiB`;

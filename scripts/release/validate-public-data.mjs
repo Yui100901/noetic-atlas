@@ -26,7 +26,7 @@ export function validatePublicData(seed) {
   for (const question of seed.questions) {
     if (question.collection !== 'general' || question.status !== 'published' || Object.hasOwn(question,'resumePriority') || question.sourceDocument || question.sourceAnchor || question.study) throw new Error(`初装题目含个人状态或未审核内容：${question.id}`);
   }
-  for (const key of ['documents','papers','attempts','study','reviews','settings','assets','paperDrafts','documentDrafts','ai_settings','ai_runs']) if (seed[key] !== undefined && (!Array.isArray(seed[key]) || seed[key].length)) throw new Error(`发布题库包含用户数据：${key}`);
+  for (const key of ['documents','papers','attempts','study','reviews','settings','assets','paperDrafts','documentDrafts','aiWorkspaceDrafts','ai_workspace_drafts','ai_settings','ai_runs']) if (seed[key] !== undefined && (!Array.isArray(seed[key]) || seed[key].length)) throw new Error(`发布题库包含用户数据：${key}`);
   const domains = new Set(seed.domains.map(d=>d.id)), categories = new Map(seed.categories.map(c=>[c.id,c])), tags = new Map(seed.tags.map(t=>[t.id,t])), questions = new Set(seed.questions.map(q=>q.id));
   if (domains.size!==seed.domains.length || categories.size!==seed.categories.length || tags.size!==seed.tags.length || questions.size!==seed.questions.length) throw new Error('公开题库包含重复ID');
   for (const category of categories.values()) { if (!domains.has(category.domainId)) throw new Error('分类领域失效'); let current=category; const seen=new Set(); while(current?.parentId){ if(seen.has(current.id))throw new Error('分类形成环');seen.add(current.id);const parent=categories.get(current.parentId);if(!parent||parent.domainId!==category.domainId)throw new Error('分类祖先失效');current=parent;} }

@@ -166,5 +166,5 @@ export function importDocumentJob(store: Store, id: string, body: unknown) {
 }
 export function deleteDocumentJob(store: Store, id: string) {
   const leave = enter(store, id);
-  try { documentJob(store, id); store.database.deleteRecord('ai_import_jobs', id); return { ok: true }; } finally { leave(); }
+  try { return store.transaction(()=>{documentJob(store, id);const db=store.database;db.deleteRecord('ai_import_jobs',id);db.run(db.query.deleteFrom('ai_workspace_drafts').where(db.expressions.field('data','kind'),'=','document-job').where(db.expressions.field('data','contextId'),'=',id));return { ok: true };}); } finally { leave(); }
 }

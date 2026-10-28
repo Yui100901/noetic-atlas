@@ -6,3 +6,10 @@
 
 /* Stack containers already own the spacing around embedded AI tools. */
 .ui-stack > .ai-tools,.form-stack > .ai-tools {margin-block:0;}
+.ai-workspace-draft{align-items:flex-start}
+.ai-workspace-draft>.form-stack{width:100%;min-width:0}
+.ai-workspace-draft .action-row{gap:8px;flex-wrap:wrap}
+.ai-workspace-draft-choice{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--line,var(--theme-border,#ddd));border-radius:12px}
+.ai-workspace-draft-choice>div{min-width:0;overflow-wrap:anywhere}
+.ai-workspace-draft-choice .button{flex-shrink:0}
+@media(max-width:600px){.ai-workspace-draft-choice{align-items:flex-start;flex-direction:column}}

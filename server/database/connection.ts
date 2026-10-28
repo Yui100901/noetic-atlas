@@ -46,6 +46,7 @@ export class DatabaseConnection {
       ['question_history_attempt_idx','question_history',['attemptId']],
       ['documents_archived_updated_idx','documents',['_archived','updatedAt']],
       ['document_drafts_context_updated_idx','document_drafts',['documentId','updatedAt']],
+      ['ai_workspace_drafts_context_updated_idx','ai_workspace_drafts',['kind','contextId','updatedAt']],
       ['questions_type_title_idx','questions',['type','title']],
       ['question_feedback_question_status_idx','question_feedback',['questionId','status']],
       ['quality_fingerprints_prompt_idx','quality_fingerprints',['promptHash']],

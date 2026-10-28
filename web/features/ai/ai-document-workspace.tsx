@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { FileInput, FolderOpen, RefreshCw, Save, Square } from 'lucide-react';
 import { AI_DOCUMENT_LIMITS, type AiDocumentJob, type AiDocumentJobSummary } from '../../../shared/ai/ai-document';
 import { typeLabels, type QuestionType } from '../../../shared/models/types';
@@ -11,31 +12,49 @@ import { extractDocumentFiles, type DocumentExtractProgress, type DocumentFilesR
 import { AiDocumentJobPanel } from './ai-document-job';
 import { AiDocumentSourcePreview } from './ai-document-source-preview';
 import { aiFailureMessage } from './ai-progress';
+import { useAiWorkspaceDraft } from './use-ai-workspace-draft';
+import { useAiDraftSession } from './ai-workspace-draft-context';
+import { documentFilesDraft, draftNumber, draftString, draftStrings } from './ai-document-draft-state';
 import './ai-document.css';
 
 export const documentStatusLabels: Record<string, string> = { pending: '待分析', running: '处理中', ready: '可选择知识块', partial: '部分完成／有失败', failed: '处理失败', completed: '已生成预览' };
 
 export function AiDocumentWorkspace() {
-  const { bootstrap, toast } = useApp();
+  const { bootstrap, toast } = useApp(), session = useAiDraftSession();
   const input = useRef<HTMLInputElement>(null), extraction = useRef<AbortController | null>(null);
   const [local, setLocal] = useState<DocumentFilesResult | null>(null), [extractProgress, setExtractProgress] = useState<DocumentExtractProgress | null>(null);
   const [sourceName, setSourceName] = useState(''), [sourceUrl, setSourceUrl] = useState(''), [requirements, setRequirements] = useState('');
   const [first, setFirst] = useState(''), [last, setLast] = useState(''), [perBlock, setPerBlock] = useState(10), [maximum, setMaximum] = useState(200);
   const [mode, setMode] = useState<'generate' | 'extract'>('generate'), [types, setTypes] = useState<string[]>([]), [difficulty, setDifficulty] = useState('');
   const [categoryIds, setCategoryIds] = useState<string[]>([]), [tagIds, setTagIds] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [job, setJob] = useState<AiDocumentJob | null>(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [job, setJob] = useState<AiDocumentJob | null>(null), [jobId, setJobId] = useState('');
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10);
+  const opened = useRef(''), explicitOpened = useRef(false), loadEpoch = useRef(0);
   const jobs = useResource<Paged<AiDocumentJobSummary>>(`/api/ai/document-jobs?page=${page}&pageSize=${pageSize}`);
   const domains = Array.from(new Set(categoryIds.map(id => bootstrap.categories.find(category => category.id === id)?.domainId).filter(Boolean))) as string[];
-  const open = async (id: string) => { setError(''); setBusy(true); try { setJob(await request<AiDocumentJob>(`/api/ai/document-jobs/${idPath(id)}`)); } catch (reason) { setError(aiFailureMessage(reason)); } finally { setBusy(false); } };
+  const draft = useAiWorkspaceDraft({ kind: 'documents', state: { local, sourceName, sourceUrl, requirements, first, last, perBlock, maximum, mode, types, difficulty, categoryIds, tagIds, jobId: jobId || null, page, pageSize }, busy,
+    hasContent: !!local || !!jobId || !!sourceName || !!sourceUrl || !!requirements || !!first || !!last || perBlock !== 10 || maximum !== 200 || mode !== 'generate' || types.length > 0 || !!difficulty || categoryIds.length > 0 || tagIds.length > 0 || page !== 1 || pageSize !== 10,
+    restore: value => { loadEpoch.current++; opened.current = ''; setBusy(false); setLocal(documentFilesDraft(value.local)); setSourceName(draftString(value.sourceName)); setSourceUrl(draftString(value.sourceUrl)); setRequirements(draftString(value.requirements)); setFirst(draftString(value.first)); setLast(draftString(value.last)); setPerBlock(draftNumber(value.perBlock, 10)); setMaximum(draftNumber(value.maximum, 200)); setMode(value.mode === 'extract' ? 'extract' : 'generate'); setTypes(draftStrings(value.types)); setDifficulty(draftString(value.difficulty)); setCategoryIds(draftStrings(value.categoryIds)); setTagIds(draftStrings(value.tagIds)); setPage(draftNumber(value.page, 1)); setPageSize(draftNumber(value.pageSize, 10)); setJob(null); setJobId(draftString(value.jobId)); setError(''); }
+  });
+  const open = async (id: string) => { const epoch = ++loadEpoch.current; setError(''); setBusy(true); try { const value = await request<AiDocumentJob>(`/api/ai/document-jobs/${idPath(id)}`); if (epoch === loadEpoch.current) { setJob(value); setJobId(value.id); } } catch (reason) { if (epoch === loadEpoch.current) setError(aiFailureMessage(reason)); } finally { if (epoch === loadEpoch.current) setBusy(false); } };
+  const switchWork = (action: () => void) => { if (session) void session.transition(action); else void draft.saveNow().then(action).catch(reason => setError(aiFailureMessage(reason))); };
   useEffect(() => {
-    const id = new URLSearchParams(window.location.hash.split('?')[1] || '').get('job'); if (id) void open(id);
     return () => extraction.current?.abort();
   }, []);
+  useEffect(() => {
+    if (!draft.ready) return;
+    const explicit = !explicitOpened.current ? new URLSearchParams(window.location.hash.split('?')[1] || '').get('job') : null;
+    explicitOpened.current = true;
+    const id = explicit || jobId;
+    if (!id) { opened.current = ''; return; }
+    if (opened.current === id || job?.id === id) return;
+    opened.current = id; void open(id);
+  }, [draft.ready, jobId, job?.id]);
   const extract = async (files: File[]) => {
     if (!files.length) return;
+    try { await draft.saveNow(); } catch (reason) { setError(aiFailureMessage(reason)); return; }
     const controller = new AbortController(); extraction.current?.abort(); extraction.current = controller;
-    setBusy(true); setError(''); setLocal(null); setExtractProgress(null);
+    setBusy(true); setError(''); setExtractProgress(null);
     try {
       const value = await extractDocumentFiles(files, { ...(first ? { firstPage: Number(first) } : {}), ...(last ? { lastPage: Number(last) } : {}), signal: controller.signal, onProgress: setExtractProgress });
       if (!controller.signal.aborted) { setLocal(value); setSourceName(value.sourceName); setMaximum(Math.min(AI_DOCUMENT_LIMITS.maxQuestionsPerJob, Math.max(200, value.sections.length * perBlock))); }
@@ -47,11 +66,18 @@ export function AiDocumentWorkspace() {
     if (!confirm('创建可恢复的教材任务后，提取的正文会保存到本机数据库，供分块、失败重试和再次打开使用。现在不会发送模型或新增题目，是否继续？')) return;
     setBusy(true); setError('');
     try {
-      const value = await send<AiDocumentJob>('/api/ai/document-jobs', 'POST', { confirmed: true, sourceName: sourceName.trim(), ...(sourceUrl.trim() ? { sourceUrl: sourceUrl.trim() } : {}), sections: local.sections, mode, requirements, questionTypes: types, ...(difficulty ? { difficulty: Number(difficulty) } : {}), categoryIds, tagIds, questionsPerBlock: perBlock, maxQuestions: maximum });
-      setJob(value); setLocal(null); jobs.refresh(); toast('教材任务已保存在本机，可先分析知识块再选择出题');
+      await draft.runBusy(async () => {
+        const value = await send<AiDocumentJob>('/api/ai/document-jobs', 'POST', { confirmed: true, sourceName: sourceName.trim(), ...(sourceUrl.trim() ? { sourceUrl: sourceUrl.trim() } : {}), sections: local.sections, mode, requirements, questionTypes: types, ...(difficulty ? { difficulty: Number(difficulty) } : {}), categoryIds, tagIds, questionsPerBlock: perBlock, maxQuestions: maximum });
+        // Persist the consumed source and new task pointer together before
+        // allowing another navigation; the original task is never recreated.
+        flushSync(() => { setJob(value); setJobId(value.id); setLocal(null); });
+        await draft.saveNow(); jobs.refresh(); toast('教材任务已保存在本机，可先分析知识块再选择出题');
+      });
     } catch (reason) { setError(aiFailureMessage(reason)); } finally { setBusy(false); }
   };
+  if (!draft.ready) return draft.controls;
   return <div className="ai-document-workspace form-stack">
+    {draft.controls}
     <section className="card ai-tools form-stack">
       <div className="list-toolbar"><div><h2>1. 读取多份资料或整本教材</h2><p className="muted">先在本机分块，再逐轮总结。选择需要的知识块后生成练习，成功批次保留，失败批次可单独重试。</p></div><button className="button" disabled={busy} onClick={() => input.current?.click()}><FileInput size={16} />选择多个 PDF / 文本文件</button></div>
       <input ref={input} type="file" multiple className="sr-only" aria-label="AI分批原始文件" accept=".pdf,.txt,.md,.markdown,.json,.csv" disabled={busy} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; void extract(files); }} />
@@ -71,13 +97,14 @@ export function AiDocumentWorkspace() {
         <MultiSelect label="分批题型范围" options={Object.entries(typeLabels).map(([id, name]) => ({ id: id as QuestionType, name }))} values={types} onChange={setTypes} />
         <MultiSelect label="分批目标分类" options={bootstrap.categories.map(category => ({ id: category.id, name: `${bootstrap.domains.find(domain => domain.id === category.domainId)?.name || ''} / ${category.name}` }))} values={categoryIds} onChange={setCategoryIds} />
         <TagPicker tags={bootstrap.tags} domains={bootstrap.domains} domainIds={domains.length ? domains : undefined} values={tagIds} onChange={setTagIds} />
-        <button className="button primary" disabled={busy || !sourceName.trim() || perBlock < 1 || perBlock > 50 || maximum < 1 || maximum > AI_DOCUMENT_LIMITS.maxQuestionsPerJob} onClick={() => void create()}><Save size={16} />创建可恢复教材任务</button>
+        <button className="button primary" disabled={busy || !sourceName.trim() || perBlock < 1 || perBlock > 50 || maximum < 1 || maximum > AI_DOCUMENT_LIMITS.maxQuestionsPerJob} onClick={() => switchWork(() => void create())}><Save size={16} />创建可恢复教材任务</button>
       </>}
       {error && <ErrorNotice message={error} />}
     </section>
-    {job && <AiDocumentJobPanel key={job.id} job={job} onChange={setJob} onSettled={jobs.refresh} onClose={() => { setJob(null); jobs.refresh(); }} />}
+    {job && <AiDocumentJobPanel key={job.id} job={job} onChange={setJob} onSettled={jobs.refresh} onClose={() => { setJob(null); setJobId(''); opened.current = ''; jobs.refresh(); }} />}
+    {!job && jobId && <div className="notice info"><span>当前草稿关联教材任务 {jobId}。任务可能已删除或暂时不可读取；本页提取正文和参数仍保留。</span><button className="button" disabled={busy} onClick={() => void open(jobId)}>重新读取任务</button><button className="button" disabled={busy} onClick={() => setJobId('')}>解除任务关联</button></div>}
     <section className="card form-stack ai-tools"><div className="list-toolbar"><h2>已保存的教材任务</h2><button className="button" onClick={jobs.refresh}><RefreshCw size={15} />刷新任务</button></div>
-      {jobs.loading ? <Loading /> : jobs.error ? <ErrorNotice message={jobs.error} retry={jobs.refresh} /> : jobs.data?.items.length ? <div className="ai-document-jobs">{jobs.data.items.map(item => <article key={item.id}><div><strong>{item.sourceName}</strong><span className={`badge ai-run-status-${item.status}`}>{documentStatusLabels[item.status] || item.status}</span><p className="muted">{localDate(item.updatedAt)} · 已总结{item.plannedBlocks}/{item.blockCount}块 · 已生成{item.questionCount}题 · 已导入{item.importedCount}题{item.failedBlocks ? ` · ${item.failedBlocks}块失败` : ''}</p></div><button className="button" disabled={busy} onClick={() => void open(item.id)}><FolderOpen size={15} />打开并继续</button></article>)}</div> : <Empty title="还没有分批教材任务" description="创建任务后可离开页面，回来继续选择知识块、重试失败或确认导入。" />}
+      {jobs.loading ? <Loading /> : jobs.error ? <ErrorNotice message={jobs.error} retry={jobs.refresh} /> : jobs.data?.items.length ? <div className="ai-document-jobs">{jobs.data.items.map(item => <article key={item.id}><div><strong>{item.sourceName}</strong><span className={`badge ai-run-status-${item.status}`}>{documentStatusLabels[item.status] || item.status}</span><p className="muted">{localDate(item.updatedAt)} · 已总结{item.plannedBlocks}/{item.blockCount}块 · 已生成{item.questionCount}题 · 已导入{item.importedCount}题{item.failedBlocks ? ` · ${item.failedBlocks}块失败` : ''}</p></div><button className="button" disabled={busy} onClick={() => switchWork(() => void open(item.id))}><FolderOpen size={15} />打开并继续</button></article>)}</div> : <Empty title="还没有分批教材任务" description="创建任务后可离开页面，回来继续选择知识块、重试失败或确认导入。" />}
       <Pagination page={page} pageSize={pageSize} total={jobs.data?.total || 0} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} label="教材任务" />
     </section>
   </div>;

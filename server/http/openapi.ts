@@ -15,6 +15,7 @@ import { questionFeedbackSchema, questionFeedbackInputSchema, questionFeedbackRe
 import { questionFeedbackQuerySchema, questionFeedbackSummariesSchema } from '../modules/quality-feedback/routes.js';
 import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/paper-drafts.js';
 import { documentDraftSchema, documentDraftQuerySchema, createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema } from '../modules/library/document-drafts.js';
+import { aiWorkspaceDraftSchema,aiWorkspaceDraftQuerySchema,aiWorkspaceDraftCreateSchema,aiWorkspaceDraftUpdateSchema,aiWorkspaceDraftDeleteSchema } from '../modules/ai/workspace-draft-schema.js';
 import { paginationFields } from '../core/pagination.js';
 import { vocabularyQuerySchema } from '../modules/questions/vocabulary.js';
 import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuestionsQuerySchema, learningContextsQuerySchema } from '../modules/practice/learning.js';
@@ -130,6 +131,8 @@ function bodyFor(method:string,url:string): JsonSchema|undefined {
   if(url==='/api/document-drafts'&&method==='POST')return toJson(createDocumentDraftSchema);
   if(url==='/api/document-drafts/:id')return method==='PUT'?toJson(updateDocumentDraftSchema):method==='DELETE'?toJson(deleteDocumentDraftSchema):undefined;
   if(url==='/api/document-drafts/:id/publish'&&method==='POST')return toJson(publishDocumentDraftSchema);
+  if(url==='/api/ai/workspace-drafts'&&method==='POST')return toJson(aiWorkspaceDraftCreateSchema);
+  if(url==='/api/ai/workspace-drafts/:id')return method==='PUT'?toJson(aiWorkspaceDraftUpdateSchema):method==='DELETE'?toJson(aiWorkspaceDraftDeleteSchema):undefined;
   if(url==='/api/quick-practice')return toJson(z.object({questionId:id.optional(),excludeQuestionId:id.optional(),filters:validation.filtersSchema.optional()}).strict());
   if (!['POST','PUT','PATCH'].includes(method)) return undefined;
   if (/^\/api\/(?:exams\/sync|attempts\/:id\/(?:sync|reveal))$/.test(url)) return undefined;
@@ -180,6 +183,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/attempts')schema.querystring=toJson(z.object({...paginationFields,paperId:id.optional(),source:z.enum(['paper','quick']).optional(),status:z.enum(['in_progress','submitted']).optional()}));
   if(url==='/api/ai/runs')schema.querystring=toJson(aiHistoryQuerySchema);
   if(url==='/api/ai/document-jobs')schema.querystring=toJson(z.object(paginationFields));
+  if(url==='/api/ai/workspace-drafts')schema.querystring=toJson(aiWorkspaceDraftQuerySchema);
   if(url==='/api/question-feedback')schema.querystring=toJson(questionFeedbackQuerySchema);
   if(url==='/api/content-quality/issues'||url==='/api/content-quality/questions')schema.querystring=toJson(quality.qualityIssueQuerySchema);
   if(url==='/api/content-quality/scans'&&method==='GET')schema.querystring=toJson(quality.qualityScanQuerySchema);
@@ -237,6 +241,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/papers/:id/attempts'||url==='/api/quick-practice'||/^\/api\/attempts\/:id\/(?:sync|submit|review|reveal|timing)$/.test(url))success=attemptOutput;
   if(url==='/api/papers/:id/drafts'||url==='/api/paper-drafts')success={type:'array',items:url.includes('/drafts')?attemptOutput:toJson(paperDraftSchema)};
   if(area==='document-drafts')success=url.endsWith('/publish')?toJson(validation.documentSchema):method==='GET'?{type:'array',items:toJson(documentDraftSchema)}:toJson(documentDraftSchema);
+  if(url.startsWith('/api/ai/workspace-drafts'))success=url==='/api/ai/workspace-drafts'&&method==='GET'?{type:'array',items:toJson(aiWorkspaceDraftSchema)}:toJson(aiWorkspaceDraftSchema);
   if(url==='/api/daily-push')success=dailyOverviewOutput;
   if(url==='/api/daily-push/check')success={type:'object',required:['generated','record','overview'],properties:{generated:{type:'boolean'},record:{anyOf:[dailyRecordOutput,{type:'null'}]},overview:dailyOverviewOutput}};
   if(url==='/api/daily-push/:id/read')success=dailyRecordOutput;

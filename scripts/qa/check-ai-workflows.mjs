@@ -55,7 +55,7 @@ try{
   await page.getByLabel('处理方式',{exact:true}).selectOption('generate');assert.equal(await page.getByRole('button',{name:'确认新增到待审核',exact:true}).count(),0);
   const markdown='# Transaction textbook\nA transaction commits all operations or rolls them all back.\nA transfer must debit and credit together.';
   await page.getByLabel('AI导入原始文件',{exact:true}).setInputFiles({name:'transaction-textbook.md',mimeType:'text/markdown',buffer:Buffer.from(markdown)});
-  await page.waitForFunction(value=>document.querySelector('.ai-source-text')?.value===value,markdown);assert.equal(await page.getByLabel('来源名称',{exact:true}).inputValue(),'transaction-textbook.md');checks.push('教材模式切换清理旧预览，Markdown上传在本机读取并填写来源');
+  await page.waitForFunction(value=>document.querySelector('.ai-source-text')?.value===value,markdown);assert.equal(await page.getByLabel('来源名称',{exact:true}).inputValue(),'transaction-textbook.md');checks.push('成功导入后已提交预览释放，Markdown教材在本机读取并填写来源');
   const pdf=await PDFDocument.create(),pdfPage=pdf.addPage([612,792]),font=await pdf.embedFont(StandardFonts.Helvetica);
   pdfPage.drawText('A transaction commits all operations or rolls them all back.',{x:35,y:740,size:12,font});pdfPage.drawText('A transfer must debit and credit together.',{x:35,y:710,size:12,font});
   await page.getByLabel('AI导入原始文件',{exact:true}).setInputFiles({name:'transaction-textbook.pdf',mimeType:'application/pdf',buffer:Buffer.from(await pdf.save())});
@@ -68,7 +68,9 @@ try{
   await page.screenshot({path:resolve(folder,'textbook-pdf-preview.png'),fullPage:true});await page.getByRole('button',{name:'确认新增到待审核',exact:true}).click();await page.getByText('已新增2道待审核题。',{exact:false}).first().waitFor();
   const generated=await state();assert.equal(generated.totalQuestions,8);for(const entry of generated.questions.filter(q=>q.title.startsWith('教材生成的'))){const q=await question(entry.id);assert.equal(q.status,'pending');assert.equal(q.sourceDocument,'transaction-textbook.pdf');assert.deepEqual(q.sourceRefs,[{label:'transaction-textbook.pdf',url:'https://example.invalid/qa-transaction-textbook'}]);assert.deepEqual(q.categoryIds,['db']);}checks.push('确认导入教材题保持待审核，保留来源文件/链接/分类，来源链接不发生外部访问');
 
-  await page.goto(origin+'/#/questions/review');await page.getByRole('checkbox',{name:'审核选择 P1',exact:true}).check();await page.getByRole('checkbox',{name:'审核选择 BAD1',exact:true}).check();await page.getByRole('button',{name:'AI审核选中题目',exact:true}).click();
+  // Follow the real review link: the workspace saves remaining source inputs
+  // before navigating, just as a user leaves after confirming an import.
+  await page.getByRole('link',{name:'前往核对和审核 →',exact:true}).click();await page.waitForURL(/#\/questions\/review/);await page.getByRole('checkbox',{name:'审核选择 P1',exact:true}).check();await page.getByRole('checkbox',{name:'审核选择 BAD1',exact:true}).check();await page.getByRole('button',{name:'AI审核选中题目',exact:true}).click();
   const review=page.getByRole('dialog',{name:'AI审核 2 道待审核题',exact:true});await review.getByRole('button',{name:'运行 AI 审核',exact:true}).click();await review.getByText('审核报告',{exact:true}).waitFor();assert.equal((await question('P1')).status,'published');assert.equal((await question('BAD1')).status,'pending');
   assert.ok(await review.getByText('已通过审核',{exact:true}).count());assert.ok(await review.getByText('通常整数算术中2+2=4，原答案错误。',{exact:true}).count());checks.push('批量AI审核正确题发布、错误题显示原因并保留待审核');await review.getByRole('button',{name:'关闭',exact:true}).click();
 

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Archive, ArrowLeft, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
 import type { Attempt, Paper, PaperDetail } from '../../../shared/models/types';
-import { href, idPath, localDate, navigate, request, send, useResource } from '../../shared/lib/api';
+import { href, idPath, localDate, navigate, request, send, useDebounced, useResource, qs } from '../../shared/lib/api';
+import type {PaperListItem,PaperListPage} from '../../../shared/practice/paper-list';
 import { Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Pagination, QuestionMeta, SearchBox, useApp } from '../../shared/ui/components';
 import { isSubjectiveType } from '../../../shared/questions/question-utils';
 import '../practice/practice-session.css';
@@ -24,23 +25,26 @@ export function PapersPage() {
   const { bootstrap } = useApp();
   const [initial]=useState(initialPaperListContext);
   const [showArchived, setShowArchived] = useState(initial.showArchived);
-  const { data, error, loading, refresh } = useResource<Paper[]>(`/api/papers${showArchived ? '?archived=true' : ''}`);
   const { overview: dailyOverview } = useDailyPush();
-  // The scheduler can create a set while this page stays mounted. Observe its
-  // stable ID, so notification polling/mark-read never causes a reload loop.
-  useEffect(() => { if (dailyOverview?.today?.paperId) refresh(); }, [dailyOverview?.today?.paperId, refresh]);
+
   const [search, setSearch] = useState(initial.search);
   const [organization, setOrganization] = useState(initial.organization);
   const [page,setPage]=useState(initial.page),[pageSize,setPageSize]=useState(initial.pageSize);
-  const papers = data?.filter(paper => paper.title.toLowerCase().includes(search.toLowerCase()) && (organization === 'all' || (organization === 'other' ? paper.organization !== 'domain' : organization === 'domain' ? paper.organization === 'domain' : paper.organization === 'domain' && `domain:${paper.domainId}` === organization))) || [];
-  const pages=Math.max(1,Math.ceil(papers.length/pageSize)),safePage=Math.min(page,pages);
-  useEffect(()=>{if(!loading&&data&&page>pages)setPage(pages);},[loading,data,page,pages]);
+  const debouncedSearch=useDebounced(search);
+  const query=qs({search:debouncedSearch,organization:organization.startsWith('domain:')?'domain':organization,domainId:organization.startsWith('domain:')?organization.slice(7):undefined,archived:showArchived,page,pageSize});
+  const listUrl=`/api/papers/page?${query}`;
+  const resource=useResource<PaperListPage>(listUrl),{error,refresh}=resource;
+  const current=resource.dataUrl===listUrl,data=current?resource.data:null,loading=resource.loading||!current&&!error;
+  useEffect(() => { if (dailyOverview?.today?.paperId) refresh(); }, [dailyOverview?.today?.paperId, refresh]);
+  const papers=data?.items||[],total=data?.total||0;
+  const safePage=data?.page??page;
+  useEffect(()=>{if(!loading&&data&&data.page!==page)setPage(data.page);},[loading,data,page]);
   useEffect(()=>{rememberPaperList({search,organization,showArchived,page,pageSize});},[search,organization,showArchived,page,pageSize]);
-  const paging={page:safePage,pageSize,total:papers.length,items:papers.slice((safePage-1)*pageSize,safePage*pageSize),onPage:setPage,onPageSize:(value:number)=>{setPageSize(value);setPage(1);}};
+  const paging={page:safePage,pageSize,total,items:papers,onPage:setPage,onPageSize:(value:number)=>{setPageSize(value);setPage(1);}};
   const filtered=!!search||organization!=='all'||showArchived;
   const clearFilters=()=>{setSearch('');setOrganization('all');setShowArchived(false);setPage(1);};
-  const cardSummaries = useLearningCardSummaries(paging.items);
-  const groups = new Map<string, Paper[]>();
+  const cardSummaries = useLearningCardSummaries(loading||error?[]:paging.items);
+  const groups = new Map<string, PaperListItem[]>();
   for (const paper of paging.items) { const key = paper.organization === 'domain' ? `domain:${paper.domainId || ''}` : 'other'; groups.set(key, [...(groups.get(key) || []), paper]); }
   const orderedGroups = [...groups].sort(([left], [right]) => left === 'other' ? 1 : right === 'other' ? -1 : (bootstrap.domains.find(domain => `domain:${domain.id}` === left)?.sortOrder || 0) - (bootstrap.domains.find(domain => `domain:${domain.id}` === right)?.sortOrder || 0));
   return <><PageHeader eyebrow="QUESTION SETS" title="整理成题集，按自己的节奏学习。" description="手动选题、按标签随机选题或让 AI 推荐，将相关题目整理成题集。支持逐题学习、练习、考试、导出与分享。" actions={<><a className="button feature-entry" href="#/ai?tab=paper"><Sparkles size={17} />AI 推荐题集</a><a className="button" href="#/quick"><Shuffle size={16} />随机抽一题</a><ActionDropdown label="创建题集" triggerLabel="选择创建方式" icon={<Plus size={17}/>} primary primaryAction={()=>{window.location.hash='#/papers/new/manual';}} items={[{id:'manual',label:'手动选题',icon:<Plus size={16}/>,href:'#/papers/new/manual'},{id:'random',label:'随机选题',icon:<Shuffle size={16}/>,href:'#/papers/new/random'}]}/></>} />
@@ -48,7 +52,7 @@ export function PapersPage() {
     <div className="paper-intro"><div><span className="section-label">按自己的节奏学习</span><p>每份题集内查看错题、复习建议、作答草稿和历史。</p></div><a className="button feature-entry" href="#/quick?tab=history"><Clock3 size={17} />随机与单题自测记录</a></div>
     <SpecialLearningSets />
     <RetainedSetHistories />
-    <div className="list-toolbar"><h2>我的题集 <span className="muted">{papers.length}</span></h2><div className="paper-list-tools"><select aria-label="题集组织筛选" value={organization} onChange={event => {setOrganization(event.target.value);setPage(1);}}><option value="all">全部题集</option><option value="domain">全部领域专项</option>{bootstrap.domains.map(domain => <option value={`domain:${domain.id}`} key={domain.id}>{domain.name}专项</option>)}<option value="other">其他题集</option></select><label className="archive-switch"><input type="checkbox" checked={showArchived} onChange={event => {setShowArchived(event.target.checked);setPage(1);}} />显示已归档</label><SearchBox value={search} onChange={value=>{setSearch(value);setPage(1);}} placeholder="查找题集" />{filtered&&<button className="button" type="button" onClick={clearFilters}><RotateCcw size={15}/>清空筛选</button>}</div></div>
+    <div className="list-toolbar"><h2>我的题集 <span className="muted">{total}</span></h2><div className="paper-list-tools"><select aria-label="题集组织筛选" value={organization} onChange={event => {setOrganization(event.target.value);setPage(1);}}><option value="all">全部题集</option><option value="domain">全部领域专项</option>{bootstrap.domains.map(domain => <option value={`domain:${domain.id}`} key={domain.id}>{domain.name}专项</option>)}<option value="other">其他题集</option></select><label className="archive-switch"><input type="checkbox" checked={showArchived} onChange={event => {setShowArchived(event.target.checked);setPage(1);}} />显示已归档</label><SearchBox value={search} onChange={value=>{setSearch(value);setPage(1);}} placeholder="查找题集" />{filtered&&<button className="button" type="button" onClick={clearFilters}><RotateCcw size={15}/>清空筛选</button>}</div></div>
     {cardSummaries.error && <div className="paper-card-summary-error"><ErrorNotice message={`题集学习进度暂不可用：${cardSummaries.error}`} retry={cardSummaries.refresh} /></div>}
     {loading ? <Loading /> : error ? <ErrorNotice message={error} retry={refresh} /> : papers.length ? <><div className="paper-groups">{orderedGroups.map(([domainId, items]) => <section className="paper-organization-group" key={domainId}><h2>{domainId === 'other' ? '其他题集' : `${bootstrap.domains.find(domain => `domain:${domain.id}` === domainId)?.name || '未识别领域'}专项`} <span className="muted">本页 {items.length} 份</span></h2><div className="paper-grid">{items.map((paper, index) => <PaperCard paper={paper} index={index} counts={cardSummaries.items.get(paper.id)} loading={cardSummaries.loading} key={paper.id} />)}</div></section>)}</div><Pagination {...paging} label="题集" /></> : <Empty title={filtered ? '没有符合条件的题集' : '创建第一套题集'} description={filtered?'可清空上方筛选，查看已有题集。':'使用顶部“创建题集”手动选题，或展开菜单按标签随机组题。'} actions={filtered?<button type="button" className="button" onClick={clearFilters}><RotateCcw size={15}/>显示全部题集</button>:undefined} />}</>;
 }

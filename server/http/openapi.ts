@@ -14,6 +14,7 @@ import { aiDocumentCreateSchema, aiDocumentProcessSchema, aiDocumentImportSchema
 import { questionFeedbackSchema, questionFeedbackInputSchema, questionFeedbackResolveSchema, questionFeedbackAiInputSchema, questionFeedbackReviewSchema } from '../modules/quality-feedback/schema.js';
 import { questionFeedbackQuerySchema, questionFeedbackSummariesSchema } from '../modules/quality-feedback/routes.js';
 import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/paper-drafts.js';
+import { paperListPageQuerySchema } from '../modules/practice/paper-list.js';
 import { documentDraftSchema, documentDraftQuerySchema, createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema } from '../modules/library/document-drafts.js';
 import { aiWorkspaceDraftSchema,aiWorkspaceDraftQuerySchema,aiWorkspaceDraftCreateSchema,aiWorkspaceDraftUpdateSchema,aiWorkspaceDraftDeleteSchema } from '../modules/ai/workspace-draft-schema.js';
 import { paginationFields } from '../core/pagination.js';
@@ -74,6 +75,7 @@ const aiDocumentSummaryOutput: JsonSchema = { ...aiDocumentJobOutput, properties
 aiDocumentSummaryOutput.required = aiDocumentJobOutput.required.filter((key: string) => Object.hasOwn(aiDocumentSummaryOutput.properties,key));
 const questionFeedbackViewOutput = toJson(questionFeedbackSchema.extend({ sourceAvailable: z.boolean(), sourceChanged: z.boolean() }));
 const paperOutput: JsonSchema = {type:'object',properties:{...toJson(validation.paperInputSchema).properties,id:{type:'string'},questionCount:{type:'integer'},answerCount:{type:'integer'},version:{type:'integer'},archived:{type:'boolean'},createdAt:{type:'string',format:'date-time'},updatedAt:{type:'string',format:'date-time'},scoring:toJson(validation.storedScoringSchema),questions:{type:'array',items:{...object,description:'ExamQuestion：题干、选项、难度与分值；交卷前不含参考答案'}}}};
+const paperListItemOutput: JsonSchema = {type:'object',additionalProperties:false,required:['id','title','description','mode','questionCount','practiceKind','organization','domainId','archived','version','createdAt','updatedAt','scoring'],properties:{...Object.fromEntries(['id','title','description','mode','questionCount','practiceKind','organization','domainId','archived','version','createdAt','updatedAt'].map(key=>[key,paperOutput.properties[key]])),description:{type:'string',maxLength:1000},practiceKind:{enum:['standard','vocabulary','concept']},organization:{enum:['domain','other']},domainId:{type:['string','null']},scoring:{type:'object',additionalProperties:false,required:['enabled','scheme','totalPoints','objectivePoints','subjectivePoints'],properties:Object.fromEntries(['enabled','scheme','totalPoints','objectivePoints','subjectivePoints'].map(key=>[key,toJson(validation.storedScoringSchema).properties[key]]))}}};
 const attemptOutput: JsonSchema = {type:'object',properties:{id:{type:'string'},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},source:{enum:['paper','quick']},status:{enum:['in_progress','submitted']},practiceMode:{enum:['practice','exam']},durationMinutes:{type:'integer'},deadlineAt:{type:['string','null'],format:'date-time'},startedAt:{type:'string',format:'date-time'},submittedAt:{type:['string','null'],format:'date-time'},updatedAt:{type:'string',format:'date-time'},elapsedSeconds:{type:'integer',minimum:0},autoSubmitted:{type:'boolean'},answers:{type:'object',additionalProperties:toJson(validation.answerSchema)},questions:{type:'array',items:object},scoring:toJson(validation.storedScoringSchema),objectiveScore:{type:'number'},objectiveMax:{type:'number'},subjectiveScore:{type:'number'},subjectiveMax:{type:'number'},totalScore:{type:['number','null']},pendingSubjectiveCount:{type:'integer'},gradingStatus:{enum:['pending','partial','complete','not_applicable']}}};
 attemptOutput.properties.practiceTiming = toJson(practiceTimingStateSchema);
 attemptOutput.properties.practiceKind = { enum: ['standard','vocabulary','concept'] };
@@ -161,6 +163,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(parameters.length)schema.params={type:'object',properties:Object.fromEntries(parameters.map(name=>[name,{type:'string'}])),required:parameters};
   if(list)schema.querystring=toJson(z.object({...paginationFields}));
   if(url==='/api/papers/:id')schema.querystring=toJson(z.object({summary:z.enum(['true','false']).optional()}).strict());
+  if(url==='/api/papers/page')schema.querystring=toJson(paperListPageQuerySchema);
+  if(url==='/api/papers/:id/metadata')schema.querystring=toJson(z.object({}).strict());
   const learningQueries:Record<string,z.ZodType>={'/api/learning/summary':learningSummaryQuerySchema,'/api/learning/attempts':learningAttemptsQuerySchema,'/api/learning/questions':learningQuestionsQuerySchema,'/api/learning/contexts':learningContextsQuerySchema,'/api/learning/global/summary':globalLearningSummaryQuerySchema,'/api/learning/global/questions':globalLearningQuestionsQuerySchema};
   if(learningQueries[url])schema.querystring=toJson(learningQueries[url]!);
   if(url==='/api/questions/:id/history')schema.querystring=toJson(questionHistoryQuerySchema);
@@ -210,6 +214,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/learning/card-summaries')success={type:'object',required:['items'],properties:{items:{type:'array',items:{type:'object',required:['paperId','counts'],properties:{paperId:{type:'string'},counts:learningSummaryOutput.properties.counts}}}}};
   if(list)success=paged(success);
   if(url==='/api/questions'&&method==='GET')success=(paged(outputs.questions!) as any).anyOf[1];
+  if(url==='/api/papers/page')success=learningPage(paperListItemOutput);
+  if(url==='/api/papers/:id/metadata')success={type:'object',additionalProperties:false,required:['id','title','version','archived'],properties:Object.fromEntries(['id','title','version','archived'].map(key=>[key,paperOutput.properties[key]]))};
   if(url==='/api/questions/:id/statistics')success=questionStatisticsOutput;
   if(url==='/api/questions/:id/history')success=questionHistoryOutput;
   if(url==='/api/questions/metadata')success=toJson(z.object({items:z.array(z.object({id,title:z.string(),type:validation.types,status:z.enum(['published','pending','draft','archived'])})),missingIds:z.array(id)}));
@@ -277,6 +283,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/papers/:id/restore')schema.description+=' 恢复前确认所有成员原题已审核发布且题集非空。首次恢复且未经编辑的旧集合无分题集按原顺序重新读取已审核题目，保持无分数并产生新版本；其他题集保留原快照、版本和分值。恢复均不改写历史作答。';
   if(url==='/api/papers/:id/questions/:questionId')schema.description+=' 返回这份题集保存的单题快照与解析，含组合题公共材料；不从当前题库替换历史内容。';
   if(url==='/api/papers/:id'&&method==='GET')schema.description+=' summary=true 仅返回答题导航所需信息，省略题干、选项与材料正文，适用于大型题集浏览。';
+  if(url==='/api/papers/page')schema.description+=' 题集卡片专用分页接口，数据库筛选、计数并仅解码当前页；说明最多1000字符，不包含成员题号、快照、筛选条件或逐题分值表。按更新时间降序、原始插入次序稳定排序。archived=true表示包含已归档；越界页收敛到最后一页。';
+  if(url==='/api/papers/:id/metadata')schema.description+=' 仅按ID查询题集是否存在及名称、归档状态和版本，不展开题目或计算分值。';
   if(url.includes('/export')||url.endsWith('/content')){schema.description+=' 文件导出可能按格式返回Markdown、PDF或二进制；JSON导出返回完整封包。';}
   return schema;
 }

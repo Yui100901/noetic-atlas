@@ -12,8 +12,14 @@ import { getId } from '../../http/request.js';
 import { flattenQuestions, validatePaperAnswers } from '../questions/structure.js';
 import { normalizeScoring } from './scoring.js';
 import { practiceTimingInputSchema, updatePracticeTiming } from './practice-timing.js';
+import { paperListPage, paperListPageQuerySchema, paperMetadata } from './paper-list.js';
 
 export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
+  app.get('/api/papers/page', async request => paperListPage(store, parse(paperListPageQuerySchema, request.query)));
+  app.get('/api/papers/:id/metadata', async request => {
+    parse(z.object({}).strict(), request.query);
+    return paperMetadata(store, getId(request));
+  });
   app.get('/api/papers', async request => {
     const query = parse(z.object({ ...paginationFields, archived: z.enum(['true', 'false']).optional(), organization: z.enum(['domain', 'other']).optional(), domainId: id.optional() }).strict(), request.query);
     return paperList(store,query);

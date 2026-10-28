@@ -1,10 +1,10 @@
 import {QuestionContent, SourceNoticeScope, questionNoticeContents} from '../../shared/ui/content-notices';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, Check, Clock3, Save } from 'lucide-react';
-import type { AnswerVerdict, Attempt, AttemptAnswer, Paper } from '../../../shared/models/types';
+import type { AnswerVerdict, Attempt, AttemptAnswer } from '../../../shared/models/types';
 import { typeLabels } from '../../../shared/models/types';
 import { getObjectiveCorrect, isSubjectiveType } from '../../../shared/questions/question-utils';
-import { href, idPath, localDate, request, send, useResource } from '../../shared/lib/api';
+import { ApiError, href, idPath, localDate, request, send, useResource } from '../../shared/lib/api';
 import { ErrorNotice, Field, Loading, PageHeader, useApp } from '../../shared/ui/components';
 import { attemptGrading, legacyPoints, pointText } from '../../shared/lib/scoring';
 import { vocabularyDirectionLabel } from '../papers/vocabulary-practice';
@@ -23,9 +23,21 @@ import { MarkdownEditor } from '../../shared/ui/markdown-editor';
 
 const isAnswered = isAnswerPresent;
 
+/** Checking the current set must never download all other sets or snapshots. */
+function usePaperPresence(paperId:string|null){
+ const [value,setValue]=useState<{id:string;exists:boolean}|null>(null);
+ useEffect(()=>{
+  if(!paperId)return;
+  const controller=new AbortController();
+  void request<{id:string}>(`/api/papers/${idPath(paperId)}/metadata`,{signal:controller.signal}).then(()=>{if(!controller.signal.aborted)setValue({id:paperId,exists:true});}).catch(reason=>{if(!controller.signal.aborted&&reason instanceof ApiError&&reason.status===404)setValue({id:paperId,exists:false});});
+  return()=>controller.abort();
+ },[paperId]);
+ return value?.id===paperId?value.exists:null;
+}
+
 export function AttemptPage({ id, embedded = false, onChanged }: { id: string; embedded?: boolean; onChanged?: () => void }) {
   const resource = useResource<Attempt>(`/api/attempts/${idPath(id)}`); const { toast, reload, bootstrap } = useApp(); const settings = bootstrap.settings || DEFAULT_SETTINGS;
-  const papers = useResource<Paper[]>(resource.data && resource.data.source !== 'quick' && (resource.data.practiceMode !== 'exam' || resource.data.status === 'submitted') ? '/api/papers?archived=true' : null);
+  const paperExists=usePaperPresence(resource.data && resource.data.source !== 'quick' && (resource.data.practiceMode !== 'exam' || resource.data.status === 'submitted') ? resource.data.paperId : null);
   const [answers, setAnswers] = useState<Record<string, AttemptAnswer>>({}); const [scores, setScores] = useState<Record<string, number | ''>>({}); const [mastery, setMastery] = useState<Record<string, number>>({});
   const [verdicts, setVerdicts] = useState<Record<string, AnswerVerdict | ''>>({});
   const [ready, setReady] = useState(''); const [dirty, setDirty] = useState(false); const [saveState, setSaveState] = useState('草稿已保存'); const [saveError, setSaveError] = useState(''); const [gradeError, setGradeError] = useState(''); const [busy, setBusy] = useState(false);
@@ -141,7 +153,7 @@ export function AttemptPage({ id, embedded = false, onChanged }: { id: string; e
   const hasReview = subjectiveCount > 0 || Object.keys(mastery).length > 0;
   const correctIds = new Set(objectiveQuestions.filter(question => submitted && getObjectiveCorrect(question, answers[question.id])).map(question => question.id));
   const quick = attempt.source === 'quick' || attempt.paperId === 'quick-practice';
-  const deletedPaper = !quick && !!papers.data && !papers.data.some(paper => paper.id === attempt.paperId);
+  const deletedPaper = !quick && paperExists===false;
   const returnTab=submitted?'history':'drafts';
   const returnPath = quick ? `#/quick?tab=${returnTab}` : `${href('papers', attempt.paperId)}${deletedPaper ? '/activity' : ''}?tab=${returnTab}`;
   const preview = quick && !!attempt.referenceViewedAt;

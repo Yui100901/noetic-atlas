@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarCheck2, ClipboardList, Clock3, History, Star, Target } from 'lucide-react';
 import type { Paper } from '../../../shared/models/types';
+import type {PaperListItem} from '../../../shared/practice/paper-list';
 import type { GlobalLearningSummary, LearningCardSummaries, LearningCardSummary } from '../../../shared/practice/global-learning';
 import { href, idPath, request, useResource } from '../../shared/lib/api';
 import { ErrorNotice } from '../../shared/ui/components';
@@ -8,7 +9,7 @@ import { pointText } from '../../shared/lib/scoring';
 import './learning-cards.css';
 
 /** One read-only batch per visible page, including safe cancellation on search. */
-export function useLearningCardSummaries(papers: Paper[]) {
+export function useLearningCardSummaries(papers: ReadonlyArray<Pick<Paper,'id'>>) {
   const idsKey = JSON.stringify([...new Set(papers.map(paper => paper.id))]);
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ key: string; items: LearningCardSummary[]; error: string; loading: boolean }>({ key: '', items: [], error: '', loading: true });
@@ -54,7 +55,7 @@ export function SpecialLearningSets() {
   </section>;
 }
 
-export function PaperCard({ paper, index, counts, loading }: { paper: Paper; index: number; counts?: LearningCardSummary['counts']; loading: boolean }) {
+export function PaperCard({ paper, index, counts, loading }: { paper: PaperListItem; index: number; counts?: LearningCardSummary['counts']; loading: boolean }) {
   const count = (kind: keyof LearningCardSummary['counts']) => !loading && counts ? counts[kind].toLocaleString() : '—';
   return <article className="paper-card" aria-label={`题集：${paper.title}`}>
     <a className="paper-card-main" href={href('papers', paper.id)}><div className="paper-card-top"><span className={`paper-symbol paper-symbol-${index % 3}`}><ClipboardList size={23} /></span><span className={`badge ${paper.archived ? 'status-muted' : ''}`}>{paper.archived ? '已归档' : paper.mode === 'random' ? '标签随机' : '手动选题'}</span></div><h3>{paper.title}</h3><p>{paper.description || '从这套练习开始，检验自己的理解。'}</p><div className="paper-score-label">{['vocabulary','concept'].includes(paper.practiceKind || '') && <span className="badge">{paper.practiceKind === 'concept' ? '概念题集 · 双向练习' : '词汇题集 · 双向练习'}</span>}<span className="badge">{!paper.scoring ? '历史计分' : !paper.scoring.enabled ? '无分练习' : `${paper.scoring.scheme === 'legacy' ? '历史计分 · ' : '计分 · '}${pointText(paper.scoring.totalPoints)} 分`}</span>{paper.scoring?.enabled && <span>客观 {pointText(paper.scoring.objectivePoints)} · 主观 {pointText(paper.scoring.subjectivePoints)}</span>}</div><div className="paper-card-footer"><strong>{paper.questionCount} <small>道题目</small></strong><span>v{paper.version} <span className="dot">·</span> {paper.archived ? '查看与恢复 →' : '查看与学习 →'}</span></div></a>

@@ -1,9 +1,6 @@
-import { Children, cloneElement, createContext, isValidElement, memo, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import {lazyPage} from '../lib/lazy-page';
+import { Children, cloneElement, createContext, isValidElement, memo, useContext, useEffect, useId, useRef, useState, Suspense, type ReactNode } from 'react';
 import { AlertCircle, Check, ChevronRight, LoaderCircle, Search, X } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { AssetImage, safeEmbeddedImage } from '../media/asset-render';
-import { assetIdFromUrl } from '../../../shared/assets/assets';
 import type { Bootstrap, Category, Question } from '../../../shared/models/types';
 import { typeLabels } from '../../../shared/models/types';
 import { PAGE_SIZES, usePagination } from '../lib/pagination';
@@ -66,35 +63,7 @@ export function QuestionMeta({ question, compact = false }: { question: Pick<Que
 }
 export function Tags({ ids, max = 6 }: { ids: string[]; max?: number }) { const { bootstrap } = useApp(); return <div className="tags">{ids.slice(0, max).map(id => { const tag = bootstrap.tags.find(item => item.id === id); return tag ? <span className="tag" key={id}>{tag.name}</span> : null; })}{ids.length > max && <span className="tag">+{ids.length - max}</span>}</div>; }
 export function Pagination({ page, pageSize, total, onPage, onPageSize, label='列表' }: { page: number; pageSize: number; total: number; onPage: (page: number) => void; onPageSize?: (size:number)=>void; label?:string }) { const pages = Math.max(1, Math.ceil(total / pageSize)); return <nav className="pagination" aria-label={`${label}分页`}><span>共 {total.toLocaleString()} 条 · 第 {Math.min(page,pages)} / {pages} 页</span><div>{onPageSize&&<label className="page-size-label">每页 <select aria-label={`${label}每页数量`} value={pageSize} onChange={event=>onPageSize(Number(event.target.value))}>{[...new Set([...PAGE_SIZES,pageSize])].sort((a,b)=>a-b).map(size=><option key={size} value={size}>{size} 条</option>)}</select></label>}<button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>上一页</button><button type="button" disabled={page >= pages} onClick={() => onPage(page + 1)}>下一页 <ChevronRight size={14} /></button></div></nav>; }
-// Answer clocks, typing and status updates do not change the Markdown source.
-// Keep its parser and embedded media mounted until the source itself changes.
-export const Markdown = memo(function Markdown({ children }: { children: string }) {
-  const container = useRef<HTMLDivElement>(null);
-  const transform = (url: string, key: string) => { if (key === 'src' && (assetIdFromUrl(url) || safeEmbeddedImage(url))) return url; if (/^https?:\/\//i.test(url) || url.startsWith('#')) return url; return ''; };
-  const plainText = (nodes: ReactNode): string => Children.toArray(nodes).map(node => typeof node === 'string' || typeof node === 'number' ? String(node) : isValidElement<{ children?: ReactNode }>(node) ? plainText(node.props.children) : '').join('');
-  const slug = (nodes: ReactNode) => plainText(nodes).toLowerCase().trim().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s+/g, '-');
-  const anchorId = (url: string) => { try { const value = decodeURIComponent(url.slice(1)); return /^[\p{L}\p{N}_.:+-]+$/u.test(value) ? value : ''; } catch { return ''; } };
-  return <div className="markdown" ref={container}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={transform} components={{
-    a: ({ href, children }) => {
-      if (!href) return <span>{children}</span>;
-      const localAnchor = href.startsWith('#') && !href.startsWith('#/');
-      const id = localAnchor ? anchorId(href) : '';
-      if (localAnchor && !plainText(children).trim()) return id ? <span id={id} className="document-anchor" /> : null;
-      return <a href={href} {...(href.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})} onClick={event => {
-        if (!localAnchor) return;
-        event.preventDefault();
-        if (!id) return;
-        const target = container.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`) || document.getElementById(id);
-        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }}>{children}</a>;
-    },
-    h1: ({ children }) => <h1 id={slug(children)}>{children}</h1>,
-    h2: ({ children }) => <h2 id={slug(children)}>{children}</h2>,
-    h3: ({ children }) => <h3 id={slug(children)}>{children}</h3>,
-    h4: ({ children }) => <h4 id={slug(children)}>{children}</h4>,
-    h5: ({ children }) => <h5 id={slug(children)}>{children}</h5>,
-    h6: ({ children }) => <h6 id={slug(children)}>{children}</h6>,
-    img: ({ alt, src }) => <AssetImage src={src} alt={alt} />, table: ({ children }) => <div className="table-scroll"><table>{children}</table></div>
-  }}>{children}</ReactMarkdown></div>;
-});
+// The shell uses lightweight controls only; parse Markdown when content first appears.
+const MarkdownRenderer=lazyPage(()=>import('./markdown-renderer'));
+export const Markdown=memo(function Markdown({children}:{children:string}){return <Suspense fallback={<div className="markdown" role="status">正在排版内容…</div>}><MarkdownRenderer>{children}</MarkdownRenderer></Suspense>;});
 export function SaveButton({ busy, children = '保存', disabled = false }: { busy: boolean; children?: ReactNode; disabled?: boolean }) { return <button className="button primary" type="submit" disabled={busy || disabled}>{busy ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}{busy ? '正在保存…' : children}</button>; }

@@ -1,44 +1,53 @@
-import {HandbookPage} from '../features/help/handbook';
 import {DashboardWeeklyCard} from '../features/analytics/dashboard-weekly-card';
 import { ExamNavigationGuard } from '../features/practice/exam-guard';
 import { isNativeApp } from '@platform';
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useEffect, useRef, useState, Suspense, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowRight, BarChart3, BookOpen, CalendarCheck2, CalendarDays, ChevronRight, CircleHelp, Settings2, ClipboardList, Command, Database, Files, FolderTree, GraduationCap, LayoutDashboard, LibraryBig, Menu, Plus, Sparkles, X } from 'lucide-react';
 import type { Bootstrap } from '../../shared/models/types';
 import { typeLabels } from '../../shared/models/types';
 import { navigate, useResource } from '../shared/lib/api';
 import { AppContext, Empty, ErrorNotice, Loading, PageHeader, useApp } from '../shared/ui/components';
-import { QuestionDetail, QuestionEditor, QuestionsPage } from '../features/questions/questions';
-import { PaperDetailPage, PapersPage } from '../features/papers/papers';
-import { PaperQuestionPage } from '../features/papers/paper-question';
 import { readPaperContentsContext } from '../features/papers/reader-navigation';
 import { allowHashNavigation, markNavigationEntry, replaceHashRoute } from '../shared/lib/navigation-guard';
-import { PaperEditor } from '../features/papers/paper-editor';
-import { AttemptPage } from '../features/practice/attempt';
-import { TaxonomyPage } from '../features/taxonomy/taxonomy';
-import { QuickPracticePage } from '../features/practice/quick-practice';
-import { QuestionReviewPage } from '../features/questions/question-review';
-import { QuestionImportPage } from '../features/questions/question-import';
-import { DocumentDetailPage, DocumentEditor, DocumentsPage } from '../features/library/documents';
-import { DeletedSetActivityPage } from '../features/practice/context-learning';
-import { LearningQuestionPage } from '../features/practice/learning-question-page';
-import { GlobalLearningPage } from '../features/practice/global-learning';
-import { AiWorkspacePage as AiPage } from '../features/ai/ai-workspace';
-import { SettingsPage } from '../features/settings/settings';
-import { VocabularyReferencePage } from '../features/questions/vocabulary';
-import { QuestionFeedbackPage } from '../features/quality-feedback/question-feedback';
-import { ContentQualityPage } from '../features/content-quality/content-quality';
-import { SharingPage } from '../features/sharing/sharing';
 import { DailyPushProvider, DailyPushQuickLink } from '../features/daily-push/daily-push';
-import { AnalyticsPage } from '../features/analytics/analytics';
-import { SearchReturnLink, UnifiedSearchBar, UnifiedSearchPage } from '../features/search/search';
+import { SearchReturnLink, UnifiedSearchBar } from '../features/search/search-bar';
+import {lazyPage} from '../shared/lib/lazy-page';
 import './styles.css';
+import './dashboard.css';
 import '../shared/ui/layout.css';
 import './navigation.css';
 import '../shared/ui/feature-entry.css';
 import { applyTheme, initializeTheme } from '../shared/theme/theme';
 import '../shared/theme/themes.css';
+
+const HandbookPage = lazyPage(() => import('../features/help/handbook').then(module => ({default:module.HandbookPage})));
+const QuestionDetail = lazyPage(() => import('../features/questions/questions').then(module => ({default:module.QuestionDetail})));
+const QuestionEditor = lazyPage(() => import('../features/questions/questions').then(module => ({default:module.QuestionEditor})));
+const QuestionsPage = lazyPage(() => import('../features/questions/questions').then(module => ({default:module.QuestionsPage})));
+const PaperDetailPage = lazyPage(() => import('../features/papers/papers').then(module => ({default:module.PaperDetailPage})));
+const PapersPage = lazyPage(() => import('../features/papers/papers').then(module => ({default:module.PapersPage})));
+const PaperQuestionPage = lazyPage(() => import('../features/papers/paper-question').then(module => ({default:module.PaperQuestionPage})));
+const PaperEditor = lazyPage(() => import('../features/papers/paper-editor').then(module => ({default:module.PaperEditor})));
+const AttemptPage = lazyPage(() => import('../features/practice/attempt').then(module => ({default:module.AttemptPage})));
+const TaxonomyPage = lazyPage(() => import('../features/taxonomy/taxonomy').then(module => ({default:module.TaxonomyPage})));
+const QuickPracticePage = lazyPage(() => import('../features/practice/quick-practice').then(module => ({default:module.QuickPracticePage})));
+const QuestionReviewPage = lazyPage(() => import('../features/questions/question-review').then(module => ({default:module.QuestionReviewPage})));
+const QuestionImportPage = lazyPage(() => import('../features/questions/question-import').then(module => ({default:module.QuestionImportPage})));
+const DocumentDetailPage = lazyPage(() => import('../features/library/documents').then(module => ({default:module.DocumentDetailPage})));
+const DocumentEditor = lazyPage(() => import('../features/library/documents').then(module => ({default:module.DocumentEditor})));
+const DocumentsPage = lazyPage(() => import('../features/library/documents').then(module => ({default:module.DocumentsPage})));
+const DeletedSetActivityPage = lazyPage(() => import('../features/practice/context-learning').then(module => ({default:module.DeletedSetActivityPage})));
+const LearningQuestionPage = lazyPage(() => import('../features/practice/learning-question-page').then(module => ({default:module.LearningQuestionPage})));
+const GlobalLearningPage = lazyPage(() => import('../features/practice/global-learning').then(module => ({default:module.GlobalLearningPage})));
+const AiPage = lazyPage(() => import('../features/ai/ai-workspace').then(module => ({default:module.AiWorkspacePage})));
+const SettingsPage = lazyPage(() => import('../features/settings/settings').then(module => ({default:module.SettingsPage})));
+const VocabularyReferencePage = lazyPage(() => import('../features/questions/vocabulary').then(module => ({default:module.VocabularyReferencePage})));
+const QuestionFeedbackPage = lazyPage(() => import('../features/quality-feedback/question-feedback').then(module => ({default:module.QuestionFeedbackPage})));
+const ContentQualityPage = lazyPage(() => import('../features/content-quality/content-quality').then(module => ({default:module.ContentQualityPage})));
+const SharingPage = lazyPage(() => import('../features/sharing/sharing').then(module => ({default:module.SharingPage})));
+const AnalyticsPage = lazyPage(() => import('../features/analytics/analytics').then(module => ({default:module.AnalyticsPage})));
+const UnifiedSearchPage = lazyPage(() => import('../features/search/search').then(module => ({default:module.UnifiedSearchPage})));
 
 initializeTheme();
 
@@ -84,10 +93,10 @@ function Router({ hash }: { hash: string }) {
   if (section === 'ai') return <AiPage key={key} initialTab={params.get('tab') || 'paper'} />;
   return <Empty title="还没有这个页面" description="从知识总览继续探索。" actions={<a className="button primary" href="#/">返回总览</a>} />;
 }
-class ErrorBoundary extends React.Component<{ children: ReactNode }, { error: string }> {
-  state = { error: '' };
-  static getDerivedStateFromError(error: Error) { return { error: error.message }; }
-  render() { return this.state.error ? <div className="fatal-error"><ErrorNotice message={`页面遇到异常：${this.state.error}`} /><button className="button" onClick={() => window.location.reload()}>重新加载</button></div> : this.props.children; }
+class ErrorBoundary extends React.Component<{ children: ReactNode }, { error: Error|null }> {
+  state: {error:Error|null} = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() { const error=this.state.error;return error ? <div className="fatal-error"><ErrorNotice message={error.name==='PageLoadError'?error.message:`页面遇到异常：${error.message}`} /><button className="button" type="button" onClick={() => window.location.reload()}>{error.name==='PageLoadError'?'重新加载应用':'重新加载'}</button></div> : this.props.children; }
 }
 function App() {
   const bootstrap = useResource<Bootstrap>('/api/bootstrap'); const hash = useHash(); const [mobile, setMobile] = useState(false); const [notification, setNotification] = useState<{ message: string; error?: boolean } | null>(null);
@@ -98,6 +107,6 @@ function App() {
   useEffect(() => { if (!notification) return; const timer = setTimeout(() => setNotification(null), 5000); return () => clearTimeout(timer); }, [notification]);
   if (bootstrap.loading && !bootstrap.data) return <ExamNavigationGuard><div className="app-startup"><div className="brand-mark"><Command size={28} /></div><h1>认知星图</h1><Loading text="正在打开你的学习工作台…" /></div></ExamNavigationGuard>;
   if (!bootstrap.data) return <ExamNavigationGuard><div className="app-startup"><h1>认知星图</h1><ErrorNotice message={bootstrap.error || (isNativeApp() ? '无法打开本地学习数据' : '无法连接本地服务')} retry={bootstrap.refresh} /><p className="muted">{isNativeApp() ? '请确认设备存储可用，然后重试。已有学习记录不会被自动清除。' : '请确认本地服务已启动。'}</p></div></ExamNavigationGuard>;
-  return <ExamNavigationGuard><AppContext.Provider value={{ bootstrap: bootstrap.data, reload: bootstrap.refresh, toast: (message, error) => setNotification({ message, error }) }}><DailyPushProvider><div className={`app-shell ${mobile ? 'menu-open' : ''}`}><a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>跳到主内容</a>{mobile && <button className="sidebar-scrim" aria-label="关闭导航" onClick={() => setMobile(false)} />}<aside className="sidebar"><a className="brand" href="#/" aria-label="认知星图，返回知识总览"><span className="brand-mark"><Command size={24} /></span><span><strong>认知星图</strong><small>NOETIC ATLAS</small></span></a><div className="workspace-label">个人学习空间 <span>LOCAL</span></div><nav aria-label="主导航">{nav.map(({ key, label, icon: Icon, path }) => <a key={key} href={path} className={current?.key === key ? 'active' : ''} aria-current={current?.key === key ? 'page' : undefined}><Icon size={19} /><span>{label}</span>{key === 'questions' && <small>{bootstrap.data!.stats.totalQuestions}</small>}</a>)}</nav><div className="sidebar-note"><span className="sidebar-note-icon"><BookOpen size={20} /></span><p>知识需要连接，<br />理解需要练习。</p><a className="button feature-entry" href="#/papers/new/random">开始新的练习 <ArrowRight size={16} /></a></div><div className="sidebar-bottom"><a href="#/settings" className={section === 'data' || section === 'settings' ? 'active' : ''}><Settings2 size={18} />系统配置</a><div className="local-status"><span className="live-dot" /><span>本地工作台</span><small>v1.0</small></div><div className="profile"><span>我</span><div><strong>我的学习空间</strong><small>循序渐进，日有所得</small></div></div></div></aside><div className="main-shell"><div className="topbar"><button className="icon-button mobile-menu" onClick={() => setMobile(!mobile)} aria-label={mobile ? '关闭菜单' : '打开菜单'}>{mobile ? <X size={21} /> : <Menu size={21} />}</button><div className="breadcrumb"><span>个人学习空间</span><ChevronRight size={13} /><strong>{pageLabel}</strong></div><UnifiedSearchBar hash={hash} /><a className="help-button" href="#/help" aria-label="查看用户使用手册"><CircleHelp size={19} /></a><span className="top-avatar" aria-label="个人空间">我</span></div><main id="main-content" tabIndex={-1} key={hash}><ErrorBoundary key={hash}><SearchReturnLink hash={hash} /><Router hash={hash} /></ErrorBoundary><footer className="page-footer"><span>认知星图 · 让每一次理解，都有所积累。</span><span>本地存储 <span className="dot">·</span> 数据归你</span></footer></main></div>{notification && <div className={`toast ${notification.error ? 'toast-error' : ''}`} role={notification.error ? 'alert' : 'status'}><span>{notification.message}</span><button className="icon-button" aria-label="关闭提示" onClick={() => setNotification(null)}><X size={16} /></button></div>}</div></DailyPushProvider></AppContext.Provider></ExamNavigationGuard>;
+  return <ExamNavigationGuard><AppContext.Provider value={{ bootstrap: bootstrap.data, reload: bootstrap.refresh, toast: (message, error) => setNotification({ message, error }) }}><DailyPushProvider><div className={`app-shell ${mobile ? 'menu-open' : ''}`}><a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>跳到主内容</a>{mobile && <button className="sidebar-scrim" aria-label="关闭导航" onClick={() => setMobile(false)} />}<aside className="sidebar"><a className="brand" href="#/" aria-label="认知星图，返回知识总览"><span className="brand-mark"><Command size={24} /></span><span><strong>认知星图</strong><small>NOETIC ATLAS</small></span></a><div className="workspace-label">个人学习空间 <span>LOCAL</span></div><nav aria-label="主导航">{nav.map(({ key, label, icon: Icon, path }) => <a key={key} href={path} className={current?.key === key ? 'active' : ''} aria-current={current?.key === key ? 'page' : undefined}><Icon size={19} /><span>{label}</span>{key === 'questions' && <small>{bootstrap.data!.stats.totalQuestions}</small>}</a>)}</nav><div className="sidebar-note"><span className="sidebar-note-icon"><BookOpen size={20} /></span><p>知识需要连接，<br />理解需要练习。</p><a className="button feature-entry" href="#/papers/new/random">开始新的练习 <ArrowRight size={16} /></a></div><div className="sidebar-bottom"><a href="#/settings" className={section === 'data' || section === 'settings' ? 'active' : ''}><Settings2 size={18} />系统配置</a><div className="local-status"><span className="live-dot" /><span>本地工作台</span><small>v1.0</small></div><div className="profile"><span>我</span><div><strong>我的学习空间</strong><small>循序渐进，日有所得</small></div></div></div></aside><div className="main-shell"><div className="topbar"><button className="icon-button mobile-menu" onClick={() => setMobile(!mobile)} aria-label={mobile ? '关闭菜单' : '打开菜单'}>{mobile ? <X size={21} /> : <Menu size={21} />}</button><div className="breadcrumb"><span>个人学习空间</span><ChevronRight size={13} /><strong>{pageLabel}</strong></div><UnifiedSearchBar hash={hash} /><a className="help-button" href="#/help" aria-label="查看用户使用手册"><CircleHelp size={19} /></a><span className="top-avatar" aria-label="个人空间">我</span></div><main id="main-content" tabIndex={-1} key={hash}><ErrorBoundary key={hash}><SearchReturnLink hash={hash} /><Suspense fallback={<Loading text="正在加载页面功能…" />}><Router hash={hash} /></Suspense></ErrorBoundary><footer className="page-footer"><span>认知星图 · 让每一次理解，都有所积累。</span><span>本地存储 <span className="dot">·</span> 数据归你</span></footer></main></div>{notification && <div className={`toast ${notification.error ? 'toast-error' : ''}`} role={notification.error ? 'alert' : 'status'}><span>{notification.message}</span><button className="icon-button" aria-label="关闭提示" onClick={() => setNotification(null)}><X size={16} /></button></div>}</div></DailyPushProvider></AppContext.Provider></ExamNavigationGuard>;
 }
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

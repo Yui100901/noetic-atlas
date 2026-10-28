@@ -32,6 +32,7 @@ export const navigate = (section: string, id?: string) => { window.location.hash
 
 export function useResource<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null);
+  const [dataUrl,setDataUrl]=useState<string|null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
@@ -39,7 +40,7 @@ export function useResource<T>(url: string | null) {
   const generation = useRef(0);
   useEffect(() => {
     const current = ++generation.current;
-    if (!url) { setData(null); setError(''); setLoading(false); return; }
+    if (!url) { setData(null); setDataUrl(null); setError(''); setLoading(false); return; }
     const controller = new AbortController();
     setLoading(true); setError('');
     // StrictMode can dispose an effect before it reaches the next microtask.
@@ -47,11 +48,11 @@ export function useResource<T>(url: string | null) {
     const active = () => !controller.signal.aborted && current === generation.current;
     void Promise.resolve().then(() => {
       if (!active()) return;
-      return request<T>(url, { signal: controller.signal }).then(result => { if (active()) setData(result); }).catch(reason => { if (reason.name !== 'AbortError' && active()) { setError(reason.message); setData(null); } }).finally(() => { if (active()) setLoading(false); });
+      return request<T>(url, { signal: controller.signal }).then(result => { if (active()) {setData(result);setDataUrl(url);} }).catch(reason => { if (reason.name !== 'AbortError' && active()) { setError(reason.message); setData(null);setDataUrl(null); } }).finally(() => { if (active()) setLoading(false); });
     });
     return () => controller.abort();
   }, [url, revision]);
-  return { data, setData, error, loading, refresh };
+  return { data, dataUrl, setData, error, loading, refresh };
 }
 export function useDebounced<T>(value: T, delay = 240) {
   const [result, setResult] = useState(value);

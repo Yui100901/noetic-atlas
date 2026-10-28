@@ -9,6 +9,8 @@ export class SqliteExpressions {
     return sql.lit(`$.${key}`);
   }
   field<T = any>(ref: string, key: string): RawBuilder<T> { return sql<T>`json_extract(${sql.ref(ref)},${this.path(key)})`; }
+  /** Match a fixed expression index while treating absent legacy booleans as false. */
+  booleanOrFalse(value: Expression<any>): RawBuilder<number> { return sql<number>`coalesce(${value},0)`; }
   missing(ref: string, key: string): RawBuilder<SqlBool> { return sql<SqlBool>`json_type(${sql.ref(ref)},${this.path(key)}) is null`; }
   arrayAny(ref: string, key: string, values: readonly string[]): RawBuilder<SqlBool> {
     return sql<SqlBool>`exists(select 1 from json_each(${sql.ref(ref)},${this.path(key)}) as selected where selected.value in (select value from json_each(${JSON.stringify(values)})))`;

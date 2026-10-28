@@ -1,6 +1,7 @@
 import type { DatabaseConnection } from './connection.js';
 import { collectAssetReferences } from '../../shared/assets/asset-references.js';
 import { SearchProjections } from './search-projections.js';
+import { sql } from 'kysely';
 
 export const projectionSources=['questions','documents','papers','attempts','study','study_parts','reviews','learning_results','question_history','document_drafts','ai_import_jobs'] as const;
 export type ProjectionSource=typeof projectionSources[number];
@@ -24,6 +25,8 @@ export class RecordProjections {
       d.run(q.schema.createIndex('asset_references_asset_idx').ifNotExists().on('asset_references').column('asset_id'));
       d.run(q.schema.createIndex('question_read_title_idx').ifNotExists().on('question_read_model').column('title_key'));
       d.run(q.schema.createIndex('paper_read_updated_idx').ifNotExists().on('paper_read_model').expression(d.expressions.field('data','updatedAt')));
+      d.run(q.schema.createIndex('paper_read_active_updated_idx').ifNotExists().on('paper_read_model').expression(sql.join([d.expressions.booleanOrFalse(d.expressions.field('data','archived')),d.expressions.field('data','updatedAt')])));
+      d.run(q.schema.createIndex('paper_read_domain_updated_idx').ifNotExists().on('paper_read_model').expression(sql.join([d.expressions.field('data','domainId'),d.expressions.field('data','updatedAt')])));
       // Trigger DDL is SQLite-specific; only fixed, code-owned names occur here.
       for(const table of projectionSources) {
         // Avoid unique conflicts rather than relying on OR IGNORE: an outer

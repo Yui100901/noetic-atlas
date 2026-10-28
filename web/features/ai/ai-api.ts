@@ -4,6 +4,7 @@ import { ApiError, idPath, send } from '../../shared/lib/api';
 import { AI_PROGRESS_HEADER, subscribeNativeAiProgress, type AiProgressUpdate, type AiStreamEvent } from '../../../shared/ai/ai-progress';
 import { isNativeApp, nativeFetch } from '@platform';
 import { createSseParser } from '../../../shared/ai/sse';
+import { aiResponseErrorInfo, type AiErrorPayload } from './ai-error';
 
 // View contracts mirror the local AI service; provider credentials never enter results.
 export type { AiSettings as AiSettingsView, AiExplanation as AiExplanationResult, AiGradeItem, AiGradeResult, AiImportResult, AiReviewItem, AiReviewResult } from '../../../shared/ai/ai';
@@ -13,9 +14,9 @@ export const aiRunApply = <Result=unknown>(id:string, options:{applyScores?:bool
 
 export interface AiRequestOptions { onProgress?: (event: AiProgressUpdate) => void; signal?: AbortSignal }
 function aborted(signal?: AbortSignal) { if (signal?.aborted) throw new DOMException('已取消本次 AI 请求', 'AbortError'); }
-function responseError(error: {code?: string; message?: string; details?: unknown} | undefined, status = 500) {
-  const details = Array.isArray(error?.details) ? error.details.map((item: any) => `${item.path ? item.path + '：' : ''}${item.message || ''}`).filter(Boolean).join('；') : '';
-  return new ApiError((error?.message || `请求失败（${status}）`) + (details ? `：${details}` : ''), error?.code || 'HTTP_ERROR', status, error?.details);
+function responseError(error: AiErrorPayload | undefined, status = 500) {
+  const info=aiResponseErrorInfo(error,status);
+  return new ApiError(info.message,info.code,info.status,info.details);
 }
 
 /** SSE is an HTTP transport only. Native local requests use the same progress

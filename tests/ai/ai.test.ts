@@ -13,6 +13,7 @@ import { buildPaper, createAttempt, submitAttempt, reviewAttempt, type StoredAtt
 import { exportData } from '../../server/modules/transfer/migration.js';
 import { completionEndpoint } from '../../server/modules/ai/provider.js';
 import { configureAiTransport } from '../../shared/ai/ai-transport.js';
+import {gradeResultSchema} from '../../server/modules/ai/schema.js';
 
 const question = (qid: string, changes = {}) => parse(questionSchema, { id: qid, title: `题目 ${qid}`, type: 'short_answer', stemMarkdown: '说明事务的原子性', answerMarkdown: '操作全部成功或者全部失败', explanationMarkdown: '原子性由事务日志和恢复机制支持', categoryIds: ['cat'], tagIds: [], status: 'published', createdAt: now(), updatedAt: now(), ...changes }) as any;
 type App = Awaited<ReturnType<typeof fixture>>;
@@ -41,7 +42,7 @@ async function fixture(t: test.TestContext) {
     if (customize) result = await customize(input.untrustedMaterial, input.task);
     else if (input.task.includes('连通性测试')) result = { ok: true, message: '本地模型正常' };
     else if (input.outputSchema.items?.[0]?.reason) result = { title: '事务递进复习', description: '由基础理解到应用', items: input.untrustedMaterial.candidates.slice(0,input.untrustedMaterial.requestedCount).map((q:any)=>({questionId:q.id,reason:'检验基础知识与边界'})) };
-    else if (input.outputSchema.items?.[0]?.score) result = { items: input.untrustedMaterial.items.map((i: any) => ({ questionId: i.questionId, score: i.maxPoints == null ? null : i.maxPoints / 2, maxPoints: i.maxPoints, comment: `作答包含核心概念，需补充示例：${i.answer || '未作答'}`, strengths: ['提到了事务边界'], improvements: ['结合转账说明回滚'] })) };
+    else if (input.task.includes('逐项评价')) result = { items: input.untrustedMaterial.items.map((i: any) => ({ questionId: i.questionId, score: i.maxPoints == null ? null : i.maxPoints / 2, maxPoints: i.maxPoints, comment: `作答包含核心概念，需补充示例：${i.answer || '未作答'}`, strengths: ['提到了事务边界'], improvements: ['结合转账说明回滚'] })) };
     else if (input.outputSchema.items?.[0]?.verdict) result = { items: input.untrustedMaterial.questions.map((q: any) => ({ questionId: q.id, verdict: 'valid', issues: [] })) };
     else if (input.outputSchema.questions) result = { questions: [question('AI-CANDIDATE', { status: 'published' })], taxonomySuggestions: { domains: ['计算机'], categories: ['事务'], tags: ['数据库'] } };
     else result = { explanationMarkdown: '事务原子性意味着整组操作要么全部提交，要么全部回滚。', followUpsMarkdown: '日志支持恢复。', pitfallsMarkdown: '原子性不等于所有并发操作完全串行。' };
@@ -160,7 +161,7 @@ test('AI grading retains the requested rubric and validates explicit scored verd
     const run = await f.api('/api/ai/grade', 'POST', { questionId: 'S1', answer: '整体提交或回滚', maxPoints: 6, gradingRequirements });
     assert.equal(run.result.items[0].verdict, verdict); assert.equal(run.result.gradingRequirements, gradingRequirements);
     assert.equal(f.requests.at(-1).input.untrustedMaterial.gradingRequirements, gradingRequirements);
-    assert.match(f.requests.at(-1).input.outputSchema.items[0].verdict, /correct\|partial\|incorrect/);
+    assert.deepEqual(f.requests.at(-1).input.outputSchema.properties.items.items.properties.verdict.enum,['correct','partial','incorrect']);
   }
   const before = (await f.api('/api/ai/runs?status=completed')).length;
   for (const [score, verdict] of [[6, 'incorrect'], [3, 'correct'], [0, 'partial']] as const) {
@@ -176,6 +177,34 @@ test('AI grading retains the requested rubric and validates explicit scored verd
   const calls = f.requests.length;
   await f.api('/api/ai/grade', 'POST', { questionId: 'S1', answer: '整体提交', gradingRequirements: '要'.repeat(10001) }, 400);
   assert.equal(f.requests.length, calls); assert.equal((await f.api('/api/ai/runs?status=completed')).length, before);
+});
+
+test('grading projects auxiliary model metadata without discarding valid judgments or trusting internal flags',async t=>{
+ const f=await fixture(t);await f.enable();
+ const paper=buildPaper(f.store,{title:'AI-002式无分复现',mode:'manual',questionIds:['S1'],scoring:{enabled:false}});
+ const attempt=submitAttempt(f.store,createAttempt(f.store,paper),{S1:{value:'整体提交或回滚'}}),before=structuredClone(attempt);
+ const privateValue='PRIVATE_EXTRA_GRADE_DATA',privateKey='PRIVATE_EXTRA_KEY';
+ for(const requiresRegrade of [false,true]){
+  f.customize((material:any)=>({summary:privateValue,gradingRequirements:privateValue,items:material.items.map((item:any)=>({questionId:item.questionId,verdict:item.maxPoints==null?'correct':'partial',score:item.maxPoints==null?null:item.maxPoints/2,maxPoints:item.maxPoints,comment:'解释了事务整体性',strengths:['提到了回滚'],improvements:[],requiresRegrade,[privateKey]:privateValue}))}));
+  const run=await f.api(`/api/attempts/${attempt.id}/ai-review`,'POST',{gradingRequirements:'允许等价表述'});
+  assert.deepEqual(run.result.items[0],{questionId:'S1',verdict:'correct',score:null,maxPoints:null,comment:'解释了事务整体性',strengths:['提到了回滚'],improvements:[]});
+  assert.equal(run.result.gradingRequirements,'允许等价表述');assert.ok(run.warnings.some((value:string)=>value.includes('非判题字段')));
+  assert.equal(run.diagnostics.providerCalls,1);assert.deepEqual(f.store.require('attempts',attempt.id),before);
+  const stored=f.store.database.getRecord('ai_runs',run.id);assert.doesNotMatch(JSON.stringify({run,stored}),/PRIVATE_EXTRA_GRADE_DATA|PRIVATE_EXTRA_KEY/);
+  const scored=await f.api('/api/ai/grade','POST',{questionId:'S1',answer:'整体提交或回滚',maxPoints:6});assert.equal(scored.result.items[0].score,3);assert.equal(scored.result.items[0].verdict,'partial');assert.equal(scored.result.items[0].requiresRegrade,undefined);
+  const contract=f.requests.at(-1).input.outputSchema;assert.equal(contract.type,'object');assert.equal(contract.additionalProperties,false);assert.equal(contract.properties.items.minItems,1);assert.equal(contract.properties.items.maxItems,1);assert.deepEqual(contract.properties.items.items.properties.questionId.enum||[contract.properties.items.items.properties.questionId.const],['S1']);
+ }
+ assert.equal(gradeResultSchema.safeParse({items:[{questionId:'S1',verdict:'correct',score:null,maxPoints:null,comment:'已有结果',strengths:[],improvements:[],unexpected:'不得进入迁移'}]}).success,false,'stored/migration contracts stay strict');
+});
+
+test('grading tolerates absent display lists but never coerces or fills core judgments and scores',async t=>{
+ const f=await fixture(t);await f.enable();const item={questionId:'S1',verdict:'partial',score:3,maxPoints:6,comment:'回答缺少一个要点'};
+ f.customize(()=>({items:[{...item,strengths:null}]}));const run=await f.api('/api/ai/grade','POST',{questionId:'S1',answer:'整体提交',maxPoints:6});
+ assert.deepEqual(run.result.items[0].strengths,[]);assert.deepEqual(run.result.items[0].improvements,[]);assert.ok(run.warnings.some((value:string)=>value.includes('空列表')));
+ for(const invalid of [{score:'3'},{maxPoints:'6'},{verdict:'正确'},{comment:''},{strengths:'说明了提交'},{score:undefined},{maxPoints:undefined}]){
+  f.customize(()=>({items:[{...item,...invalid}]}));const response=await f.api('/api/ai/grade','POST',{questionId:'S1',answer:'整体提交',maxPoints:6},502);assert.equal(response.error.code,'AI_INVALID_OUTPUT');assert.ok(response.error.details.failure.validationIssues.length);
+ }
+ assert.equal((await f.api('/api/ai/runs?status=completed')).length,1);assert.equal(f.store.all('study').length,0);
 });
 
 test('unscored AI verdicts apply only selected subjective judgments after explicit confirmation', async t => {

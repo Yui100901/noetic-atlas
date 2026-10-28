@@ -1,16 +1,13 @@
-import { useState } from 'react';
-import { Activity, ArrowRight, BarChart3, CalendarDays, ChartNoAxesCombined, CheckCheck, ChevronLeft, ChevronRight, Clock3, Download, Info, RefreshCw, Target } from 'lucide-react';
+import {analyticsMonday,periodRange,moveAnalyticsPeriod,readAnalyticsLocation,validAnalyticsDay,type AnalyticsMode} from './range-navigation';
+import { useEffect, useState } from 'react';
+import { ArrowRight, CalendarDays, ChartNoAxesCombined, CheckCheck, ChevronLeft, ChevronRight, Clock3, Download, Info, RefreshCw, Target } from 'lucide-react';
 import type { AdaptiveAnalytics, AnalyticsBreakdown, AnalyticsMetrics, AnalyticsReport, WeeklyReport } from '../../../shared/models/analytics';
 import { qs, useResource } from '../../shared/lib/api';
 import { Empty, ErrorNotice, Field, Loading, PageHeader, Pagination, useApp } from '../../shared/ui/components';
 import { analyticsDateKey, analyticsDuration, analyticsMeasuredDuration, analyticsNumber, analyticsPercent, downloadWeeklyReport } from './report-export';
 import './analytics.css';
 
-type AnalyticsTab = 'analysis' | 'weekly';
 const localDay = (timeZone: string) => analyticsDateKey(new Date(), timeZone);
-function shiftDay(day: string, offset: number): string { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + offset); return date.toISOString().slice(0, 10); }
-function monday(day: string): string { const weekday = new Date(`${day}T12:00:00Z`).getUTCDay(); return shiftDay(day, -(weekday === 0 ? 6 : weekday - 1)); }
-function validDay(day: string): boolean { const value = new Date(`${day}T12:00:00Z`); return /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(value.getTime()) && value.toISOString().slice(0, 10) === day; }
 const signed = (value: number) => `${value > 0 ? '+' : ''}${analyticsNumber(value)}`;
 const displayTime = (value: string, timeZone: string) => new Intl.DateTimeFormat('zh-CN', { timeZone, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
 
@@ -86,40 +83,26 @@ function AnalysisBody({ report, today, comparison }: { report: AnalyticsReport; 
   </>;
 }
 
-export function AnalyticsPage({ initialTab = 'analysis' }: { initialTab?: string }) {
-  const { bootstrap, toast } = useApp();
-  const timeZone = bootstrap.settings?.dailyPush.timeZone || 'Asia/Shanghai', today = localDay(timeZone), currentWeek = monday(today);
-  const [tab, setTab] = useState<AnalyticsTab>(initialTab === 'weekly' ? 'weekly' : 'analysis');
-  const [preset, setPreset] = useState('30');
-  const [range, setRange] = useState({ from: shiftDay(today, -29), to: today });
-  const [draftFrom, setDraftFrom] = useState(range.from), [draftTo, setDraftTo] = useState(range.to), [rangeError, setRangeError] = useState('');
-  const [week, setWeek] = useState(currentWeek), [exporting, setExporting] = useState(false);
-  const analytics = useResource<AnalyticsReport>(tab === 'analysis' ? `/api/analytics?${qs({ ...range, timeZone })}` : null);
-  const weekly = useResource<WeeklyReport>(tab === 'weekly' ? `/api/analytics/weekly?${qs({ week, timeZone })}` : null);
-  const active = tab === 'weekly' ? weekly : analytics;
-  const changeTab = (next: AnalyticsTab) => { setTab(next); window.location.hash = `#/analytics${next === 'weekly' ? '?tab=weekly' : ''}`; };
-  const changePreset = (value: string) => {
-    setPreset(value); setRangeError('');
-    if (value !== 'custom') { const next = { from: shiftDay(today, 1 - Number(value)), to: today }; setRange(next); setDraftFrom(next.from); setDraftTo(next.to); }
-  };
-  const applyRange = () => {
-    if (!validDay(draftFrom) || !validDay(draftTo) || draftFrom > draftTo) { setRangeError('请选择有效日期，开始日期不能晚于结束日期。'); return; }
-    const days = (Date.parse(`${draftTo}T00:00:00Z`) - Date.parse(`${draftFrom}T00:00:00Z`)) / 86400000 + 1;
-    if (days > 366) { setRangeError('一次最多查看366天，请缩小日期范围。'); return; }
-    if (draftTo > today) { setRangeError('结束日期不能晚于今天。'); return; }
-    setRangeError(''); setRange({ from: draftFrom, to: draftTo });
-  };
-  const exportReport = async () => { if (!weekly.data || weekly.loading) return; setExporting(true); try { await downloadWeeklyReport(weekly.data); toast('学习周报已导出'); } catch (reason) { toast((reason as Error).message || '周报导出失败', true); } finally { setExporting(false); } };
-  return <div className="analytics-page"><PageHeader eyebrow="LEARNING ANALYTICS" title="看见积累，找到下一步。" description="把作答、复习与反馈连起来，观察自己的学习节奏。" actions={<><button className="button" onClick={active.refresh} disabled={active.loading}><RefreshCw size={16} />刷新统计</button>{tab === 'weekly' && <button className="button primary" onClick={() => { void exportReport(); }} disabled={exporting || weekly.loading || !weekly.data}><Download size={16} />{exporting ? '正在导出…' : '导出周报 Markdown'}</button>}</>} />
-    <div className="analytics-tabs" role="tablist" aria-label="学习统计视图"><button role="tab" id="analytics-tab-analysis" aria-controls="analytics-panel" aria-selected={tab === 'analysis'} onClick={() => changeTab('analysis')}><BarChart3 size={17} />统计分析</button><button role="tab" id="analytics-tab-weekly" aria-controls="analytics-panel" aria-selected={tab === 'weekly'} onClick={() => changeTab('weekly')}><CalendarDays size={17} />学习周报</button></div>
-    <div role="tabpanel" id="analytics-panel" aria-labelledby={`analytics-tab-${tab}`}>
-      {tab === 'analysis' ? <form className="card analytics-controls" onSubmit={event => { event.preventDefault(); applyRange(); }}><Field label="统计范围"><select value={preset} onChange={event => changePreset(event.target.value)}><option value="7">近7天</option><option value="30">近30天</option><option value="90">近90天</option><option value="custom">自定义</option></select></Field>{preset === 'custom' && <><Field label="开始日期"><input type="date" required max={draftTo || today} value={draftFrom} onChange={event => setDraftFrom(event.target.value)} /></Field><Field label="结束日期"><input type="date" required min={draftFrom || undefined} max={today} value={draftTo} onChange={event => setDraftTo(event.target.value)} /></Field><button className="button primary" type="submit">应用日期范围</button></>}<p className="analytics-controls-note">按 {timeZone} 的日期统计。默认近30天，包含今天。</p></form> : <div className="card analytics-controls"><Field label="周报所在日期" className="analytics-week-picker"><input type="date" max={today} value={week} onChange={event => { if (validDay(event.target.value) && event.target.value <= today) setWeek(monday(event.target.value)); }} /></Field><div className="analytics-week-navigation"><button className="icon-button" aria-label="上一周" title="上一周" onClick={() => setWeek(shiftDay(week, -7))}><ChevronLeft size={18} /></button><button className="button" onClick={() => setWeek(currentWeek)}>本周</button><button className="icon-button" aria-label="下一周" title="下一周" disabled={week >= currentWeek} onClick={() => setWeek(shiftDay(week, 7))}><ChevronRight size={18} /></button></div><p className="analytics-controls-note">每周一至周日 · {timeZone}<br />本周进行中时，与上周相同已过时段比较。</p></div>}
-      {rangeError && tab === 'analysis' && <ErrorNotice message={rangeError} />}
-      {active.loading ? <Loading text="正在汇总学习统计…" /> : active.error ? <ErrorNotice message={active.error} retry={active.refresh} /> : tab === 'weekly' && weekly.data ? <>
-        <div className="analytics-range-label"><h2>{weekly.data.weekStart} — {weekly.data.weekEnd} 学习周报</h2><span>{weekly.data.isCurrentWeek ? '本周进行中' : '完整自然周'} · 截至 {displayTime(weekly.data.generatedAt, timeZone)}</span></div>
-        <section className="card analytics-section analytics-week-summary" aria-label="周报摘要"><h2>这一周的足迹</h2><p>已提交 {weekly.data.current.summary.sessions} 次练习，实际回答 {weekly.data.current.summary.answers} 次，覆盖 {weekly.data.current.summary.uniqueItems} 个独立作答项；共有 {weekly.data.current.summary.activeDays} 天实际答题或复习。{weekly.data.current.summary.graded ? `已判作答的严格正确率为${analyticsPercent(weekly.data.current.summary.accuracy)}。` : '目前还没有可计算正确率的已判作答。'}{weekly.data.current.summary.ungraded ? `另有${weekly.data.current.summary.ungraded}次作答待判。` : ''}</p><div className="analytics-activity-summary"><span><Activity size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />复习记录 <strong>{weekly.data.current.summary.reviewEvents}</strong> 次</span><span>对比：<strong>{weekly.data.comparison.label}</strong>（{weekly.data.comparison.from} — {weekly.data.comparison.to}）</span></div></section>
-        <AnalysisBody report={weekly.data.current} comparison={weekly.data.comparison} today={today} />
-      </> : analytics.data ? <><div className="analytics-range-label"><h2>{analytics.data.range.from} — {analytics.data.range.to}</h2><span>{analytics.data.range.partial ? '包含进行中的今天' : '完整日期范围'} · 截至 {displayTime(analytics.data.range.asOf, timeZone)}</span></div><AnalysisBody report={analytics.data} today={today} /></> : null}
-    </div>
+export function AnalyticsPage({ initialTab: _initialTab }: { initialTab?: string }) {
+  const {bootstrap,toast}=useApp(),timeZone=bootstrap.settings?.dailyPush.timeZone||'Asia/Shanghai',today=localDay(timeZone);
+  const [initial]=useState(()=>readAnalyticsLocation(window.location.hash,today));
+  const [mode,setMode]=useState<AnalyticsMode>(initial.mode),[anchor,setAnchor]=useState(initial.anchor),[custom,setCustom]=useState(initial.custom);
+  const [draftFrom,setDraftFrom]=useState(custom.from),[draftTo,setDraftTo]=useState(custom.to),[rangeError,setRangeError]=useState(''),[exporting,setExporting]=useState(false);
+  const range=mode==='custom'?custom:periodRange(mode,anchor,today),week=analyticsMonday(anchor);
+  const analytics=useResource<AnalyticsReport>(mode!=='week'?'/api/analytics?'+qs({...range,timeZone}):null),weekly=useResource<WeeklyReport>(mode==='week'?'/api/analytics/weekly?'+qs({week,timeZone}):null);
+  const active=mode==='week'?weekly:analytics,report=mode==='week'?weekly.data?.current:analytics.data;
+  useEffect(()=>{const params=new URLSearchParams({mode});if(mode==='custom'){params.set('from',custom.from);params.set('to',custom.to);}else if(mode!=='year')params.set('date',anchor);history.replaceState(history.state,'','#/analytics?'+params);},[mode,anchor,custom]);
+  function changeMode(next:AnalyticsMode){setMode(next);setRangeError('');}
+  function currentWeek(){setMode('week');setAnchor(today);setRangeError('');}
+  function applyRange(){if(!validAnalyticsDay(draftFrom)||!validAnalyticsDay(draftTo)||draftFrom>draftTo||draftTo>today){setRangeError('请选择有效日期，开始日期不能晚于结束日期，结束日期不能晚于今天。');return;}if((Date.parse(draftTo)-Date.parse(draftFrom))/86400000>=366){setRangeError('一次最多查看366天，请缩小日期范围。');return;}setCustom({from:draftFrom,to:draftTo});setRangeError('');}
+  async function exportReport(){if(!weekly.data||weekly.loading)return;setExporting(true);try{await downloadWeeklyReport(weekly.data);toast('学习周报已导出');}catch(reason){toast((reason as Error).message||'周报导出失败',true);}finally{setExporting(false);}}
+  const modes={day:'日',week:'周',month:'月',year:'近一年',custom:'自定义'} as const,label=mode==='day'?'日':mode==='month'?'月':'周',next=moveAnalyticsPeriod(mode,anchor,1),canNext=periodRange(mode,next,today).from<=today;
+  return <div className="analytics-page"><PageHeader eyebrow="LEARNING ANALYTICS" title="学习统计" description="按同一统计口径查看作答、复习和变化；默认展示本周周报。" actions={<><button className="button" type="button" onClick={active.refresh} disabled={active.loading}><RefreshCw size={16}/>刷新统计</button>{mode==='week'&&<button className="button primary" type="button" disabled={exporting||weekly.loading||!weekly.data} onClick={()=>void exportReport()}><Download size={16}/>{exporting?'正在导出…':'导出周报 Markdown'}</button>}</>}/>
+   <section className="card analytics-period-controls" aria-label="统计范围选择"><div className="analytics-period-modes" role="group" aria-label="统计周期">{Object.entries(modes).map(([key,title])=><button className={`button ${mode===key?'primary':''}`} type="button" aria-pressed={mode===key} key={key} onClick={()=>changeMode(key as AnalyticsMode)}>{title}</button>)}</div>
+    {['day','week','month'].includes(mode)&&<div className="analytics-calendar-navigation"><button className="button" type="button" aria-label={'上一'+label} onClick={()=>setAnchor(moveAnalyticsPeriod(mode,anchor,-1))}><ChevronLeft size={17}/>上一{label}</button><Field label={mode==='month'?'统计月份':mode==='week'?'周报所在日期':'统计日期'}><input type={mode==='month'?'month':'date'} max={mode==='month'?today.slice(0,7):today} value={mode==='month'?anchor.slice(0,7):anchor} onChange={event=>{const value=event.target.value+(mode==='month'?'-01':'');if(validAnalyticsDay(value)&&value<=today)setAnchor(value);}}/></Field><button className="button" type="button" disabled={!canNext} aria-label={'下一'+label} onClick={()=>setAnchor(next)}>下一{label}<ChevronRight size={17}/></button><button className="button" type="button" onClick={()=>setAnchor(today)}>{mode==='day'?'今天':mode==='week'?'本周':'本月'}</button></div>}
+    {mode==='custom'&&<form className="analytics-controls" onSubmit={event=>{event.preventDefault();applyRange();}}><Field label="开始日期"><input type="date" required max={draftTo||today} value={draftFrom} onChange={event=>setDraftFrom(event.target.value)}/></Field><Field label="结束日期"><input type="date" required min={draftFrom} max={today} value={draftTo} onChange={event=>setDraftTo(event.target.value)}/></Field><button className="button primary" type="submit">应用日期范围</button></form>}
+    <div className="analytics-period-note"><p className="muted">按{timeZone}的日期统计。{mode==='week'?'每周一至周日；本周与上周相同已过时段比较。':mode==='year'?'近365天，包含今天。':'进行中的当前日期范围截至此刻。'}</p>{mode!=='week'&&<button className="button" type="button" onClick={currentWeek}><CalendarDays size={16}/>查看本周周报</button>}</div>
+   </section>{rangeError&&<ErrorNotice message={rangeError}/>}
+   {active.loading?<Loading text="正在汇总学习统计…"/>:active.error?<ErrorNotice message={active.error} retry={active.refresh}/>:report?<><div className="analytics-range-label"><h2>{mode==='week'&&weekly.data?weekly.data.weekStart+' — '+weekly.data.weekEnd+' 学习周报':report.range.from+' — '+report.range.to}</h2><span>{mode==='week'&&weekly.data?(weekly.data.isCurrentWeek?'本周进行中':'完整自然周'):report.range.partial?'包含进行中的今天':'完整日期范围'} · 截至{displayTime(report.range.asOf,timeZone)}</span></div><AnalysisBody report={report} today={today} comparison={mode==='week'?weekly.data?.comparison:undefined}/></>:null}
   </div>;
 }

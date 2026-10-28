@@ -3,8 +3,9 @@ import { AlertTriangle, MessageSquareWarning, Send } from 'lucide-react';
 import type { Question } from '../../../shared/models/types';
 import { QUESTION_FEEDBACK_KIND_LABELS, type QuestionFeedbackInput, type QuestionFeedbackKind, type QuestionFeedbackSummary } from '../../../shared/models/question-feedback';
 import { idPath, send, useResource } from '../../shared/lib/api';
-import { ErrorNotice, Field, Loading, Markdown, Modal, useApp } from '../../shared/ui/components';
+import { ErrorNotice, Field, Loading, Modal, useApp } from '../../shared/ui/components';
 import { notifyFeedbackChanged, useFeedbackSummary, useFeedbackSummaries } from './feedback-state';
+import {QualitySource} from '../content-quality/quality-source';
 import './question-feedback.css';
 
 export function QuestionFeedbackBadge({ questionId, partId, summary }: { questionId: string; partId?: string; summary?: QuestionFeedbackSummary }) {
@@ -37,7 +38,7 @@ export function ReportQuestionDialog({ questionId, partId, snapshotDifferent = f
       <strong>{source.data.title}</strong>
       {source.data.type === 'group' && <Field label="反馈范围"><select value={selectedPart} disabled={busy} onChange={event => setSelectedPart(event.target.value)}><option value="">整组／公共材料</option>{source.data.parts?.map((value, index) => <option value={value.id} key={value.id}>小题{index + 1} · {value.title}</option>)}</select></Field>}
       {snapshotDifferent && <p className="notice">当前页面展示题集旧快照。此反馈针对现存原题，请先核对下方当前内容。</p>}
-      <details open={snapshotDifferent}><summary>核对本次反馈的当前题目内容</summary><div className="feedback-question-context">{part && <><h4>公共材料</h4><Markdown>{source.data.stemMarkdown}</Markdown></>}<Markdown>{part?.stemMarkdown || source.data.stemMarkdown}</Markdown>{(part?.options || source.data.options).map(option => <p key={option.key}>{option.key}. {option.text}</p>)}<h4>参考答案</h4><Markdown>{part?.answerMarkdown || source.data.answerMarkdown}</Markdown><h4>解析</h4><Markdown>{part?.explanationMarkdown || source.data.explanationMarkdown}</Markdown></div></details>
+      <details open={snapshotDifferent}><summary>核对本次反馈的当前题目内容</summary><div className="feedback-question-context"><QualitySource question={source.data} partId={selectedPart || undefined} actions={false}/></div></details>
       <Field label="问题类型"><select value={kind} disabled={busy} onChange={event => setKind(event.target.value as QuestionFeedbackKind)}>{Object.entries(QUESTION_FEEDBACK_KIND_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></Field>
       <Field label="问题描述与依据" hint="例如：答案与解析不一致、缺少某个条件，或指出疑似重复题号；没有依据时可以说明疑问。"><textarea rows={5} maxLength={5000} value={description} disabled={busy} onChange={event => setDescription(event.target.value)} /></Field>
       {!valid && <ErrorNotice message="当前小题已不存在，请重新选择反馈范围。" />}

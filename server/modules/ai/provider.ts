@@ -23,15 +23,16 @@ const MAX_CONTENT_BYTES = 2 * 1024 * 1024;
 const MAX_STREAM_BYTES = 32 * 1024 * 1024;
 const encoder = new TextEncoder();
 const finishReasons = new Set(['stop', 'length', 'content_filter', 'aborted', 'insufficient_system_resource', 'tool_calls', 'function_call']);
-function checkFinish(reason: unknown, context?: AiExecutionContext) {
+function checkFinish(reason: unknown, context?: AiExecutionContext, maxTokens?:number) {
   if (reason != null) context?.telemetry?.({ type: 'provider_update', finishReason: typeof reason === 'string' && finishReasons.has(reason) ? reason : 'unknown' });
-  if (reason === 'length' || reason === 'aborted' || reason === 'insufficient_system_resource') fail(502, 'AI_OUTPUT_TRUNCATED', '模型输出被截断，请减少题量或增加输出上限');
+  if (reason === 'length') fail(502, 'AI_OUTPUT_TRUNCATED', `模型输出被截断${maxTokens?`（本次最大输出 ${maxTokens} Token）`:''}，未生成可应用结果。请在“系统配置 → AI辅助”提高最大输出 Token，或缩小编辑要求／分批处理后重试。`);
+  if (reason === 'aborted' || reason === 'insufficient_system_resource') fail(502, 'AI_OUTPUT_TRUNCATED', '模型服务提前结束输出，未生成可应用结果。请稍后重试，或缩小本次处理范围并检查模型服务。');
   if (reason === 'content_filter') fail(422, 'AI_REFUSED', '模型拒绝了本次任务，请调整资料后重试');
 }
 
 /** The stream only publishes answer text. Provider reasoning and error bodies
  * are deliberately excluded from execution updates and error messages. */
-function streamCollector(context: AiExecutionContext) {
+function streamCollector(context: AiExecutionContext,maxTokens:number) {
   let mode: 'sse' | 'json' | undefined;
   let pending: Uint8Array[] = [], preview = '';
   const previewDecoder = new TextDecoder(), jsonDecoder = new TextDecoder();
@@ -48,7 +49,7 @@ function streamCollector(context: AiExecutionContext) {
     const choice = Array.isArray(envelope?.choices) ? envelope.choices.find((item: any) => item && (item.index === undefined || item.index === 0)) : undefined;
     if (!choice) return; // Optional usage-only events carry no choices.
     if (choice.delta?.refusal) fail(422, 'AI_REFUSED', '模型拒绝了本次任务，请调整资料后重试');
-    if (choice.finish_reason != null) { finishReason = choice.finish_reason; checkFinish(finishReason, context); }
+    if (choice.finish_reason != null) { finishReason = choice.finish_reason; checkFinish(finishReason, context,maxTokens); }
     const text = choice.delta?.content;
     if (typeof text !== 'string' || !text) return;
     contentBytes += encoder.encode(text).length;
@@ -116,7 +117,7 @@ export async function requestAiJson<T>(settings: PrivateAiSettings, task: string
   const content = images.length ? [{ type: 'text', text }, ...images.flatMap(image => [{ type: 'text', text: `图片资料：${image.label}` }, { type: 'image_url', image_url: { url: image.url, detail: 'auto' } }])] : text;
   if (context?.signal?.aborted) fail(499, 'AI_CANCELLED', 'AI 请求已取消');
   const streaming = !!context && context.streaming !== false && aiTransportSupportsStreaming();
-  const collector = streaming ? streamCollector(context!) : undefined;
+  const collector = streaming ? streamCollector(context!,settings.maxTokens) : undefined;
   context?.emit({ type: 'status', stage: 'model_start', message: '正在请求模型生成结果' });
   if (context && !streaming) context.emit({ type: 'status', stage: 'buffered_transport', message: '当前原生网络通道暂不支持流式接收，将按实际工作阶段显示进度' });
   const requestBody = JSON.stringify({ model: settings.model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content }], response_format: { type: 'json_object' }, max_tokens: settings.maxTokens, stream: streaming });
@@ -149,7 +150,7 @@ export async function requestAiJson<T>(settings: PrivateAiSettings, task: string
     let value: unknown = received.text;
     if (received.envelope !== undefined) {
       const envelope = JSON.parse(received.envelope); const choice = envelope.choices?.[0];
-      checkFinish(choice?.finish_reason, context);
+      checkFinish(choice?.finish_reason, context,settings.maxTokens);
       if (choice?.message?.refusal) fail(422, 'AI_REFUSED', '模型拒绝了本次任务，请调整资料后重试');
       value = choice?.message?.content;
     }

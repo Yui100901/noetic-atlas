@@ -18,7 +18,7 @@ function failureAdvice(code: string, httpStatus?: number) {
   if (httpStatus === 429) return '服务请求过于频繁或额度不足，请检查额度，降低并发并稍后重试。';
   if (httpStatus && httpStatus >= 500) return '模型服务暂时异常，请稍后重试当前失败批次。';
   if (code === 'AI_TIMEOUT') return '减少当前批次内容或题量，或在设置中提高请求超时后重试。';
-  if (code === 'AI_OUTPUT_TRUNCATED') return '减少当前批次题量，或提高输出token上限后重试；截断结果不可应用。';
+  if (code === 'AI_OUTPUT_TRUNCATED') return '在系统配置的AI辅助中检查最大输出Token；可缩小编辑要求、拆分批次或提高模型支持的上限后重试，截断结果不可应用。';
   if (code === 'AI_INVALID_JSON' || code === 'AI_EMPTY_RESPONSE') return '模型未给出完整合法JSON，可重试当前批次；持续失败时减少题量或更换模型。';
   if (code === 'AI_INVALID_OUTPUT') return '按问题字段核对题型和输出结构，减少题量或明确要求后重试。';
   if (code === 'AI_CANCELLED') return '本次处理已停止，可保留已有完整结果，稍后重新发起。';

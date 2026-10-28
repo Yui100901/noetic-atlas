@@ -1,6 +1,7 @@
 .context-learning-panel {margin:18px 0 30px; }
 .context-learning-tabs {overflow-x:auto;flex-wrap:nowrap; }
 .context-learning-tabs > button {flex-shrink:0; }
+@media(max-width:700px){.context-learning-tabs {flex-wrap:wrap;overflow-x:visible;row-gap:8px;}.context-learning-tabs > button {flex:1 1 auto;justify-content:center;}}
 .context-learning-heading {display:flex;gap:18px;align-items:flex-start;justify-content:space-between;margin:22px 0 18px; }
 .context-learning-heading h2 {font-size:20px;margin-bottom:7px; }
 .context-learning-heading p, .context-rule-note {color:var(--muted);font-size:12px;line-height:1.9; }

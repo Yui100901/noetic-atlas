@@ -6,6 +6,8 @@ import {localDate,qs,useResource} from '../../shared/lib/api';
 import {ErrorNotice,Loading,Pagination} from '../../shared/ui/components';
 import {managementEditorHref} from '../questions/management-navigation';
 
+const issueLabel=(item:QualityIssueView)=>[item.rule==='user_feedback'?'':QUALITY_RULE_LABELS[item.rule],item.partId?`小题 ${item.partId}`:''].filter(Boolean).join(' · ');
+
 interface Props {
   group:QualityQuestionGroup;returnTo:string;revision:number;busy:boolean;
   selected:Record<string,string>;onSelect:(item:QualityIssueView,checked:boolean)=>void;
@@ -31,7 +33,7 @@ export function QualityQuestionSummary({group,returnTo,revision,busy,selected,on
     {!visible?<button className="text-button" type="button" onClick={()=>setVisible(true)}>加载本题问题列表</button>:issues.loading?<Loading/>:issues.error?<ErrorNotice message={issues.error} retry={issues.refresh}/>:<>
       <ul className="quality-summary-issues" aria-label={`${group.questionTitle}的问题列表`}>{issues.data?.items.map(item=><li className={`quality-summary-issue quality-state-${item.status}`} key={item.id} data-quality-issue={item.id}>
         <input type="checkbox" aria-label={`选择质量问题 ${item.id}`} checked={!!selected[item.id]} disabled={busy||!selected[item.id]&&Object.keys(selected).length>=100} onChange={event=>onSelect(item,event.target.checked)}/>
-        <div className="quality-summary-description"><div className="quality-item-heading"><span className={`badge quality-state-badge-${item.status}`}>{QUALITY_STATUS_LABELS[item.status]}</span><span className="badge">{qualityIssueOrigin(item)==='feedback'?'用户反馈':'规则扫描'}</span><span className="muted">{QUALITY_RULE_LABELS[item.rule]}{item.partId?` · 小题 ${item.partId}`:''}</span></div><p>{item.message}</p><small className="muted">{localDate(item.updatedAt)}{item.sourceChanged||item.relatedChanged?' · 内容已变化，需核对':''}</small></div>
+        <div className="quality-summary-description"><div className="quality-item-heading"><span className={`badge quality-state-badge-${item.status}`}>{QUALITY_STATUS_LABELS[item.status]}</span><span className="badge">{qualityIssueOrigin(item)==='feedback'?'用户反馈':'规则扫描'}</span>{issueLabel(item)&&<span className="muted">{issueLabel(item)}</span>}</div><p>{item.message}</p><small className="muted">{localDate(item.updatedAt)}{item.sourceChanged||item.relatedChanged?' · 内容已变化，需核对':''}</small></div>
         {group.sourceAvailable&&<a className="text-button quality-issue-edit" href={managementEditorHref(group.questionId,returnTo,item.id)}>详情与处理</a>}
       </li>)}</ul>
       {issues.data&&!issues.data.items.length&&<p className="muted">暂无可显示的问题项，刷新后重试。</p>}

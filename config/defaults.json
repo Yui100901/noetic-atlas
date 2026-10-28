@@ -61,6 +61,6 @@
     "supportsImages": false,
     "sendImages": false,
     "timeoutSeconds": 60,
-    "maxTokens": 4096
+    "maxTokens": 16384
   }
 }

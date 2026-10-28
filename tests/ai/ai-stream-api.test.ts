@@ -198,7 +198,7 @@ test('SSE still respects same-origin and active-exam guards; OpenAPI declares JS
 });
 
 test('connection, import, review and both grading endpoints deliver structured validated results over SSE', async t => {
-  const gradeResult = { items: [{ questionId: 'S1', score: null, maxPoints: null, comment: '解释基本正确，可补充故障恢复的例子。', strengths: ['核心定义正确'], improvements: ['补充例子'] }] };
+  const gradeResult = { extraMetadata:'PRIVATE_GRADE_EXTRA',items: [{ questionId: 'S1',verdict:'partial', score: null, maxPoints: null, comment: '解释基本正确，可补充故障恢复的例子。', strengths: ['核心定义正确'], improvements: ['补充例子'],requiresRegrade:false,answer:'PRIVATE_GRADE_EXTRA' }] };
   const cases = [
     { path: '/api/ai/test', body: {}, result: { ok: true, message: '连接成功' }, kind: undefined },
     { path: '/api/ai/import', body: { text: '事务保证操作全部成功或全部失败。', count: 1 }, result: { questions: [{ title: '原子性', type: 'short_answer', stemMarkdown: '什么是原子性？', answerMarkdown: '全部成功或全部失败', categoryIds: ['transactions'] }], taxonomySuggestions: { domains: [], categories: [], tags: [] } }, kind: 'import' },
@@ -222,5 +222,6 @@ test('connection, import, review and both grading endpoints deliver structured v
     else { assert.equal(terminal.result.ok, true); assert.equal(f.store.database.records('ai_runs').length, 0); }
     if (item.kind === 'import') { assert.equal(terminal.result.result.questions[0].status, 'pending'); assert.equal(f.store.database.records('questions').length, 2, 'conversion must still await explicit import'); }
     if (item.kind === 'review') assert.equal(f.store.require<any>('questions', 'P1').status, 'published');
+    if (item.kind === 'grade') {assert.equal(terminal.result.result.items[0].verdict,'partial');assert.equal(terminal.result.result.items[0].requiresRegrade,undefined);assert.ok(terminal.result.warnings.some((value:string)=>value.includes('非判题字段')));assert.doesNotMatch(JSON.stringify(terminal.result),/PRIVATE_GRADE_EXTRA/);}
   }
 });

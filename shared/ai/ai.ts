@@ -54,5 +54,5 @@ export type AiRun<Result = AiExplanation | AiGradeResult | AiImportResult | AiRe
 );
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   enabled: false, baseUrl: '', model: '', hasKey: false, supportsImages: false, sendImages: false,
-  timeoutSeconds: 60, maxTokens: 4096, updatedAt: '1970-01-01T00:00:00.000Z',
+  timeoutSeconds: 60, maxTokens: 16384, updatedAt: '1970-01-01T00:00:00.000Z',
 };

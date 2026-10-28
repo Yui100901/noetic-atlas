@@ -1,6 +1,8 @@
 /* Settings owns its composition; card-to-card spacing comes from stacks and
  * grids rather than margins attached to a subset of individual sections. */
 .settings-page {min-width:0;}
+.settings-panel[hidden] {display:none;}
+.settings-session-note {margin:0 0 var(--space-5,20px);font-size:12px;line-height:1.75;}
 .settings-page .page-header {margin-bottom:var(--space-5,20px);}
 .settings-tabs {display:flex;flex-wrap:wrap;gap:var(--control-gap,8px);margin-bottom:var(--space-5,20px);}
 .settings-tabs button.selected {background:var(--theme-inset,#e6efdf);border-color:var(--theme-border,#abc09a);}
@@ -27,11 +29,11 @@
 .settings-field-help > p {font-size:12px;line-height:1.7;padding-top:var(--space-2,8px);}
 .settings-section-help {border-top:1px solid var(--border);margin-top:var(--space-4,16px);padding-top:var(--space-4,16px);font-size:12px;}
 .settings-section-help > p {margin-top:var(--space-2,8px);}
-.settings-content > section[aria-label="重置学习进度"] p {max-width:none;}
-.settings-content > section[aria-label="重置学习进度"] > .button {margin-top:var(--space-4,16px);}
+.settings-panel > section[aria-label="重置学习进度"] p {max-width:none;}
+.settings-panel > section[aria-label="重置学习进度"] > .button {margin-top:var(--space-4,16px);}
 
 /* AI configuration is also a settings panel, with the same internal rhythm. */
-.settings-content > .ai-settings-form {margin:0;}
+.settings-panel > .ai-settings-form {margin:0;}
 .settings-page .ai-settings-panel {gap:var(--space-4,16px);}
 .settings-page .ai-settings-panel > :is(.list-toolbar,.check-row,.ai-actions,p) {margin:0;}
 .settings-page .ai-settings-panel .list-toolbar {align-items:flex-start;gap:var(--space-4,16px);}

@@ -8,23 +8,32 @@ import type { Bootstrap, Category, Question } from '../../../shared/models/types
 import { typeLabels } from '../../../shared/models/types';
 import { PAGE_SIZES, usePagination } from '../lib/pagination';
 import './authoring.css';
+import {lockModalScroll,modalFocusTargets} from './modal-behavior';
 
 export const AppContext = createContext<{ bootstrap: Bootstrap; reload: () => void; toast: (message: string, error?: boolean) => void } | null>(null);
 export function useApp() { const context = useContext(AppContext); if (!context) throw new Error('应用尚未就绪'); return context; }
 export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: ReactNode }) {
-  return <header className="page-header"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div><div className="header-actions">{actions}</div></header>;
+  return <header className="page-header"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div>{actions&&<div className="header-actions">{actions}</div>}</header>;
 }
 export function Loading({ text = '正在读取本地资料…' }: { text?: string }) { return <div className="loading" role="status"><LoaderCircle size={19} className="spin" />{text}</div>; }
 export function ErrorNotice({ message, retry }: { message: string; retry?: () => void }) { return <div className="notice error" role="alert"><AlertCircle size={18} /><span>{message}</span>{retry && <button className="text-button" type="button" onClick={retry}>重新加载</button>}</div>; }
 export function Empty({ title = '这里还没有内容', description, actions }: { title?: string; description?: string; actions?: ReactNode }) { return <div className="empty"><span className="empty-mark">∅</span><h3>{title}</h3>{description && <p>{description}</p>}{actions}</div>; }
 export function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const closeRef = useRef<HTMLButtonElement>(null); const dialogRef = useRef<HTMLDivElement>(null);
+  const latestClose=useRef(onClose);latestClose.current=onClose;
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement; closeRef.current?.focus(); const bodyOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden';
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); if (event.key === 'Tab') { const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]') || []); const first = controls[0], last = controls[controls.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); } } };
-    document.addEventListener('keydown', onKey); return () => { document.body.style.overflow = bodyOverflow; document.removeEventListener('keydown', onKey); previous?.focus(); };
+    const previous = document.activeElement as HTMLElement; closeRef.current?.focus();const unlock=lockModalScroll(document.body);
+    const onKey = (event: KeyboardEvent) => {
+      const dialog=dialogRef.current;if(!dialog||event.defaultPrevented||Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).at(-1)!==dialog)return;
+      if(event.key==='Escape'){event.preventDefault();event.stopPropagation();latestClose.current();}
+      if(event.key==='Tab'){
+        const controls=modalFocusTargets(dialog),first=controls[0],last=controls.at(-1);
+        if(!controls.includes(document.activeElement as HTMLElement)||event.shiftKey&&document.activeElement===first||!event.shiftKey&&document.activeElement===last){event.preventDefault();(event.shiftKey?last:first)?.focus();}
+      }
+    };
+    document.addEventListener('keydown', onKey); return () => { unlock();document.removeEventListener('keydown', onKey); if(previous?.isConnected)previous.focus(); };
   }, []);
-  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={dialogRef}><div className="modal-heading"><h2>{title}</h2><button ref={closeRef} className="icon-button" onClick={onClose} aria-label="关闭"><X size={20} /></button></div>{children}</div></div>;
+  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div className={`modal ${wide ? 'modal-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={dialogRef}><div className="modal-heading"><h2>{title}</h2><button ref={closeRef} type="button" className="icon-button" onClick={onClose} aria-label="关闭"><X size={20} /></button></div>{children}</div></div>;
 }
 export function SearchBox({ value, onChange, placeholder = '搜索题目、内容或题号' }: { value: string; onChange: (value: string) => void; placeholder?: string }) { return <label className="search-box"><Search size={18} /><span className="sr-only">{placeholder}</span><input type="search" value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} /></label>; }
 export function Field({ label, hint, children, className = '' }: { label: string; hint?: string; children: ReactNode; className?: string }) {

@@ -39,7 +39,7 @@ const paper=(id,ids)=>{
 };
 const main=paper('analytics-main',['A1','A2','A3','A4','A5','GROUP']),repeat=paper('analytics-repeat',['A1','A2']),previous=paper('analytics-previous',['A1']);
 const redate=(attempt,submittedAt,seconds)=>{
- attempt.submittedAt=submittedAt;attempt.startedAt=new Date(Date.parse(submittedAt)-seconds*1000).toISOString();attempt.updatedAt=submittedAt;attempt.elapsedSeconds=seconds;
+ attempt.submittedAt=submittedAt;attempt.startedAt=new Date(Date.parse(submittedAt)-seconds*1000).toISOString();attempt.updatedAt=submittedAt;attempt.elapsedSeconds=seconds;attempt.practiceTiming={elapsedMilliseconds:seconds*1000,sessionId:null,sessionElapsedMilliseconds:0,sessionStartedAt:null,running:false};
  staging.put('attempts',attempt.id,attempt);preserveLearningResults(staging,attempt);return attempt;
 };
 const old=submitAttempt(staging,createAttempt(staging,previous),{A1:{value:['true']}});redate(old,previousWeek+'T02:00:00Z',60);
@@ -98,16 +98,15 @@ try {
   checks.push('真实提交次数与去重题数分开，漏答及草稿不计已答，正确/部分/错误/未判和可靠作答时长分别统计且无正文泄露');
 
   await go('');
-  const dashboardHeader = page.locator('.page-header');
-  assert.equal(await dashboardHeader.getByRole('link', { name: '学习统计', exact: true }).getAttribute('href'), '#/analytics');
-  assert.equal(await dashboardHeader.getByRole('link', { name: '本周周报', exact: true }).getAttribute('href'), '#/analytics?tab=weekly');
-  await dashboardHeader.getByRole('link', { name: '学习统计', exact: true }).click();
-  await section('学习概览指标').waitFor();
-  await page.getByRole('tab', { name: '统计分析', exact: true }).waitFor();
-  assert.equal(await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '学习统计', exact: true }).getAttribute('aria-current'), 'page');
-  checks.push('知识总览与主导航提供显眼学习统计入口，总览提供本周周报快捷入口');
-
-  await page.getByLabel('统计范围', { exact: true }).selectOption('custom');
+  const dashboardHeader=page.locator('.page-header');
+  assert.equal(await dashboardHeader.locator('a[href^="#/analytics"]').count(),0);
+  const weeklyCard=section('本周学习统计');await weeklyCard.waitFor();const currentReport=await api('/api/analytics/weekly?timeZone=Asia%2FShanghai');
+  await weeklyCard.locator('[data-week-metric="answers"]').waitFor();assert.equal(await weeklyCard.locator('[data-week-metric="answers"]').innerText(),currentReport.current.summary.answers+'次');
+  await weeklyCard.getByRole('link',{name:'查看学习统计',exact:true}).click();await section('学习概览指标').waitFor();
+  assert.equal(await page.getByRole('group',{name:'统计周期'}).getByRole('button',{name:'周',exact:true}).getAttribute('aria-pressed'),'true');
+  assert.equal(await page.getByRole('tab',{name:'学习周报',exact:true}).count(),0);
+  checks.push('总览顶部重复入口移除，下方本周统计与周报接口一致，进入统一统计默认本周');
+  await page.getByRole('group',{name:'统计周期'}).getByRole('button',{name:'自定义',exact:true}).click();
   await page.getByLabel('开始日期', { exact: true }).fill(weekStart);
   await page.getByLabel('结束日期', { exact: true }).fill(weekEnd);
   await page.getByRole('button', { name: '应用日期范围', exact: true }).click();
@@ -127,13 +126,13 @@ try {
   await capture('analytics-desktop');
   checks.push('自定义完整周真实刷新图表与指标，9次作答/7个独立项/50%正确率/42分钟，按日明细与领域题型分布一致');
 
-  await page.getByRole('tab', { name: '学习周报', exact: true }).click();
+  await page.getByRole('button', { name: '查看本周周报', exact: true }).click();
   await page.getByLabel('周报所在日期', { exact: true }).fill(weekStart);
   await page.getByRole('heading', { name: weekStart + ' — ' + weekEnd + ' 学习周报', exact: true }).waitFor();
   const weekly = await api('/api/analytics/weekly?week=' + weekStart + '&timeZone=Asia%2FShanghai');
   assert.equal(weekly.weekStart, weekStart); assert.equal(weekly.comparison.mode, 'full_week'); assert.equal(weekly.comparison.summary.answers, 1); assert.equal(weekly.comparison.summary.elapsedSeconds, 60);
   assert.equal(weekly.comparison.deltas.answers, 8); assert.equal(weekly.comparison.deltas.accuracyPoints, -50);
-  assert.equal(await metricValue('实际作答'), '9次'); assert.match(await section('周报摘要').innerText(), /实际回答\s*9\s*次/);
+  assert.equal(await metricValue('实际作答'), '9次'); assert.match(await section('学习概览指标').innerText(), /9/);
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出周报 Markdown', exact: true }).click();
   const download = await downloaded, filename = download.suggestedFilename(); assert.ok(filename.endsWith('.md')); assert.ok(filename.includes(weekStart));
@@ -158,7 +157,7 @@ try {
   await page.getByLabel('周报所在日期', { exact: true }).fill(emptyWeek);
   const emptyWeekEnd = new Date(Date.parse(emptyWeek + 'T00:00:00Z') + 6 * 86400000).toISOString().slice(0, 10);
   await page.getByRole('heading', { name: emptyWeek + ' — ' + emptyWeekEnd + ' 学习周报', exact: true }).waitFor();
-  await section('周报摘要').getByText(/已提交 0 次练习/).waitFor();
+  assert.equal(await metricValue('实际作答'),'0次');
   assert.equal(await metricValue('严格正确率'), '—');
   await page.getByRole('heading', { name: '这段时间还没有学习记录', exact: true }).waitFor();
   const emptyDownload = page.waitForEvent('download'); await page.getByRole('button', { name: '导出周报 Markdown', exact: true }).click();
@@ -166,10 +165,26 @@ try {
   const emptyPath = resolve(output, emptyFile.suggestedFilename()); await emptyFile.saveAs(emptyPath); assert.match(await readFile(emptyPath, 'utf8'), /严格正确率\s*\|\s*—/);
   checks.push('空白周正常显示零活动和无已判正确率，仍可导出所选周报，不伪造0%或学习结论');
 
+  const period=page.getByRole('group',{name:'统计周期'});
+  await period.getByRole('button',{name:'日',exact:true}).click();await page.getByLabel('统计日期',{exact:true}).fill(weekStart);
+  await page.getByRole('heading',{name:weekStart+' — '+weekStart,exact:true}).waitFor();assert.equal(await metricValue('实际作答'),'6次');
+  await page.getByRole('button',{name:'上一日',exact:true}).click();await page.getByRole('heading',{name:new Date(Date.parse(weekStart+'T00:00:00Z')-86400000).toISOString().slice(0,10)+' — '+new Date(Date.parse(weekStart+'T00:00:00Z')-86400000).toISOString().slice(0,10),exact:true}).waitFor();assert.equal(await metricValue('实际作答'),'0次');
+  await page.getByRole('button',{name:'下一日',exact:true}).click();await page.getByRole('heading',{name:weekStart+' — '+weekStart,exact:true}).waitFor();assert.equal(await metricValue('实际作答'),'6次');
+  await page.reload();await page.getByLabel('统计日期',{exact:true}).waitFor();assert.equal(await page.getByLabel('统计日期',{exact:true}).inputValue(),weekStart);await section('学习概览指标').waitFor();assert.equal(await metricValue('实际作答'),'6次');
+  await page.getByRole('button',{name:'今天',exact:true}).click();assert.equal(await page.getByRole('button',{name:'下一日',exact:true}).isDisabled(),true);
+  checks.push('日历逐日翻页真实刷新计数，选择日期保存在网址且刷新恢复，今天禁止进入未来');
+
+  await period.getByRole('button',{name:'月',exact:true}).click();await page.getByLabel('统计月份',{exact:true}).fill('2026-01');await page.getByRole('heading',{name:'2026-01-01 — 2026-01-31',exact:true}).waitFor();
+  await page.getByRole('button',{name:'上一月',exact:true}).click();await page.getByRole('heading',{name:'2025-12-01 — 2025-12-31',exact:true}).waitFor();
+  await page.getByRole('button',{name:'下一月',exact:true}).click();await page.getByRole('heading',{name:'2026-01-01 — 2026-01-31',exact:true}).waitFor();
+  await page.getByRole('button',{name:'本月',exact:true}).click();assert.equal(await page.getByRole('button',{name:'下一月',exact:true}).isDisabled(),true);
+  await period.getByRole('button',{name:'近一年',exact:true}).click();await section('学习概览指标').waitFor();assert.ok(page.url().includes('mode=year'));await page.getByRole('button',{name:'查看本周周报',exact:true}).click();await page.getByLabel('周报所在日期',{exact:true}).waitFor();
+  checks.push('月份控件、跨年上月下月、本月未来保护、近一年与查看本周快捷入口有效');
+
   const failedEndpoint = url => url.origin === origin && url.pathname === '/api/analytics';
   const failStatistics = route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'ANALYTICS_QA_RETRY', message: '隔离统计请求暂不可用' } }) });
   await page.route(failedEndpoint, failStatistics);
-  await go('analytics'); await page.getByRole('alert').filter({ hasText: '隔离统计请求暂不可用' }).waitFor();
+  await go('analytics?mode=day'); await page.getByRole('alert').filter({ hasText: '隔离统计请求暂不可用' }).waitFor();
   await page.unroute(failedEndpoint, failStatistics); await page.getByRole('button', { name: '重新加载', exact: true }).click(); await section('学习概览指标').waitFor();
   checks.push('统计读取失败有明确提示，重新加载后恢复有效数据');
 
@@ -179,7 +194,7 @@ try {
   await page.getByRole('heading', { name: weekStart + ' — ' + weekEnd + ' 学习周报', exact: true }).waitFor();
   await section('每日学习趋势').getByText('查看每日数据明细', { exact: true }).click();
   await capture('weekly-dark-mobile');
-  await page.getByRole('tab', { name: '统计分析', exact: true }).click(); await page.getByRole('tab', { name: '统计分析', selected: true, exact: true }).waitFor(); await section('学习概览指标').waitFor(); await capture('analytics-dark-mobile');
+  await page.getByRole('group',{name:'统计周期'}).getByRole('button',{name:'月',exact:true}).click(); await page.getByLabel('统计月份',{exact:true}).waitFor(); await section('学习概览指标').waitFor(); await capture('analytics-dark-mobile');
   checks.push('390px暗色统计和周报布局无横向溢出，日期控件、指标、导出及每日明细可用');
 
   const exam = await api('/api/papers/' + mainPaperId + '/attempts', 'POST', { mode: 'exam', durationMinutes: 120 }, 201);

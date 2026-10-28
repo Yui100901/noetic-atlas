@@ -2,6 +2,8 @@
 .paper-organization-group > h2 {font-size:18px;margin:0 0 16px; }
 .paper-organization-group > h2 .muted {font-size:14px;font-weight:400;margin-left:8px; }
 .paper-list-tools select {min-width:160px;max-width:220px; }
+.paper-list-tools {display:flex;flex-wrap:wrap;align-items:center;gap:10px;min-width:0;}
+.paper-list-tools .search-box {min-width:160px;max-width:100%;flex:1 1 200px;}
 .paper-organization-label {margin:0 0 12px; }
 .paper-detail-actions {display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:9px;max-width:100%; }
 .deleted-paper-notice {color:var(--muted);font-size:13px;margin:0; }

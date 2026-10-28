@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 export function validateBaseConfiguration(data) {
   const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
   if(!exact(data,['format','schemaVersion','exportedAt','system','ai'])||data.format!=='noetic-atlas-configuration'||data.schemaVersion!==1||typeof data.exportedAt!=='string'||!Number.isFinite(Date.parse(data.exportedAt)))throw new Error('基础配置格式或字段无效');
-  const cleanAi={enabled:false,baseUrl:'',model:'',supportsImages:false,sendImages:false,timeoutSeconds:60,maxTokens:4096};
+  const cleanAi={enabled:false,baseUrl:'',model:'',supportsImages:false,sendImages:false,timeoutSeconds:60,maxTokens:16384};
   if(!exact(data.ai,Object.keys(cleanAi))||Object.entries(cleanAi).some(([key,value])=>data.ai[key]!==value))throw new Error('基础AI配置必须关闭、端点与模型为空且不含凭据');
   const numbers=['maxDraftsPerPaper','maxQuickDrafts','maxPaperDrafts','maxDocumentDrafts','examDurationMinutes','maxHistoryPerPaper','maxQuickHistory','maxQuestionHistory','randomQuestionCount','randomTotalPoints','objectivePercent','autosaveDebounceMs','maxDocumentMiB','maxImageMiB'];
   if(!exact(data.system,[...numbers,'theme','scoringEnabledByDefault','pointsByType','reviewIntervalsDays','reviewScheduling','dailyPush'])||numbers.some(key=>typeof data.system[key]!=='number'||!Number.isFinite(data.system[key]))||typeof data.system.scoringEnabledByDefault!=='boolean'||!['green','dark','pink','sky','mint'].includes(data.system.theme))throw new Error('基础系统配置含未知字段或非配置值');

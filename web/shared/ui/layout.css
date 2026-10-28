@@ -59,7 +59,7 @@
 .modal-wide { width: 760px; }
 .modal-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); }
 .modal-heading h2 { min-width: 0; overflow-wrap: anywhere; font-size: 18px; color: var(--theme-text); font-weight: 600; }
-.modal-heading > .icon-button { flex-shrink: 0; }
+.modal-heading > .icon-button { flex-shrink: 0; min-width:36px; min-height:36px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; }
 .modal input, .modal select, .modal textarea { font-size: 12px; }
 /* Legacy dialogs place their body directly in Modal; space these siblings
    without changing markup or applying margins inside nested feature layouts. */
@@ -83,6 +83,7 @@
   .modal-backdrop { padding: var(--space-4); }
   .modal { padding: var(--space-5); border-radius: 10px; }
   .modal-heading h2 { font-size: 17px; }
+  .modal-heading > .icon-button { min-width:44px; min-height:44px; }
 }
 @media (max-width: 390px) { .form-grid { grid-template-columns: 1fr; } }
 /* Overview counts remain readable when a domain has pending imports. */

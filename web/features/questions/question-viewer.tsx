@@ -136,7 +136,7 @@ export const GroupStudyTools = forwardRef<QuestionViewerHandle, { question: Ques
   const part = question.parts?.find(item => item.id === partId) || question.parts?.[0];
   if (!part) return null;
   const leaf: QuestionSnapshot = { ...question, ...part, id: `${question.id}::${part.id}`, parts: undefined, sourceQuestionId: question.id, partId: part.id, groupTitle: question.title, groupStemMarkdown: question.stemMarkdown };
-  return <section className="group-study-tools"><Field label="选择小题学习记录"><select value={part.id} onChange={event => { if (viewer.current?.confirmLeave() !== false) setPartId(event.target.value); }}>{question.parts!.map((item, index) => <option key={item.id} value={item.id}>小题 {index + 1} · {item.title}</option>)}</select></Field><QuestionViewer key={part.id} ref={viewer} question={leaf} contentSource="current" studyOnly onStudyChange={onStudyChange} /></section>;
+  return <section className="group-study-tools"><Field label="选择小题学习记录"><select value={part.id} onChange={event => { if (viewer.current?.confirmLeave() !== false) setPartId(event.target.value); }}>{question.parts!.map((item, index) => <option key={item.id} value={item.id}>小题 {index + 1} · {item.title}</option>)}</select></Field><QuestionViewer key={part.id} ref={viewer} question={leaf} contentSource="current" studyOnly presentation="page" onStudyChange={onStudyChange} /></section>;
 });
 
 export const QuestionSetQuestionViewer = forwardRef<QuestionViewerHandle, { paperId: string; questionId: string; presentation?: 'embedded' | 'page' }>(function QuestionSetQuestionViewer({ paperId, questionId, presentation }, ref) {

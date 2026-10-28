@@ -89,7 +89,7 @@ try {
   const changedBody = original.bodyMarkdown + '\n\n编辑草稿中的修改。'; await body().fill(changedBody);
   const editDraft = await waitFor(async () => { const items = await drafts(original.id); return items.length === 1 && items[0].state.bodyMarkdown === changedBody ? items[0] : null; });
   assert.equal((await api('/api/documents/' + original.id)).bodyMarkdown, original.bodyMarkdown); assert.equal(editDraft.documentId, original.id);
-  await page.getByRole('link', { name: '返回资料库', exact: true }).click(); await page.waitForURL(new RegExp('#/documents/' + original.id + '$'));
+  await page.getByRole('link', { name: '返回资料详情', exact: true }).click(); await page.waitForURL(new RegExp('#/documents/' + original.id + '$'));
   await page.getByRole('link', { name: '编辑资料', exact: true }).click(); await recover(); await ready(); assert.equal(await body().inputValue(), changedBody);
   const updated = await publish(); assert.equal(updated.id, original.id); assert.equal(updated.bodyMarkdown, changedBody); assert.equal((await drafts(original.id)).length, 0);
   checks.push('正式保存原子发布并清理所选草稿，编辑草稿不覆盖原文，恢复后可更新原资料');

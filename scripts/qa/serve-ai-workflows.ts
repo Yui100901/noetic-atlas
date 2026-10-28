@@ -21,7 +21,7 @@ const provider=createServer(async(request,response)=>{
     else if(input.outputSchema.items?.[0]?.reason){
       kind='paper_plan';questionIds=material.candidates.slice(0,material.requestedCount).map((q:any)=>q.id);
       result={title:'AI工作流验收推荐卷',description:'概念与应用递进',items:questionIds.map(questionId=>({questionId,reason:'覆盖事务基础与边界'}))};
-    }else if(input.outputSchema.items?.[0]?.score){
+    }else if(input.task.includes('逐项评价')){
       kind='grade';questionIds=material.items.map((item:any)=>item.questionId);
       result={items:material.items.map((item:any)=>({questionId:item.questionId,verdict:'partial',score:item.maxPoints==null?null:Math.round(item.maxPoints*80)/100,maxPoints:item.maxPoints,comment:'已理解事务的整体提交，建议结合失败恢复解释。',strengths:['说明了整体成功或回滚'],improvements:['补充失败恢复和隔离性的区别']}))};
     }else if(input.outputSchema.items?.[0]?.verdict){

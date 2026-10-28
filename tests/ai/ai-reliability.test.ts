@@ -89,6 +89,7 @@ test('truncation and empty completion remain failures while a valid completion h
   f.mode(() => ({ body: envelope('{', 'length') }));
   const truncated = await f.api('/api/ai/explain', { questionId: 'S1' });
   assert.equal(truncated.json().error.code, 'AI_OUTPUT_TRUNCATED'); assert.equal(truncated.json().error.details.diagnostics.finishReason, 'length');
+  assert.match(truncated.json().error.message,/4096 Token/);assert.match(truncated.json().error.message,/系统配置/);
   f.mode(() => ({ body: envelope('') }));
   const empty = await f.api('/api/ai/explain', { questionId: 'S1' }); assert.equal(empty.json().error.code, 'AI_EMPTY_RESPONSE');
   f.mode(() => ({ body: envelope(JSON.stringify(valid)) }));

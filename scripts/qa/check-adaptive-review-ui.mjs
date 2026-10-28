@@ -125,13 +125,13 @@ try {
   await api('/api/review-scheduler/review', 'POST', { questionId: 'ADAPT-WORD', direction: 'meaning_to_word', rating: 'again', requestId: 'vocab-reverse-ui' });
   await api('/api/review-scheduler/card', 'PATCH', { questionId: 'ADAPT-WORD', direction: 'meaning_to_word', dueAt: new Date(Date.now() - 3600000).toISOString() });
   await go('learning/due'); await page.getByLabel('任务方向', { exact: true }).selectOption('meaning_to_word');
-  await page.getByRole('button', { name: '复习任务：看释义想词', exact: true }).click();
-  const wordDialog = page.getByRole('dialog', { name: '逆向复习：看释义想词', exact: true }); await wordDialog.getByText('收录多幅地理地图的书册；地图集。', { exact: true }).waitFor();
+  await page.getByRole('link', { name: '复习任务：看释义想词', exact: true }).click();
+  const wordDialog = page.getByRole('article', { name: '特殊题集题目详情', exact: true }); await wordDialog.getByText('收录多幅地理地图的书册；地图集。', { exact: true }).waitFor();
   assert.ok(!(await wordDialog.innerText()).includes('atlas')); assert.ok(!(await wordDialog.innerText()).includes('PRIVATE_WORD_NOTE_CANARY'));
   await wordDialog.getByRole('button', { name: '展开答案与解析', exact: true }).click(); await wordDialog.getByText('目标词语：', { exact: true }).waitFor(); assert.ok((await wordDialog.innerText()).includes('atlas'));
   await rateButton(wordDialog.getByLabel('自适应复习', { exact: true }), '良好').click(); await waitFor(async () => (await card('ADAPT-WORD', { direction: 'meaning_to_word' })).eventCount === 2);
   assert.equal((await card('ADAPT-WORD', { direction: 'word_to_meaning' })).eventCount, 1);
-  await wordDialog.getByRole('button', { name: '关闭', exact: true }).click(); checks.push('组合小题独立评级，词汇顺逆向独立；实时队列原地复习保留筛选，逆向展开答案前隐藏词头、读音、笔记和历史');
+  await wordDialog.getByRole('link', { name: '返回待复习题集', exact: true }).click(); checks.push('组合小题独立评级，词汇顺逆向独立；实时队列专页复习并返回保留筛选，逆向展开答案前隐藏词头、读音、笔记和历史');
 
   await go('questions/ADAPT-TF'); await panel().getByText('暂停或调整复习日期', { exact: true }).click();
   const earlier = new Date(Date.now() - 86400000).toISOString().slice(0, 16);
@@ -139,9 +139,9 @@ try {
   await go('questions/ADAPT-TF'); await panel().getByText('暂停或调整复习日期', { exact: true }).click();
   const countBeforePause = (await card()).eventCount;
   await panel().getByRole('button', { name: '暂停复习', exact: true }).click(); await waitFor(async () => (await card()).suspended);
-  await go('learning/due'); await page.getByLabel('自适应复习队列', { exact: true }).waitFor(); assert.equal(await page.getByRole('button', { name: '复习任务：事务回忆判断', exact: true }).count(), 0);
+  await go('learning/due'); await page.getByLabel('自适应复习队列', { exact: true }).waitFor(); assert.equal(await page.getByRole('link', { name: '复习任务：事务回忆判断', exact: true }).count(), 0);
   await go('questions/ADAPT-TF'); await panel().getByText('暂停或调整复习日期', { exact: true }).click(); await panel().getByRole('button', { name: '恢复复习', exact: true }).click(); await waitFor(async () => !(await card()).suspended); assert.equal((await card()).eventCount, countBeforePause);
-  await go('learning/due'); await page.getByRole('button', { name: '复习任务：事务回忆判断', exact: true }).waitFor();
+  await go('learning/due'); await page.getByRole('link', { name: '复习任务：事务回忆判断', exact: true }).waitFor();
   assert.equal(await page.locator('.global-learning-questions').count(), 0, 'adaptive queue replaces the old duplicate due listing');
   checks.push('手动改期和暂停/恢复不增加回忆次数，到期队列实时更新并替代重复旧列表');
 

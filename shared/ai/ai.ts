@@ -1,11 +1,12 @@
 import type { QuestionInput } from '../models/types.js';
+import type {AiQuestionEditResult} from './question-edit.js';
 
 export interface AiSettings {
   enabled: boolean; baseUrl: string; model: string; hasKey: boolean;
   supportsImages: boolean; sendImages: boolean; timeoutSeconds: number; maxTokens: number; updatedAt: string;
 }
 export interface AiSettingsInput extends Omit<AiSettings, 'hasKey' | 'updatedAt'> { updatedAt?: string; key?: string; clearKey?: boolean }
-export const AI_RUN_KINDS = ['explain', 'grade', 'import', 'review', 'paper_plan', 'document_plan', 'document_generate', 'connection_test', 'feedback_review', 'similar_questions'] as const;
+export const AI_RUN_KINDS = ['explain', 'grade', 'import', 'review', 'paper_plan', 'document_plan', 'document_generate', 'connection_test', 'feedback_review', 'similar_questions', 'question_edit'] as const;
 export type AiRunKind = typeof AI_RUN_KINDS[number];
 export const AI_PAPER_MAX_QUESTIONS = 500;
 export interface AiPaperPlanItem { questionId: string; reason: string }
@@ -47,7 +48,7 @@ export interface AiRunBase {
   questionIds: string[]; attemptId?: string; appliedAt?: string; jobId?: string; batchId?: string; feedbackId?: string; diagnostics?: AiDiagnostics;
   appliedScores?: string[]; appendedNotes?: string[]; importedQuestionIds?: string[]; correctedQuestionIds?: string[]; createdPaperId?: string;
 }
-export type AiRun<Result = AiExplanation | AiGradeResult | AiImportResult | AiReviewResult | AiPaperPlanResult> = AiRunBase & (
+export type AiRun<Result = AiExplanation | AiGradeResult | AiImportResult | AiReviewResult | AiPaperPlanResult | AiQuestionEditResult> = AiRunBase & (
   | { status: 'completed'; result: Result; failure?: never }
   | { status: 'failed' | 'cancelled'; failure: AiFailure; diagnostics: AiDiagnostics; result?: never }
 );

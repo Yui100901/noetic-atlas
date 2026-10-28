@@ -1,0 +1,17 @@
+#question-editor-form > .editor-main,
+#question-editor-form > .editor-aside {
+  display: grid;
+  align-content: start;
+  gap: var(--layout-gap, 20px);
+  min-width: 0;
+}
+
+#question-editor-form > :is(.editor-main, .editor-aside) > .card {
+  margin: 0;
+}
+
+.management-question-preview {min-width:0}
+.management-question-preview summary {font-weight:600;cursor:pointer;padding:4px 0;overflow-wrap:anywhere}
+.management-question-preview .quality-source {padding-bottom:0}
+.management-question-preview .quality-source h4 {margin:8px 0 0}
+.management-question-preview .quality-source > section {padding-top:12px}

@@ -11,6 +11,7 @@ import { aiDocumentPlanResultSchema, aiDocumentGenerateResultSchema, validateSto
 import { AI_RUN_KINDS } from '../shared/ai/ai';
 import { questionFeedbackSchema, questionFeedbackReviewSchema } from '../server/modules/quality-feedback/schema';
 import { aiSimilarQuestionsResultSchema } from '../server/modules/questions/similar-schema';
+import {aiQuestionEditResultSchema} from '../server/modules/ai/question-edit-schema';
 import { completionEndpoint } from '../server/modules/ai/provider';
 import { validateAssetReferences } from '../server/modules/assets/routes';
 import { databaseForPath } from './shims/sqlite';
@@ -54,6 +55,7 @@ function validatePrivateRecords(store: Store) {
     else if (run.kind === 'document_plan') parse(aiDocumentPlanResultSchema, run.result);
     else if (run.kind === 'document_generate') parse(aiDocumentGenerateResultSchema, run.result);
     else if (run.kind === 'feedback_review') parse(questionFeedbackReviewSchema, run.result);
+    else if (run.kind === 'question_edit') parse(aiQuestionEditResultSchema,run.result);
     else if (run.kind === 'similar_questions') {
       const result = parse(aiSimilarQuestionsResultSchema, run.result);
       const candidates = new Set(result.candidates.map(item => item.id));

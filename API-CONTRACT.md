@@ -183,6 +183,8 @@ today及recent的每条记录包含`paperAvailable`和`progress`。progress的st
 
 前端不再设置全局学习记录导航：题集详情组织各自草稿、历史、错题与复习，随机与单题在随机练习页单独组织。上下文错题取该范围内每个叶题最新已判结果，后续正确则移出，未判不覆盖已判，未答客观题需巩固。`learning_results`独立保存判定、来源及错误题目必要快照，不保留整卷答案；清理历史后仍可阅读公共材料和错误题目，`historyAvailable:false`表示不再有完整复盘，客户端不生成失效链接。组合小题使用原题ID与小题ID的元组保存学习状态；收藏整组，掌握、日期及笔记独立。
 
+特殊题集阅读使用前端路由 `#/learning-reader`，`scope=global|paper|quick|queue` 区分系统全集、题集上下文、随机／单题来源及FSRS队列，保留题目复合定位、列表页码及每页数量；队列另保留任务类型、领域、分类和方向。阅读沿用上述分页API及原题／快照语义，不创建另一份题目。上一题／下一题可跨页，返回重建受限列表地址；未保存笔记离开确认，离开后中止仍在途的跨页请求，避免旧响应重新导航。当前题已不在实时范围时显示返回提示，不拼造替代题。
+
 配置包括答题草稿上限、随机自测草稿、组题草稿 maxPaperDrafts、历史保留、考试分钟、组题默认值、每种题型分值、复习间隔、自动保存等待、资料及图片大小。初始答题／组题草稿各 3 份；提交历史 0 表示不限量；组题默认 20 题、不计分；计分时默认 100 分、客观目标 60%；考试默认 120 分钟。
 
 单题详情由 maxQuestionHistory 独立控制，默认每个叶题10次，0关闭独立详情保留，不限制整卷历史。整卷存在时 question_history 仅引用原作答；整卷裁剪前只归档仍被单题保留的快照与回答。单题详情超限不清累计统计，也不清整卷；提高上限不会复活已裁剪详情。重评更新同一回答的分类，不增加作答次数。重置学习进度清累计统计，保留的旧详情标 beforeReset。旧备份仅能从尚存完整作答补建详情，已经清掉的回答不推算。
@@ -235,6 +237,7 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 ### 解析与主观评价
 
 - `POST /api/ai/explain`：`{questionId,partId?}` → explanationMarkdown、followUpsMarkdown、pitfallsMarkdown。结合题干、原答案解析和追问补充说明，不替换原解析。
+- `POST /api/ai/question-edit`：`{questionId,expectedUpdatedAt,question:QuestionInput,requirements?}` → `AiRun<AiQuestionEditResult>`，类型为`question_edit`；只分析提交的当前草稿并审计结果，不写原题或质量状态。结果含`summary/suggestions/warnings`，最多20条建议；每条含`id/title/reason/confidence/partId?/changes`。修改白名单为标题、题干、答案说明、解析、选项、判分答案、填空答案、分类和标签；小题仅允许前七类。每条补丁合并后须满足题目结构及已有分类标签约束，禁止修改题号、题型、发布状态或小题身份。分析前后核对持久化题目版本，支持SSE及原生进度、取消和失败审计。浏览器按字段应用与撤回至表单，持久化仍使用原题目保存接口。
 - `POST /api/ai/grade`：`{attemptId,questionIds?,gradingRequirements?}` 评价已提交卷中的 1–20 道主观题；或 `{questionId,answer,maxPoints?,gradingRequirements?}` 临时评价单道简答／论述。要求最多10000字符；单题满分范围0.01–1000、最多两位小数；卷题使用当时快照。`POST /api/attempts/:id/ai-review` 同样接收 questionIds 和 gradingRequirements。
 - 评价返回逐题 verdict（correct／partial／incorrect）、score、maxPoints、comment、strengths、improvements。有分卷建议分与判定须一致；无分卷分数二者为 null，仍给出判定。服务保存实际使用的 gradingRequirements。旧无明确判定且无分值的分析标 requiresRegrade，显示未判定并阻止应用，须重新评价。
 - `POST /api/ai/runs/:id/apply`：`{confirmed:true,applyScores?,appendNotes?,questionIds?}`。至少选择一项；applyScores 应用已提交作答的判定，有分题另应用分值；返回 appliedScores、appliedVerdicts。单次临时评价可写笔记，不能伪造已提交统计。笔记包含判题要求与结果并保留原内容，同一结果不重复追加。应用前校验源题／作答版本，客观成绩不变。
@@ -256,6 +259,8 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 
 完整字段必填性、默认值及各题型的条件结构见[题目字段与质量规则](./docs/题目字段与质量规则.md)。以`questionSchema`为结构契约，表单和通用导入不另加必填；客观题的判分答案与可选的答案说明文本分开。
 
+网页审核和质量管理的详情入口均使用题目编辑器；管理上下文由仅允许 `#/questions/review`、`#/content-quality` 的规范 `returnTo` 保存筛选与分页，`qualityIssueId` 只用于定位本题的独立问题项，不替代服务端归属和版本校验。管理编辑页默认展开题面与参考答案，不加载学习状态或作答历史组件；保存留在编辑页，审核通过／退回后返回管理列表。质量主列表只呈现题目和问题简要行，扫描及批量处理收进工具区；具体证据、AI复核及单项状态在编辑页前置质量面板处理。
+
 | 接口 | 行为与边界 |
 | --- | --- |
 | `POST /api/question-feedback` | `{questionId,partId?,kind,description,expectedUpdatedAt?}`；事务内保存一条反馈及对应质量待办，同题多条反馈独立保留。 |
@@ -272,6 +277,8 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 | `POST /api/question-feedback/ai-review` | 使用准备结果的反馈ID和反馈版本运行有进度的AI复核；成功、失败逐项保留，AI建议不自动改处理状态。 |
 
 题目分组是只读视图，不迁移、合并或删除证据。公共材料及小题问题按根题聚合，各问题项仍保留自己的ID、版本、来源、状态及AI上下文；单项处理不影响同题其他项。题目已删除时保留分组和历史标题。分组接口始终排除停用规则；原问题项显式深链的历史读取行为保留。
+
+单项状态提交使用该项最新 `updatedAt`，成功后只更新相应问题及关联反馈；同题其他项继续使用自己的版本独立处理。编辑页各问题卡片分别保存状态选择和备注，刷新一项不清空兄弟项未保存输入；空依据在当前卡片明确提示并不提交请求，服务端仍按相同规则验证。首次进入编辑器时依据全题待处理计数决定质量面板展开，无待处理项默认收起，`qualityIssueId` 深链强制展开定位。编辑页正文未保存或原题版本已变化时阻止陈旧操作。前端把控件提交与正文保存明确分开，问题状态操作不会冒泡触发题目表单提交。
 
 质量状态为 `open/confirmed/resolved/dismissed/stale`；用户反馈的 `pending` 对应 `open`。来源变化后拒绝陈旧AI结果；修正原题后重新扫描，才能以依据关闭旧问题。扫描的系统上下文使用 `origin=quality`，关联原质量问题，保留证据而不冒充用户提交。历史反馈处理接口保留并委托同一质量状态服务。
 

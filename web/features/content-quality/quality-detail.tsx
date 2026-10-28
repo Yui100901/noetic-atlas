@@ -14,12 +14,12 @@ export interface QualityActionResult {ok:boolean;message:string}
 const actionLabels:Record<Action,string>={confirmed:'确认存在问题',resolved:'标为已解决',dismissed:'忽略此问题',open:'重新待核查'};
 export const qualityOriginLabel=(issue:Pick<QualityIssue,'origin'|'rule'>)=>qualityIssueOrigin(issue)==='feedback'?'用户反馈':'规则扫描';
 interface Props {
- value:QualityIssueDetail;busy:boolean;onClose:()=>void;embedded?:boolean;
+ value:QualityIssueDetail;busy:boolean;onClose:()=>void;embedded?:boolean;showResolution?:boolean;
  onResolve:(action:Action,note:string)=>Promise<QualityActionResult>;
  onRescan:()=>Promise<QualityActionResult>;onReview:()=>Promise<QualityActionResult>;
  onRefresh:()=>void;aiProgress:AiProgressState;onCancelAi:()=>void;
 }
-export function QualityDetail({value,busy,onClose,onResolve,onRescan,onReview,onRefresh,aiProgress,onCancelAi,embedded=false}:Props){
+export function QualityDetail({value,busy,onClose,onResolve,onRescan,onReview,onRefresh,aiProgress,onCancelAi,embedded=false,showResolution=true}:Props){
  const {bootstrap}=useApp(),{issue,question}=value;
  const changed=issue.sourceChanged||issue.relatedChanged,retired=isRetiredQualityRule(issue.rule);
  const [note,setNote]=useState(issue.note),[pending,setPending]=useState<Operation|null>(null);
@@ -31,9 +31,9 @@ export function QualityDetail({value,busy,onClose,onResolve,onRescan,onReview,on
   finally{locked.current=false;setPending(null);}
  }
  const aiBlocked=retired?'该检查规则已停用，保留的历史证据不能再次发起AI复核。':!question?'原题已不存在，无法提交AI复核。':changed?'原题或候选已变化，不能用旧证据进行AI复核。请重新扫描并查看当前版本的问题；若是旧反馈，请核对后处理或重新反馈。':!['open','confirmed'].includes(issue.status)?'此问题已经处理。需要再次复核时，先将其设为待核查。':!bootstrap.ai.available?'请先在系统配置中启用并配置AI辅助。':'';
- const notice=(operation:Operation)=>result?.operation===operation?<div className="quality-action-feedback" role="region" aria-label="质量操作反馈" aria-live="polite">{result.ok?<p className="notice info" role="status"><Check size={16}/>{result.message}</p>:<><ErrorNotice message={result.message}/><button className="button" type="button" disabled={disabled} onClick={onRefresh}><RefreshCw size={15}/>刷新本条证据</button></>}</div>:null;
+ const notice=(operation:Operation)=>result?.operation===operation?<div className="quality-action-feedback" role="region" aria-label="质量操作反馈" aria-live="polite">{result.ok?<p className="notice info" role="status"><Check size={16}/>{result.message}</p>:<ErrorNotice message={result.message}/>}</div>:null;
  return <section className={`${embedded?'quality-embedded-detail':'card'} form-stack quality-detail`} aria-label="质量问题详情" aria-busy={disabled}>
-  <div className="list-toolbar"><div><h2>{embedded?`问题证据：${QUALITY_RULE_LABELS[issue.rule]}`:issue.questionTitle}</h2><p className="muted">{qualityOriginLabel(issue)} · {QUALITY_RULE_LABELS[issue.rule]} · {QUALITY_STATUS_LABELS[issue.status]}{issue.partId?` · 小题 ${issue.partId}`:''}</p></div><div className="quality-actions"><button className="button" type="button" disabled={disabled||!question} onClick={()=>void perform('scan',onRescan)}><RefreshCw size={15}/>{pending==='scan'?'正在重新扫描…':'重新扫描本题'}</button><button className="button" type="button" disabled={!!pending} onClick={onClose}><X size={15}/>收起详情</button></div></div>
+  <div className="list-toolbar"><div><h2>{embedded?`问题证据：${QUALITY_RULE_LABELS[issue.rule]}`:issue.questionTitle}</h2><p className="muted">{qualityOriginLabel(issue)} · {QUALITY_RULE_LABELS[issue.rule]} · {QUALITY_STATUS_LABELS[issue.status]}{issue.partId?` · 小题 ${issue.partId}`:''}</p></div><div className="quality-actions"><button className="button" type="button" disabled={disabled} onClick={onRefresh}><RefreshCw size={15}/>刷新本条证据</button><button className="button" type="button" disabled={disabled||!question} onClick={()=>void perform('scan',onRescan)}><RefreshCw size={15}/>{pending==='scan'?'正在重新扫描…':'重新扫描本题'}</button><button className="button" type="button" disabled={!!pending} onClick={onClose}><X size={15}/>收起详情</button></div></div>
   {notice('scan')}
   {retired&&<p className="notice info">该自动检查已停用，以下仅为历史证据，不计入待处理问题。独立解析与参考来源均可为空；如仍有具体内容问题，可对原题另行反馈。</p>}
   <p><strong>{issue.message}</strong></p><pre className="quality-evidence">{issue.evidence}</pre><p>{issue.suggestion}</p>
@@ -48,7 +48,7 @@ export function QualityDetail({value,busy,onClose,onResolve,onRescan,onReview,on
     {notice('review')}
     {value.feedbacks.length?value.feedbacks.map(feedback=><FeedbackDetail key={feedback.id+':'+feedback.updatedAt} feedback={feedback} busy={disabled} onReview={()=>void perform('review',onReview)} onUpdated={onRefresh} onClose={()=>{}} embedded/>):<p className="muted">尚未发起AI复核。首次复核时会建立本问题的分析上下文，不新增独立反馈待办。</p>}
   </section>
-  <section className="quality-resolution form-stack" aria-label="处理质量问题">
+  {showResolution&&<section className="quality-resolution form-stack" aria-label="处理质量问题">
    <div className="quality-current-state"><span className="badge">当前状态：{QUALITY_STATUS_LABELS[issue.status]}</span><small className="muted">最近更新 {localDate(issue.updatedAt)}</small></div>
    {issue.note&&<p className="muted quality-saved-note"><strong>已保存的处理备注：</strong>{issue.note}</p>}
    <Field label="核查依据 / 处理备注" hint="先填写依据，才能确认、解决或忽略。确认表示确有问题；已解决表示已修正并核对；忽略表示本次反馈或提示不成立。"><textarea rows={3} maxLength={5000} value={note} disabled={disabled} onChange={event=>setNote(event.target.value)}/></Field>
@@ -57,7 +57,7 @@ export function QualityDetail({value,busy,onClose,onResolve,onRescan,onReview,on
    <div className="quality-actions">{(['confirmed','resolved','dismissed','open'] as const).map(action=>{const reason=issue.status===action?'当前已经是此状态，无需重复提交':action!=='open'&&!note.trim()?'请先填写核查依据或处理备注':changed&&action==='confirmed'?'原题或候选已变化，请重新扫描当前内容':'';return <button className={`button ${action==='confirmed'?'primary':''}`} type="button" key={action} title={reason||actionLabels[action]} disabled={disabled||!!reason} onClick={()=>void perform('resolve',()=>onResolve(action,note.trim()))}>{actionLabels[action]}</button>;})}</div>
    {pending==='resolve'&&<p className="notice info" role="status">正在保存处理状态并刷新证据…</p>}
    {notice('resolve')}
-   <p className="muted">状态按钮保存核查结论。需要修改题目时，使用上方“编辑原题”，保存后重新扫描核对。</p>
-  </section>
+   <p className="muted">状态按钮保存本项核查结论。修改原题后，请先保存并重新检查，再更新对应问题。</p>
+  </section>}
  </section>;
 }

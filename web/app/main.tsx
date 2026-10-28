@@ -20,6 +20,7 @@ import { QuestionReviewPage } from '../features/questions/question-review';
 import { QuestionImportPage } from '../features/questions/question-import';
 import { DocumentDetailPage, DocumentEditor, DocumentsPage } from '../features/library/documents';
 import { DeletedSetActivityPage } from '../features/practice/context-learning';
+import { LearningQuestionPage } from '../features/practice/learning-question-page';
 import { GlobalLearningPage } from '../features/practice/global-learning';
 import { AiWorkspacePage as AiPage } from '../features/ai/ai-workspace';
 import { SettingsPage } from '../features/settings/settings';
@@ -67,6 +68,7 @@ function Router({ hash }: { hash: string }) {
   if (section === 'banks') return <LegacyBankRedirect />;
   if (section === 'analytics') return <AnalyticsPage key={key} initialTab={params.get('tab') || 'analysis'} />;
   if (section === 'papers') { if (id === 'new') return <PaperEditor key={key} mode={action === 'random' ? 'random' : 'manual'} />; if (id && action === 'questions') { let questionId = ''; try { questionId = decodeURIComponent(pathname.split('/')[3] || ''); } catch { return <Empty title="题目链接格式不正确" actions={<a href={`#/papers/${encodeURIComponent(id)}`}>返回题集</a>} />; } return questionId && pathname.split('/').length === 4 ? <PaperQuestionPage key={key} paperId={id} questionId={questionId} context={readPaperContentsContext(params)} /> : <Empty title="请从题集中选择题目" actions={<a href={`#/papers/${encodeURIComponent(id)}`}>返回题集</a>} />; } if (id && action === 'activity') return <DeletedSetActivityPage key={key} paperId={id} initialTab={params.get('tab') || 'history'} />; if (id && action === 'edit') return <PaperEditor key={key} id={id} />; if (id) return <PaperDetailPage key={key} id={id} initialTab={params.get('tab') || 'content'} initialContents={readPaperContentsContext(params)} />; return <PapersPage />; }
+  if (section === 'learning-reader') return <LearningQuestionPage key={key} params={params}/>;
   if (section === 'learning' && (id === 'wrong' || id === 'favorite' || id === 'due')) return <GlobalLearningPage key={key} kind={id} />;
   if (section === 'quick') return <QuickPracticePage key={key} initialTab={params.get('tab') || undefined} />;
   if (section === 'attempts' && id) return <AttemptPage key={key} id={id} />;
@@ -87,8 +89,8 @@ class ErrorBoundary extends React.Component<{ children: ReactNode }, { error: st
 function App() {
   const bootstrap = useResource<Bootstrap>('/api/bootstrap'); const hash = useHash(); const [mobile, setMobile] = useState(false); const [notification, setNotification] = useState<{ message: string; error?: boolean } | null>(null);
   useEffect(() => { if (bootstrap.data?.settings) applyTheme(bootstrap.data.settings.theme, { persist: true }); }, [bootstrap.data?.settings?.theme]);
-  const section = hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'overview'; const current = nav.find(item => item.key === section || section === 'attempts' && item.key === 'papers' || section === 'quick' && item.key === 'papers' || section === 'learning' && item.key === 'papers' || section === 'vocabulary' && item.key === 'questions' || ['question-feedback', 'content-quality'].includes(section) && item.key === 'questions');
-  const pageLabel = ['content-quality','question-feedback'].includes(section) ? '质量管理' : current?.label || (section === 'search' ? '统一搜索' : (section === 'data' || section === 'settings') ? '系统配置' : '认知星图');
+  const section = hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'overview'; const current = nav.find(item => item.key === section || section === 'attempts' && item.key === 'papers' || section === 'quick' && item.key === 'papers' || ['learning','learning-reader'].includes(section) && item.key === 'papers' || section === 'vocabulary' && item.key === 'questions' || ['question-feedback', 'content-quality'].includes(section) && item.key === 'questions');
+  const pageLabel = section === 'learning-reader' ? '题集题目详情' : ['content-quality','question-feedback'].includes(section) ? '质量管理' : current?.label || (section === 'search' ? '统一搜索' : (section === 'data' || section === 'settings') ? '系统配置' : '认知星图');
   useEffect(() => { setMobile(false); document.title = `${pageLabel} · 认知星图`; }, [hash]);
   useEffect(() => { if (!notification) return; const timer = setTimeout(() => setNotification(null), 5000); return () => clearTimeout(timer); }, [notification]);
   if (bootstrap.loading && !bootstrap.data) return <ExamNavigationGuard><div className="app-startup"><div className="brand-mark"><Command size={28} /></div><h1>认知星图</h1><Loading text="正在打开你的学习工作台…" /></div></ExamNavigationGuard>;

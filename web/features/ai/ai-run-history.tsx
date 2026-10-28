@@ -8,7 +8,7 @@ import { AiGradeResultView, AiRunHeading } from './ai-components';
 import type { AiGradeResult, AiRunView } from './ai-api';
 import { aiFailureMessage } from './ai-progress';
 
-const kindLabels: Record<string, string> = { explain: '补充解析', grade: '作答评价', import: '题目整理 / 教材出题', review: '题目审核', paper_plan: '推荐组题', connection_test: '服务连通性', document_plan: '教材分块总结', document_generate: '教材分批出题', feedback_review: '题目反馈复核', similar_questions: '近似题推荐' };
+const kindLabels: Record<string, string> = { explain: '补充解析', grade: '作答评价', import: '题目整理 / 教材出题', review: '题目审核', paper_plan: '推荐组题', connection_test: '服务连通性', document_plan: '教材分块总结', document_generate: '教材分批出题', feedback_review: '题目反馈复核', similar_questions: '近似题推荐', question_edit: '题目辅助编辑' };
 const statusLabels: Record<string, string> = { completed: '已完成', failed: '失败', cancelled: '已取消', partial: '部分完成', running: '处理中' };
 
 export function AiRunHistory() {

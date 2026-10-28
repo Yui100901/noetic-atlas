@@ -1,0 +1,7 @@
+.learning-question-page {display:grid;gap:20px;min-width:0}
+.learning-question-page>.page-header {margin-bottom:0}
+.learning-reader-navigation {display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.learning-reader-navigation>span {font-size:12px;color:var(--muted)}
+.learning-reader-origin .learning-origins {margin-bottom:0}
+.learning-question-page .question-viewer-layout {align-items:start}
+@media(max-width:700px){.learning-reader-navigation{gap:8px}.learning-reader-navigation>.button{min-height:42px;padding:8px 12px}.learning-question-page{gap:16px}}

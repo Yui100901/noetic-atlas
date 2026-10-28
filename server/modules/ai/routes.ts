@@ -23,6 +23,8 @@ import { recommendPaper } from './planner.js';
 import { finalizeImport, importTask } from './import.js';
 import { readPrivateSettings, getPublicAiSettings, saveAiSettings } from './settings.js';
 import { aiHistoryPage, aiHistoryQuerySchema } from './history.js';
+import {aiQuestionEditInputSchema} from './question-edit-schema.js';
+import {questionEditModelQuestion,suggestQuestionEdits} from './question-edit.js';
 
 interface RunContext { questionVersions: Record<string, string>; sourceByItem: Record<string, string>; partByItem?: Record<string, { partId: string; type: LeafQuestionType }>; attemptVersion?: string; candidateVersions?: Record<string, string> }
 type StoredRun = AiRun<any> & { _context: RunContext };
@@ -145,7 +147,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
   ensureAiStorage(store);
   app.get('/api/ai/capabilities', async () => {
     const settings = getPublicAiSettings(store);
-    return { available: settings.enabled, message: settings.enabled ? 'AI 已开启；每次只发送用户明确选择的题目、作答或待转换资料。' : '尚未开启 AI 辅助，请在系统配置中配置服务。', subjectiveReview: { available: settings.enabled, endpoint: '/api/attempts/:id/ai-review', requiresSubmitted: true, message: 'AI 返回主观题正确、部分正确或错误的建议判定与评分，显式确认后应用；不计分练习也可应用判定，客观题仍由本地规则评分。' }, features: ['explain', 'grade', 'import', 'review', 'paper_plan', 'similar_questions'], batchLimit: 20, importLimit: 50 };
+    return { available: settings.enabled, message: settings.enabled ? 'AI 已开启；每次只发送用户明确选择的题目、作答或待转换资料。' : '尚未开启 AI 辅助，请在系统配置中配置服务。', subjectiveReview: { available: settings.enabled, endpoint: '/api/attempts/:id/ai-review', requiresSubmitted: true, message: 'AI 返回主观题正确、部分正确或错误的建议判定与评分，显式确认后应用；不计分练习也可应用判定，客观题仍由本地规则评分。' }, features: ['explain', 'grade', 'import', 'review', 'paper_plan', 'similar_questions', 'question_edit'], batchLimit: 20, importLimit: 50 };
   });
   app.get('/api/ai/settings', async () => getPublicAiSettings(store));
   app.put('/api/ai/settings', async request => {
@@ -190,6 +192,15 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const context: RunContext = { questionVersions: { [q.id]: stamp(q) }, sourceByItem: { [q.id]: q.id }, ...(part ? { partByItem: { [q.id]: { partId: part.id, type: part.type } } } : {}) }; requireSameQuestions(store, context);
     return publicRun(completedRun(store, 'explain', settings.model, result, [q.id], warnings, context));
   }, options));
+  app.post('/api/ai/question-edit',async(request,reply)=>runAuditedAiAction(store,'question_edit',request,reply,async execution=>{
+    const input=parse(aiQuestionEditInputSchema,request.body),settings=readPrivateSettings(store);
+    const material={question:questionEditModelQuestion(input.question)};const {images,warnings}=collectImages(store,material,settings);
+    const output=await suggestQuestionEdits(store,settings,input,images,warnings,execution);
+    assertAiActive(execution);
+    const context:RunContext={questionVersions:{[input.questionId]:input.expectedUpdatedAt},sourceByItem:{[input.questionId]:input.questionId}};
+    requireSameQuestions(store,context);
+    return publicRun(completedRun(store,'question_edit',settings.model,output.result,[input.questionId],output.warnings,context));
+  },options));
   const grade = async (body: unknown, execution?: AiExecutionContext) => {
     const input = parse(z.union([z.object({ attemptId: id, questionIds: aiLeafIds.optional(), gradingRequirements: gradingRequirementsSchema.optional() }).strict(), z.object({ questionId: id, answer: z.string().max(100_000), maxPoints: moneySchema.refine(value=>value>=0.01&&value<=1000,'每题分值须在0.01至1000之间').optional(), gradingRequirements: gradingRequirementsSchema.optional() }).strict()]), body);
     const settings = readPrivateSettings(store), context = noContext(); let attempt: StoredAttempt | undefined;

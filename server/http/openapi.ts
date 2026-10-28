@@ -7,6 +7,7 @@ import { settingsSchema } from '../modules/settings/service.js';
 import { configurationSchema, configurationPreviewInputSchema, configurationImportInputSchema, configurationExportQuerySchema, configurationPreviewSchema, configurationImportResultSchema } from '../modules/settings/configuration.js';
 import { assetInputSchema } from '../modules/assets/schema.js';
 import * as ai from '../modules/ai/schema.js';
+import {aiQuestionEditInputSchema,aiQuestionEditResultSchema} from '../modules/ai/question-edit-schema.js';
 import { aiDiagnosticsSchema, aiFailedRunSchema } from '../modules/ai/audit-schema.js';
 import { aiHistoryQuerySchema } from '../modules/ai/history.js';
 import { aiDocumentCreateSchema, aiDocumentProcessSchema, aiDocumentImportSchema, aiDocumentPlanResultSchema, aiDocumentGenerateResultSchema, storedAiDocumentJobSchema } from '../modules/ai/document-schema.js';
@@ -40,7 +41,7 @@ const aiProgressEvent: JsonSchema = { oneOf: [
   { type: 'object', required: ['type','result'], properties: { type: { const: 'result' }, result: object } },
   { type: 'object', required: ['type','error'], properties: { type: { const: 'error' }, error: { type: 'object', required: ['code','message'], properties: { code: { type: 'string' }, message: { type: 'string' }, statusCode: { type: 'integer' } } } } },
 ] };
-const streamingAiRoute = (method: string, url: string) => method === 'POST' && (/^\/api\/ai\/(?:test|explain|grade|import|review|paper-plan|similar-questions)$/.test(url) || /^\/api\/ai\/document-jobs\/:id\/(?:plan|generate)$/.test(url) || url === '/api/attempts/:id/ai-review' || url === '/api/question-feedback/ai-review');
+const streamingAiRoute = (method: string, url: string) => method === 'POST' && (/^\/api\/ai\/(?:test|explain|grade|import|review|paper-plan|similar-questions|question-edit)$/.test(url) || /^\/api\/ai\/document-jobs\/:id\/(?:plan|generate)$/.test(url) || url === '/api/attempts/:id/ai-review' || url === '/api/question-feedback/ai-review');
 const id = validation.id;
 const toJson = (schema: z.ZodType): JsonSchema => { const {$schema: _schema,...result} = z.toJSONSchema(schema,{io:'input',unrepresentable:'any'}) as JsonSchema; return result; };
 const paged = (item: JsonSchema): JsonSchema => ({ anyOf: [{type:'array',items:item},{type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}}] });
@@ -61,7 +62,7 @@ const aiRunOutput: JsonSchema = { oneOf: [
     id: {type:'string'}, kind: toJson(aiFailedRunSchema.shape.kind), status: {const:'completed'}, createdAt: {type:'string',format:'date-time'},
     model: {type:'string'}, warnings: {type:'array',items:{type:'string'}}, questionIds: {type:'array',items:{type:'string'}},
     attemptId: {type:'string'}, jobId: {type:'string'}, batchId: {type:'string'}, feedbackId: {type:'string'}, createdPaperId: {type:'string'}, appliedAt: {type:'string',format:'date-time'}, diagnostics: toJson(aiDiagnosticsSchema),
-    result: {oneOf:[toJson(ai.explanationSchema),toJson(ai.gradeResultSchema),toJson(ai.aiImportResultOutputSchema),toJson(ai.reviewResultSchema.safeExtend({approvedIds:z.array(id)})),toJson(ai.aiPaperPlanOutputSchema.safeExtend({requestedCount:z.number().int(),candidateCount:z.number().int(),candidates:z.array(z.object({id,title:z.string(),type:z.string()}))})),toJson(aiDocumentPlanResultSchema),toJson(aiDocumentGenerateResultSchema),toJson(questionFeedbackReviewSchema),toJson(aiSimilarQuestionsResultSchema)]},
+    result: {oneOf:[toJson(ai.explanationSchema),toJson(ai.gradeResultSchema),toJson(ai.aiImportResultOutputSchema),toJson(ai.reviewResultSchema.safeExtend({approvedIds:z.array(id)})),toJson(ai.aiPaperPlanOutputSchema.safeExtend({requestedCount:z.number().int(),candidateCount:z.number().int(),candidates:z.array(z.object({id,title:z.string(),type:z.string()}))})),toJson(aiDocumentPlanResultSchema),toJson(aiDocumentGenerateResultSchema),toJson(questionFeedbackReviewSchema),toJson(aiSimilarQuestionsResultSchema),toJson(aiQuestionEditResultSchema)]},
   } },
   toJson(aiFailedRunSchema.omit({_context:true})),
 ] };
@@ -113,6 +114,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/question-feedback/:id/resolve': questionFeedbackResolveSchema,
   '/api/question-feedback/ai-review': questionFeedbackAiInputSchema,
   '/api/ai/explain': z.object({questionId:id,partId:id.optional()}),
+  '/api/ai/question-edit': aiQuestionEditInputSchema,
   '/api/ai/grade': z.union([z.object({attemptId:id,questionIds:ai.aiLeafIds.optional(),gradingRequirements:ai.gradingRequirementsSchema.optional()}),z.object({questionId:id,answer:z.string().max(100000),maxPoints:z.number().min(.01).max(1000).optional(),gradingRequirements:ai.gradingRequirementsSchema.optional()})]),
   '/api/assets': assetInputSchema,
   '/api/sharing/export':shareSelection,'/api/sharing/export-document':shareSelection,'/api/sharing/preview':z.object({data:z.unknown()}).strict(),'/api/sharing/import':z.object({data:z.unknown(),confirmed:z.literal(true),expectedFingerprint:z.string().length(64).optional()}).strict(),
@@ -209,7 +211,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/questions/metadata')success=toJson(z.object({items:z.array(z.object({id,title:z.string(),type:validation.types,status:z.enum(['published','pending','draft','archived'])})),missingIds:z.array(id)}));
   if(url==='/api/papers/:id/questions/:questionId')success=toJson(validation.snapshotQuestionSchema);
   if(url==='/api/ai/runs')success=paged(aiRunOutput);
-  if(/^\/api\/ai\/runs\/:id$/.test(url)||/^\/api\/ai\/(?:explain|grade|import|review|paper-plan|similar-questions)$/.test(url))success=aiRunOutput;
+  if(/^\/api\/ai\/runs\/:id$/.test(url)||/^\/api\/ai\/(?:explain|grade|import|review|paper-plan|similar-questions|question-edit)$/.test(url))success=aiRunOutput;
   if(url==='/api/questions/:id/similar')success={type:'object',required:['items','total','page','pageSize','query','scope'],properties:{items:{type:'array',items:{type:'object',required:['question','reason','score'],properties:{question:toJson(validation.questionSchema),reason:{type:'string'},score:{type:'number'}}}},total:{type:'integer',minimum:0},page:{type:'integer',minimum:1},pageSize:{type:'integer',minimum:1},query:{type:'string'},scope:{type:'string'}}};
   if(url==='/api/attempts/:id/ai-review')success=aiRunOutput;
   if(url==='/api/ai/test')success={type:'object',required:['ok','message','model'],properties:{ok:{const:true},message:{type:'string'},model:{type:'string'}}};
@@ -274,7 +276,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   return schema;
 }
 const configurationExample = { format:'noetic-atlas-configuration', schemaVersion:1, exportedAt:'2026-10-23T00:00:00.000Z', system:Object.fromEntries(Object.entries(DEFAULT_SETTINGS).filter(([key])=>key!=='id'&&key!=='updatedAt')) };
-function baseDocument(){return {components:{schemas:{QuestionInput:toJson(validation.questionSchema),PaperInput:toJson(validation.paperInputSchema),DocumentInput:toJson(validation.documentSchema),SystemSettings:toJson(settingsSchema),ConfigurationExport:toJson(configurationSchema),ConfigurationPreview:toJson(configurationPreviewSchema),ConfigurationImportResult:toJson(configurationImportResultSchema),PaperDraft:toJson(paperDraftSchema),PaperDraftState:toJson(paperDraftStateSchema),Paper:paperOutput,Attempt:attemptOutput,AiRun:aiRunOutput,AiProgressEvent:aiProgressEvent,AiRecommendationInput:toJson(ai.aiPaperPlanInputSchema),AiRecommendationOutput:toJson(ai.aiPaperPlanOutputSchema),ApiError:errorSchema}},openapi:'3.1.0',info:{title:'认知星图 · Noetic Atlas API',version:'1.0.0',description:'运行时自动生成的本地学习站API。AI密钥仅用于请求服务商，不进入文档、AI记录与分享包。交互文档在本机运行，可直接试用接口。'},servers:[{url:'/'}]};}
+function baseDocument(){return {components:{schemas:{QuestionInput:toJson(validation.questionSchema),PaperInput:toJson(validation.paperInputSchema),DocumentInput:toJson(validation.documentSchema),SystemSettings:toJson(settingsSchema),ConfigurationExport:toJson(configurationSchema),ConfigurationPreview:toJson(configurationPreviewSchema),ConfigurationImportResult:toJson(configurationImportResultSchema),PaperDraft:toJson(paperDraftSchema),PaperDraftState:toJson(paperDraftStateSchema),Paper:paperOutput,Attempt:attemptOutput,AiRun:aiRunOutput,AiQuestionEditInput:toJson(aiQuestionEditInputSchema),AiQuestionEditResult:toJson(aiQuestionEditResultSchema),AiProgressEvent:aiProgressEvent,AiRecommendationInput:toJson(ai.aiPaperPlanInputSchema),AiRecommendationOutput:toJson(ai.aiPaperPlanOutputSchema),ApiError:errorSchema}},openapi:'3.1.0',info:{title:'认知星图 · Noetic Atlas API',version:'1.0.0',description:'运行时自动生成的本地学习站API。AI密钥仅用于请求服务商，不进入文档、AI记录与分享包。交互文档在本机运行，可直接试用接口。'},servers:[{url:'/'}]};}
 function nativeDocument(routes:RouteEntry[]){
   const paths:Record<string,any>={};
   for(const entry of routes){if(!entry.url.startsWith('/api/')||entry.url.startsWith('/api/docs')||entry.url==='/api/openapi.json'||entry.method==='HEAD')continue;const schema=documentationSchema(entry) as any;const path=entry.url.replace(/:([A-Za-z0-9_]+)/g,'{$1}');const operation:any={tags:schema.tags,summary:schema.summary,operationId:schema.operationId,description:schema.description,parameters:[],responses:Object.fromEntries(Object.entries(schema.response).map(([code,value])=>[code,{description:Number(code)<400?'成功':'请求失败',content:(value as any).content||{'application/json':{schema:value}}}]))};for(const [where,shape] of [['path',schema.params],['query',schema.querystring],['header',schema.headers]] as const){for(const [name,value] of Object.entries(shape?.properties||{}))operation.parameters.push({in:where,name,required:where==='path'||shape.required?.includes(name)||false,schema:value});}if(schema.body)operation.requestBody={required:true,content:{'application/json':{schema:schema.body}}};(paths[path]||={})[entry.method.toLowerCase()]=operation;}

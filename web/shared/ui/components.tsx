@@ -15,7 +15,7 @@ export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?:
   return <header className="page-header"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1>{description && <p className="page-description">{description}</p>}</div><div className="header-actions">{actions}</div></header>;
 }
 export function Loading({ text = '正在读取本地资料…' }: { text?: string }) { return <div className="loading" role="status"><LoaderCircle size={19} className="spin" />{text}</div>; }
-export function ErrorNotice({ message, retry }: { message: string; retry?: () => void }) { return <div className="notice error" role="alert"><AlertCircle size={18} /><span>{message}</span>{retry && <button className="text-button" onClick={retry}>重新加载</button>}</div>; }
+export function ErrorNotice({ message, retry }: { message: string; retry?: () => void }) { return <div className="notice error" role="alert"><AlertCircle size={18} /><span>{message}</span>{retry && <button className="text-button" type="button" onClick={retry}>重新加载</button>}</div>; }
 export function Empty({ title = '这里还没有内容', description, actions }: { title?: string; description?: string; actions?: ReactNode }) { return <div className="empty"><span className="empty-mark">∅</span><h3>{title}</h3>{description && <p>{description}</p>}{actions}</div>; }
 export function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const closeRef = useRef<HTMLButtonElement>(null); const dialogRef = useRef<HTMLDivElement>(null);

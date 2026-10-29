@@ -127,4 +127,6 @@ export async function buildApp(options: AppOptions = {}) {
   } else app.setNotFoundHandler((_request, reply) => reply.status(404).send({ error: { code: 'NOT_FOUND', message: '页面或接口不存在' } }));
   return app;
 }
-function tablesEmpty(store: Store) { return ['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'study', 'attempts'].every(t => store.all(t as any).length === 0); }
+function tablesEmpty(store: Store) {
+  return (['domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'study', 'attempts'] as const).every(table => !store.database.one(store.database.query.selectFrom(table).select('id').limit(1)));
+}

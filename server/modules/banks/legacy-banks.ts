@@ -23,7 +23,8 @@ export function legacyBankPaper(bank: QuestionBank, questions: Question[], paper
 }
 
 export function legacyBankPaperId(store: Store, bankId: string): { id: string; existing: boolean } {
-  const converted = store.all<Paper>('papers').find(paper => paper.legacyBankId === bankId);
+  const database = store.database;
+  const converted = database.one(database.query.selectFrom('papers').select('id').where(database.expressions.field('data', 'legacyBankId'), '=', bankId).limit(1));
   if (converted) return { id: converted.id, existing: true };
   const reserved = ['new', 'preview', QUICK_PAPER_ID];
   if (!reserved.includes(bankId) && !store.get('papers', bankId)) return { id: bankId, existing: false };
@@ -61,11 +62,16 @@ export function migrateLegacyBanks(store: Store): number {
       store.remove('question_banks', bank.id);
       changed++;
     }
-    for (const paper of store.all<Paper>('papers')) if (paper.filters && 'bankId' in paper.filters) {
+    const database = store.database, expressions = database.expressions;
+    // Modern records need no body/snapshot decoding during this legacy pass.
+    const papers = database.all(database.query.selectFrom('papers').select('id').where(eb => eb.not(expressions.nestedMissing('data', ['filters', 'bankId']))));
+    for (const row of papers) {
+      const paper = store.require<Paper>('papers', row.id);
       store.put('papers', paper.id, { ...paper, filters: withoutBankFilter(paper.filters as Record<string, unknown>) }); changed++;
     }
-    for (const draft of store.all<PaperDraft>('paper_drafts')) {
-      if (!('bankId' in draft.state.filters) && !('bankId' in draft.state.random)) continue;
+    const drafts = database.all(database.query.selectFrom('paper_drafts').select('id').where(eb => eb.or([eb.not(expressions.nestedMissing('data', ['state', 'filters', 'bankId'])), eb.not(expressions.nestedMissing('data', ['state', 'random', 'bankId']))])));
+    for (const row of drafts) {
+      const draft = store.require<PaperDraft>('paper_drafts', row.id);
       store.put('paper_drafts', draft.id, { ...draft, state: { ...draft.state, filters: withoutBankFilter(draft.state.filters), random: withoutBankFilter(draft.state.random) } }); changed++;
     }
     return changed;

@@ -12,7 +12,11 @@ export function useFeedbackSummaries(questionIds: string[]) {
     const ids: string[] = JSON.parse(key), controller = new AbortController();
     setSummaries({});
     if (!ids.length) return () => controller.abort();
-    void request<{ summaries: Record<string, QuestionFeedbackSummary> }>('/api/question-feedback/summaries', { method: 'POST', body: JSON.stringify({ questionIds: ids }), signal: controller.signal }).then(value => { if (!controller.signal.aborted && value?.summaries && typeof value.summaries === 'object') setSummaries(value.summaries); }).catch(() => { /* Missing quality metadata never breaks reading or asserts that content is verified. */ });
+    queueMicrotask(() => {
+      // A disposed StrictMode probe or a rapidly replaced page needs no request.
+      if (controller.signal.aborted) return;
+      void request<{ summaries: Record<string, QuestionFeedbackSummary> }>('/api/question-feedback/summaries', { method: 'POST', body: JSON.stringify({ questionIds: ids }), signal: controller.signal }).then(value => { if (!controller.signal.aborted && value?.summaries && typeof value.summaries === 'object') setSummaries(value.summaries); }).catch(() => { /* Missing quality metadata never breaks reading or asserts that content is verified. */ });
+    });
     return () => controller.abort();
   }, [key, revision]);
   return summaries;

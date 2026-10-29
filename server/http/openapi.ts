@@ -16,6 +16,7 @@ import { questionFeedbackQuerySchema, questionFeedbackSummariesSchema } from '..
 import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/paper-drafts.js';
 import { paperListPageQuerySchema } from '../modules/practice/paper-list.js';
 import { documentDraftSchema, documentDraftQuerySchema, createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema } from '../modules/library/document-drafts.js';
+import { documentListQuerySchema } from '../modules/library/list.js';
 import { aiWorkspaceDraftSchema,aiWorkspaceDraftQuerySchema,aiWorkspaceDraftCreateSchema,aiWorkspaceDraftUpdateSchema,aiWorkspaceDraftDeleteSchema } from '../modules/ai/workspace-draft-schema.js';
 import { paginationFields } from '../core/pagination.js';
 import { vocabularyQuerySchema } from '../modules/questions/vocabulary.js';
@@ -178,7 +179,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/learning/reset-preview')schema.querystring=toJson(z.object({}).strict());
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
-  if(url==='/api/documents')schema.querystring=toJson(z.object({...paginationFields,search:z.string().max(1000).optional(),collection:z.enum(['general','personal','all']).optional(),kind:z.string().optional(),domainId:id.optional(),categoryId:id.optional(),tagIds:z.string().optional(),format:z.enum(['markdown','pdf']).optional()}));
+  if(url==='/api/documents'||url==='/api/documents/page')schema.querystring=toJson(documentListQuerySchema);
   if(url==='/api/questions')schema.querystring=toJson(z.object({page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(200).default(30),search:z.string().max(1000).optional(),domainId:id.optional(),categoryId:id.optional(),paperId:id.optional(),tagIds:z.string().optional(),tagMode:z.enum(['all','any']).optional(),type:validation.types.optional(),difficulty:z.coerce.number().int().min(1).max(4).optional(),depth:z.coerce.number().int().min(1).max(4).optional(),frequency:z.coerce.number().int().min(0).max(3).optional(),collection:z.enum(['general','personal','all']).optional(),status:z.enum(['published','pending','draft','archived','all']).optional(),favorite:z.enum(['true','false','1','0']).optional(),due:z.enum(['true','false','1','0']).optional(),wrong:z.enum(['true','false','1','0']).optional()}));
   if(['/api/domains','/api/categories','/api/tags'].includes(url))schema.querystring=toJson(z.object({...paginationFields,search:z.string().max(1000).optional(),domainId:id.optional(),parentId:id.optional(),kind:z.string().max(40).optional()}));
   if(url==='/api/reviews')schema.querystring=toJson(z.object({...paginationFields,questionId:id.optional(),partId:id.optional(),whole:z.enum(['true','false']).optional()}));
@@ -215,6 +216,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(list)success=paged(success);
   if(url==='/api/questions'&&method==='GET')success=(paged(outputs.questions!) as any).anyOf[1];
   if(url==='/api/papers/page')success=learningPage(paperListItemOutput);
+  if(url==='/api/documents/page')success=learningPage(toJson(validation.documentSchema.omit({bodyMarkdown:true}).extend({excerpt:z.string()})));
   if(url==='/api/papers/:id/metadata')success={type:'object',additionalProperties:false,required:['id','title','version','archived'],properties:Object.fromEntries(['id','title','version','archived'].map(key=>[key,paperOutput.properties[key]]))};
   if(url==='/api/questions/:id/statistics')success=questionStatisticsOutput;
   if(url==='/api/questions/:id/history')success=questionHistoryOutput;

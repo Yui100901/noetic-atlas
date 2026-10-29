@@ -52,12 +52,19 @@ export function DailyPushProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     mounted.current = true;
     const trigger = () => { if (document.visibilityState === 'visible') void refresh(true); };
-    const initial = setTimeout(trigger, 0), timer = setInterval(trigger, 30_000);
+    // The settings effect below performs the initial refresh as well.
+    const timer = setInterval(trigger, 30_000);
     const exam = (event: Event) => { if (!(event as CustomEvent).detail) trigger(); };
     window.addEventListener('focus', trigger); document.addEventListener('visibilitychange', trigger); window.addEventListener('noetic-atlas-exam-state', exam);
-    return () => { mounted.current = false; clearTimeout(initial); clearInterval(timer); window.removeEventListener('focus', trigger); document.removeEventListener('visibilitychange', trigger); window.removeEventListener('noetic-atlas-exam-state', exam); };
+    return () => { mounted.current = false; clearInterval(timer); window.removeEventListener('focus', trigger); document.removeEventListener('visibilitychange', trigger); window.removeEventListener('noetic-atlas-exam-state', exam); };
   }, [refresh]);
-  useEffect(() => { void refresh(true); }, [bootstrap.settings?.updatedAt, refresh]);
+  useEffect(() => {
+    // StrictMode disposes its probe effect before the next microtask. Settings
+    // updates still refresh immediately, without a second initial request.
+    let disposed = false;
+    queueMicrotask(() => { if (!disposed) void refresh(true); });
+    return () => { disposed = true; };
+  }, [bootstrap.settings?.updatedAt, refresh]);
   const markRead = useCallback(async (record: DailyPushRecord) => {
     if (record.readAt || examActive()) return;
     await send(`/api/daily-push/${idPath(record.id)}/read`, 'POST');

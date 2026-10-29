@@ -113,6 +113,46 @@ test('pagination and update sorting remain deterministic, detached pages keep to
   assert.equal(search('OFFSET_SORT_NEEDLE', { sort: 'updatedAt' }).items[0].id, 'utc-newer');
 });
 
+test('broad searches materialize only one metadata row per page item while preserving all type counts', t => {
+  const { store, question, search } = fixture(t);
+  for (let index = 0; index < 35; index++) store.put('questions', 'broad-' + index, { ...question, id: 'broad-' + index, title: 'COMMON item ' + index });
+  search('common'); // Complete the independent projection before observing reads.
+  const all = store.db.all.bind(store.db); let returned = 0, metadata = 0;
+  store.db.all = ((query: any) => {
+    const rows = all(query); returned += rows.length;
+    const records = rows.filter(row => typeof (row as any).data === 'string'); metadata += records.length;
+    assert.equal(new Set(records.map(row => (row as any).key)).size, records.length, 'the count types must not multiply page records');
+    return rows;
+  }) as typeof store.db.all;
+  const page = search('common', { pageSize: 20 });
+  assert.equal(page.items.length, 20); assert.equal(metadata, 20); assert.equal(returned, 28, '7 type totals + 20 page records + 1 classification record');
+  assert.deepEqual(page.counts, { question: 36, paper: 1, document: 1, note: 1, domain: 1, category: 1, tag: 1 });
+  returned = 0; metadata = 0;
+  const detached = search('common', { type: 'tag', page: 3, pageSize: 10 });
+  assert.equal(detached.items.length, 0); assert.equal(detached.total, 1); assert.equal(detached.totalAll, 42);
+  assert.equal(metadata, 0); assert.equal(returned, 7, 'empty selected pages retain all type totals without reading item metadata');
+});
+
+test('page-local relevance still distinguishes all seven ranking levels and deterministic ties', t => {
+  const { store, question, search } = fixture(t), stamp = '2026-10-20T00:00:00Z';
+  const samples = [
+    { id: 'rankterm', title: 'unrelated', stemMarkdown: 'outside' },
+    { id: 'rank-title', title: 'rankterm', stemMarkdown: 'outside' },
+    { id: 'rankterm-prefix', title: 'unrelated', stemMarkdown: 'outside' },
+    { id: 'rank-title-prefix', title: 'rankterm suffix', stemMarkdown: 'outside' },
+    { id: 'rank-title-includes', title: 'preceding rankterm follows', stemMarkdown: 'outside' },
+    { id: 'rank-content', title: 'unrelated', stemMarkdown: 'rankterm content' },
+    { id: 'rank-reference', title: 'unrelated', stemMarkdown: 'outside', answerMarkdown: 'rankterm reference' },
+  ];
+  for (const sample of samples) store.put('questions', sample.id, { ...question, answerMarkdown: '', ...sample, updatedAt: stamp });
+  for (const sort of ['relevance', 'updatedAt']) {
+    const result = search('rankterm', { sort });
+    assert.deepEqual(result.items.map(item => item.id), samples.map(sample => sample.id));
+    assert.deepEqual(result.items.map(item => item.matchIn), ['id', 'title', 'id', 'title', 'title', 'content', 'reference']);
+    assert.doesNotMatch(JSON.stringify(result.items), /rankterm reference/);
+  }
+});
+
 test('projection updates are transactional and raw external writes invalidate affected sources without rewriting originals', t => {
   const folder = mkdtempSync(join(tmpdir(), 'atlas-search-'));
   const { store, question, search } = fixture(t, join(folder, 'source.sqlite'));

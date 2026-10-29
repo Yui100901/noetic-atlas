@@ -17,9 +17,12 @@ export class RecordProjections {
   initialize() {
     const d=this.database,q=d.query;
     const complete=['question_read_model','paper_read_model','projection_pending','asset_references'].every(table=>d.hasTable(table));
+    const documentsComplete = d.hasTable('document_read_model');
+    const documentsChanged = !documentsComplete || d.one(q.selectFrom('metadata').select('value').where('key', '=', 'document_projection_version'))?.value !== '1';
     d.transaction(()=>{
       d.run(q.schema.createTable('question_read_model').ifNotExists().addColumn('id','text',c=>c.primaryKey()).addColumn('data','text',c=>c.notNull()).addColumn('search_text','text',c=>c.notNull()).addColumn('title_key','text',c=>c.notNull()));
       d.run(q.schema.createTable('paper_read_model').ifNotExists().addColumn('id','text',c=>c.primaryKey()).addColumn('data','text',c=>c.notNull()));
+      d.run(q.schema.createTable('document_read_model').ifNotExists().addColumn('id','text',c=>c.primaryKey()).addColumn('data','text',c=>c.notNull()).addColumn('search_text','text',c=>c.notNull()).addColumn('source_order','integer',c=>c.notNull()));
       d.run(q.schema.createTable('projection_pending').ifNotExists().addColumn('source_table','text',c=>c.notNull()).addColumn('source_id','text',c=>c.notNull()).addPrimaryKeyConstraint('projection_pending_pk',['source_table','source_id']));
       d.run(q.schema.createTable('asset_references').ifNotExists().addColumn('source_table','text',c=>c.notNull()).addColumn('source_id','text',c=>c.notNull()).addColumn('asset_id','text',c=>c.notNull()).addPrimaryKeyConstraint('asset_references_pk',['source_table','source_id','asset_id']));
       d.run(q.schema.createIndex('asset_references_asset_idx').ifNotExists().on('asset_references').column('asset_id'));
@@ -27,6 +30,9 @@ export class RecordProjections {
       d.run(q.schema.createIndex('paper_read_updated_idx').ifNotExists().on('paper_read_model').expression(d.expressions.field('data','updatedAt')));
       d.run(q.schema.createIndex('paper_read_active_updated_idx').ifNotExists().on('paper_read_model').expression(sql.join([d.expressions.booleanOrFalse(d.expressions.field('data','archived')),d.expressions.field('data','updatedAt')])));
       d.run(q.schema.createIndex('paper_read_domain_updated_idx').ifNotExists().on('paper_read_model').expression(sql.join([d.expressions.field('data','domainId'),d.expressions.field('data','updatedAt')])));
+      d.run(q.schema.createIndex('document_read_active_updated_idx').ifNotExists().on('document_read_model').expression(sql.join([
+        d.expressions.booleanOrFalse(d.expressions.field('data','_archived')), sql`coalesce(${d.expressions.field('data','updatedAt')},'') desc`, sql.ref('source_order'),
+      ])));
       // Trigger DDL is SQLite-specific; only fixed, code-owned names occur here.
       for(const table of projectionSources) {
         // Avoid unique conflicts rather than relying on OR IGNORE: an outer
@@ -40,12 +46,18 @@ export class RecordProjections {
       }
       const version=d.one(q.selectFrom('metadata').select('value').where('key','=','read_projection_version'))?.value;
       if(version!=='6'||!complete) {
-        d.run(q.deleteFrom('question_read_model'));d.run(q.deleteFrom('paper_read_model'));d.run(q.deleteFrom('asset_references'));
+        d.run(q.deleteFrom('question_read_model'));d.run(q.deleteFrom('paper_read_model'));d.run(q.deleteFrom('document_read_model'));d.run(q.deleteFrom('asset_references'));
         for(const table of projectionSources)d.run(q.insertInto('projection_pending').columns(['source_table','source_id']).expression(eb=>eb.selectFrom(table).select([eb.val(table).as('source_table'),'id as source_id']).where('id','is not',null)).onConflict(c=>c.columns(['source_table','source_id']).doNothing()));
         d.run(q.insertInto('metadata').values({key:'read_projection_version',value:'6'}).onConflict(c=>c.column('key').doUpdateSet({value:'6'})));
       }
+      // A library-only upgrade must not rebuild every question/paper index.
+      if (documentsChanged) {
+        d.run(q.deleteFrom('document_read_model'));
+        d.run(q.insertInto('projection_pending').columns(['source_table', 'source_id']).expression(eb => eb.selectFrom('documents').select([eb.val('documents').as('source_table'), 'id as source_id']).where('id', 'is not', null)).onConflict(c => c.columns(['source_table', 'source_id']).doNothing()));
+        d.run(q.insertInto('metadata').values({key:'document_projection_version',value:'1'}).onConflict(c=>c.column('key').doUpdateSet({value:'1'})));
+      }
     });
-    return this.search.initialize();
+    return this.search.initialize() || documentsChanged;
   }
   ensure(sources:readonly ProjectionSource[]) {
     if(!sources.length)return;
@@ -59,7 +71,9 @@ export class RecordProjections {
           const pending=d.all(q.selectFrom('projection_pending').select('source_id').where('source_table','=',source).limit(200));
           if(!pending.length)break;
           const ids=pending.map(row=>row.source_id);
-          const records=new Map(d.all(q.selectFrom(source).select(['id','data']).where('id','in',ids)).map(row=>[row.id,JSON.parse(row.data)]));
+          const sourceRows = d.all(q.selectFrom(source).select(['id','data']).select(d.expressions.rowOrder(source).as('sourceOrder')).where('id','in',ids));
+          const records=new Map(sourceRows.map(row=>[row.id,JSON.parse(row.data)]));
+          const sourceOrder=new Map(sourceRows.map(row=>[row.id,row.sourceOrder]));
           // Asset relations are exact structural references; Markdown substrings
           // and dataBase64 contents cannot create false delete protection.
           d.run(q.deleteFrom('asset_references').where('source_table','=',source).where('source_id','in',ids));
@@ -69,6 +83,7 @@ export class RecordProjections {
             if(!record){
               if(source==='questions')d.run(q.deleteFrom('question_read_model').where('id','=',id));
               if(source==='papers')d.run(q.deleteFrom('paper_read_model').where('id','=',id));
+              if(source==='documents')d.run(q.deleteFrom('document_read_model').where('id','=',id));
               continue;
             }
             const referenceContent = source === 'ai_import_jobs' ? (record.blocks || []).flatMap((block: any) => block.questions || []) : record;
@@ -85,6 +100,12 @@ export class RecordProjections {
               const snapshot=Array.isArray(record.snapshot)?record.snapshot.map((question:any)=>({id:question.id,type:question.type,...(question.sourceQuestionId?{sourceQuestionId:question.sourceQuestionId}:{}),...(question.groupId?{groupId:question.groupId}:{}),...(Array.isArray(question.parts)?{parts:question.parts.map((part:any)=>({id:part.id,type:part.type,...(part.weight!==undefined?{weight:part.weight}:{})}))}:{})})):record.snapshot;
               const data=JSON.stringify({...record,snapshot});
               d.run(q.insertInto('paper_read_model').values({id,data}).onConflict(c=>c.column('id').doUpdateSet({data})));
+            }
+            if (source === 'documents') {
+              const { bodyMarkdown, ...metadata } = record;
+              const row = { id, data: JSON.stringify({ ...metadata, excerpt: String(bodyMarkdown || '').replace(/[#*`\[\]>_]/g, '').slice(0, 110) }),
+                search_text: [record.title, record.author, record.publisher, record.description, bodyMarkdown].map(value => value || '').join(' ').toLowerCase(), source_order: sourceOrder.get(id)! };
+              d.run(q.insertInto('document_read_model').values(row).onConflict(c=>c.column('id').doUpdateSet({data:row.data,search_text:row.search_text,source_order:row.source_order})));
             }
           }
           for(let offset=0;offset<refs.length;offset+=100)d.run(q.insertInto('asset_references').values(refs.slice(offset,offset+100)).onConflict(c=>c.columns(['source_table','source_id','asset_id']).doNothing()));

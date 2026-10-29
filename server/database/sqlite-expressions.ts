@@ -9,6 +9,13 @@ export class SqliteExpressions {
     return sql.lit(`$.${key}`);
   }
   field<T = any>(ref: string, key: string): RawBuilder<T> { return sql<T>`json_extract(${sql.ref(ref)},${this.path(key)})`; }
+  private nestedPath(keys: readonly string[]) {
+    if (!keys.length || keys.some(key => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))) throw new Error('Invalid database field');
+    return sql.lit(`$.${keys.join('.')}`);
+  }
+  /** Structured metadata in drafts must not require materializing their body. */
+  nestedField<T = any>(ref: string, keys: readonly string[]): RawBuilder<T> { return sql<T>`json_extract(${sql.ref(ref)},${this.nestedPath(keys)})`; }
+  nestedMissing(ref: string, keys: readonly string[]): RawBuilder<SqlBool> { return sql<SqlBool>`json_type(${sql.ref(ref)},${this.nestedPath(keys)}) is null`; }
   /** Match a fixed expression index while treating absent legacy booleans as false. */
   booleanOrFalse(value: Expression<any>): RawBuilder<number> { return sql<number>`coalesce(${value},0)`; }
   missing(ref: string, key: string): RawBuilder<SqlBool> { return sql<SqlBool>`json_type(${sql.ref(ref)},${this.path(key)}) is null`; }

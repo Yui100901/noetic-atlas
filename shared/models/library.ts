@@ -2,7 +2,9 @@ import type { Category, DocumentRecord } from './types.js';
 
 /** Content type is independent of its file format and subject taxonomy. */
 export const documentKinds = ['书籍', '学习笔记', '学习路线', '参考资料', '项目资料'] as const;
-export function documentDomainIds(document: DocumentRecord, categories: Category[]): string[] {
+/** Library cards deliberately omit complete Markdown books. */
+export type DocumentListItem = Omit<DocumentRecord, 'bodyMarkdown'> & { excerpt: string };
+export function documentDomainIds(document: Pick<DocumentRecord, 'domainIds' | 'categoryIds'>, categories: Category[]): string[] {
   return [...new Set([...(document.domainIds || []), ...categories.filter(category => document.categoryIds.includes(category.id)).map(category => category.domainId)])];
 }
 export function categoryPath(category: Category, categories: Category[]): string {

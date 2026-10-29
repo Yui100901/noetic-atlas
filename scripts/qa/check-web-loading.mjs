@@ -83,7 +83,7 @@ try {
     sourceAnchor: null, createdAt: stamp, updatedAt: stamp,
   };
   const bootstrap = () => ({
-    settings: { ...structuredClone(DEFAULT_SETTINGS), reviewScheduling: { ...DEFAULT_SETTINGS.reviewScheduling, strategy: 'fixed' } },
+    settings: { ...structuredClone(DEFAULT_SETTINGS), updatedAt: favorite ? new Date(Date.parse(stamp) + 1).toISOString() : stamp, reviewScheduling: { ...DEFAULT_SETTINGS.reviewScheduling, strategy: 'fixed' } },
     domains: [{ id: 'qa-domain', name: '通用学习', description: '', sortOrder: 0 }],
     categories: [{ id: 'qa-category', name: '基础知识', domainId: 'qa-domain', parentId: null, description: '', sortOrder: 0 }],
     tags: [{ id: 'qa-tag', name: '概念题', domainId: null, kind: 'method', description: '', color: '#3c7661' }],
@@ -119,6 +119,10 @@ try {
   assert.equal(requests.filter(item => item.path === '/api/bootstrap').length, 1);
   assert.equal(requests.filter(item => item.path === '/api/exams/sync').length, 1);
   checks.push('首次 bootstrap 与考试状态并行，StrictMode 仅发送各一次请求');
+  await page.waitForLoadState('networkidle');
+  assert.equal(requests.filter(item => item.path === '/api/daily-push').length, 1);
+  checks.push('StrictMode每日推荐只初始化一次，不产生重复初始查询');
+  assert.equal(requests.filter(item => item.path === '/api/question-feedback/summaries').length, 1);
   const firstList = requests.find(item => item.path === '/api/questions');
   assert.ok(firstList.started >= firstExam.finished, '考试校验通过前不可加载受保护页面');
   checks.push('页面请求仍等待考试校验通过，保持考试锁边界');
@@ -129,16 +133,23 @@ try {
   assert.equal(requests.filter(item => item.path === '/api/question-banks').length, 0);
   checks.push('筛选可展开，不再查询或显示独立题库集合');
   await page.getByRole('link', { name: question.title, exact: true }).click();
-  await page.locator('.ai-request-note').waitFor();
+  await page.locator('section.ai-tools').waitFor();
+  assert.equal(await page.locator('.ai-request-note').count(), 0);
   assert.equal(requests.filter(item => item.path === '/api/bootstrap').length, 1);
   assert.equal(requests.filter(item => item.path === '/api/ai/settings').length, 0);
-  checks.push('路由切换不重取 bootstrap，AI状态提示复用公共状态');
+  await page.waitForLoadState('networkidle');
+  assert.equal(requests.filter(item => item.path === '/api/question-feedback/summaries').length, 2);
+  checks.push('StrictMode题目反馈摘要在题库与详情各只发一次，切换仍更新当前题目摘要');
+  checks.push('路由切换不重取 bootstrap，已开启AI复用公共状态并隐藏配置提示');
   await page.getByRole('button', { name: '收藏', exact: true }).click();
   await page.getByRole('button', { name: '已收藏', exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('学习记录已保存'));
   for (let index = 0; index < 100 && requests.filter(item => item.path === '/api/bootstrap').length < 2; index++) await delay(20);
   assert.equal(requests.filter(item => item.path === '/api/bootstrap').length, 2);
   checks.push('修改学习记录仍主动刷新 bootstrap，无跨页长期缓存');
+  for (let index = 0; index < 150 && requests.filter(item => item.path === '/api/daily-push').length < 2; index++) await delay(20);
+  assert.equal(requests.filter(item => item.path === '/api/daily-push').length, 2);
+  checks.push('配置版本更新仍立即刷新每日推荐，不被初始请求去重吞掉');
   await page.evaluate(() => { window.location.hash = '#/papers/new/manual'; });
   await page.getByRole('button', { name: question.title, exact: true }).waitFor();
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(button => button.textContent === '保存组题草稿')?.disabled);

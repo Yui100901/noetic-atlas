@@ -38,41 +38,63 @@ export class Store {
   normalizeLegacyTags() {
     // Run only on absent fields. Explicit global scope must remain global,
     // including after questions are edited or more domains are imported.
+    const legacyTags = this.all<Tag>('tags').filter(tag => tag.domainId === undefined || tag.kind === undefined);
+    if (!legacyTags.length) return;
+    const legacyIds = new Set(legacyTags.map(tag => tag.id));
     const categories = new Map(this.all<Category>('categories').map(c => [c.id, c.domainId]));
     const usedDomains = new Map<string, Set<string>>();
     const unclassifiedUses = new Set<string>();
-    for (const record of [...this.all<Question>('questions'), ...this.all<DocumentRecord>('documents')]) {
+    for (const record of this.taxonomyReferenceMetadata()) {
       for (const tid of record.tagIds) {
+        if (!legacyIds.has(tid)) continue;
         if (!record.categoryIds.length) unclassifiedUses.add(tid);
         const domains = usedDomains.get(tid) || new Set<string>();
         for (const cid of record.categoryIds) { const did = categories.get(cid); if (did) domains.add(did); }
         usedDomains.set(tid, domains);
       }
     }
-    for (const tag of this.all<Tag>('tags')) {
-      if (tag.domainId !== undefined && tag.kind !== undefined) continue;
+    for (const tag of legacyTags) {
       const domains = usedDomains.get(tag.id) || new Set<string>();
       const domainId = tag.domainId === undefined ? domains.size === 1 && !unclassifiedUses.has(tag.id) ? [...domains][0]! : null : tag.domainId;
       this.put('tags', tag.id, { ...tag, domainId, kind: tag.kind || 'topic' });
     }
   }
   validateTag(tag: Tag) {
-    if (tag.domainId && !this.get('domains', tag.domainId)) fail(400, 'INVALID_REFERENCE', '标签所属领域不存在');
+    this.validateTagReference(tag, domainId => Boolean(this.get('domains', domainId)));
+  }
+  private validateTagReference(tag: Tag, hasDomain: (id: string) => boolean) {
+    if (tag.domainId && !hasDomain(tag.domainId)) fail(400, 'INVALID_REFERENCE', '标签所属领域不存在');
     if (tag.kind === 'method' && tag.domainId) fail(400, 'METHOD_TAG_GLOBAL', '学习方式标签应为全局标签；领域知识主题请使用主题或自定义类型');
   }
   validateRefs(record: { categoryIds: string[]; tagIds: string[]; domainIds?: string[] }) {
+    this.validateReferences(record, domainId => Boolean(this.get('domains', domainId)), cid => this.get<Category>('categories', cid), tid => this.get<Tag>('tags', tid));
+  }
+  private validateReferences(record: { categoryIds: string[]; tagIds: string[]; domainIds?: string[] }, hasDomain: (id: string) => boolean, getCategory: (id: string) => Category | undefined, getTag: (id: string) => Tag | undefined) {
     const domains = new Set<string>(record.domainIds || []);
-    for (const domainId of domains) if (!this.get('domains', domainId)) fail(400, 'INVALID_REFERENCE', `资料领域不存在：${domainId}`);
-    for (const cid of record.categoryIds) { const category = this.get<Category>('categories', cid); if (!category) fail(400, 'INVALID_REFERENCE', `分类不存在：${cid}`); if (record.domainIds && !record.domainIds.includes(category!.domainId)) fail(400, 'DOCUMENT_DOMAIN_MISMATCH', '资料分类必须属于所选领域'); domains.add(category!.domainId); }
+    for (const domainId of domains) if (!hasDomain(domainId)) fail(400, 'INVALID_REFERENCE', `资料领域不存在：${domainId}`);
+    for (const cid of record.categoryIds) { const category = getCategory(cid); if (!category) fail(400, 'INVALID_REFERENCE', `分类不存在：${cid}`); if (record.domainIds && !record.domainIds.includes(category!.domainId)) fail(400, 'DOCUMENT_DOMAIN_MISMATCH', '资料分类必须属于所选领域'); domains.add(category!.domainId); }
     for (const tid of record.tagIds) {
-      const tag = this.get<Tag>('tags', tid); if (!tag) fail(400, 'INVALID_REFERENCE', `标签不存在：${tid}`);
+      const tag = getTag(tid); if (!tag) fail(400, 'INVALID_REFERENCE', `标签不存在：${tid}`);
       if (tag!.domainId && !domains.has(tag!.domainId)) fail(400, 'TAG_DOMAIN_MISMATCH', `标签 ${tag!.name} 仅适用于其所属领域，请先选择该领域的分类`);
     }
   }
+  /** Taxonomy validation runs on every startup/import. Only reference arrays,
+   * not stems, book bodies or editor drafts, cross the database boundary. */
+  private *taxonomyReferenceMetadata(includeDrafts = false) {
+    const { query, expressions } = this.database;
+    for (const table of ['questions', 'documents', ...(includeDrafts ? ['document_drafts'] as const : [])] as const) {
+      const field = (key: string) => table === 'document_drafts' ? expressions.nestedField<string>('data', ['state', key]) : expressions.field<string>('data', key);
+      const rows = this.database.all(query.selectFrom(table).select([field('categoryIds').as('categoryIds'), field('tagIds').as('tagIds'), field('domainIds').as('domainIds')]));
+      for (const row of rows) yield { categoryIds: JSON.parse(row.categoryIds), tagIds: JSON.parse(row.tagIds), ...(row.domainIds === null ? {} : { domainIds: JSON.parse(row.domainIds) }) } as { categoryIds: string[]; tagIds: string[]; domainIds?: string[] };
+    }
+  }
   validateTaxonomyReferences() {
-    for (const tag of this.all<Tag>('tags')) this.validateTag(tag);
-    for (const record of [...this.all<Question>('questions'), ...this.all<DocumentRecord>('documents')]) this.validateRefs(record);
-    for (const draft of this.all<DocumentDraft>('document_drafts')) this.validateRefs(draft.state);
+    const domainIds = new Set(this.all<Domain>('domains').map(domain => domain.id));
+    const categories = new Map(this.all<Category>('categories').map(category => [category.id, category]));
+    const tags = new Map(this.all<Tag>('tags').map(tag => [tag.id, tag]));
+    const hasDomain = (id: string) => domainIds.has(id), getCategory = (id: string) => categories.get(id), getTag = (id: string) => tags.get(id);
+    for (const tag of tags.values()) this.validateTagReference(tag, hasDomain);
+    for (const record of this.taxonomyReferenceMetadata(true)) this.validateReferences(record, hasDomain, getCategory, getTag);
   }
   validateCategory(category: Category) {
     if (!this.get('domains', category.domainId)) fail(400, 'INVALID_REFERENCE', '领域不存在');

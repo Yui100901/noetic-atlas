@@ -21,7 +21,7 @@ export function UnifiedSearchBar({ hash }: { hash: string }) {
   }, []);
   return <form className="top-search unified-top-search" role="search" aria-label="全站统一搜索" onSubmit={event => {
     event.preventDefault(); if (isExamActive()) return;
-    const current = readSearchState('#/search'); window.location.hash = searchHref({ ...current, q: value }); input.current?.blur();
+    const current = readSearchState(/^#\/search(?:\?|$)/.test(hash) ? hash : '#/search'); window.location.hash = searchHref({ ...current, q: value, page: 1 }); input.current?.blur();
   }}><Search size={15} aria-hidden="true" /><input ref={input} aria-label="全站搜索" type="search" maxLength={100} value={value} onChange={event => setValue(event.target.value)} placeholder="搜索全部内容…" autoComplete="off" /><kbd aria-hidden="true">Ctrl K</kbd><button aria-label="执行统一搜索" title="搜索全部内容" type="submit"><ArrowRight size={16} /></button></form>;
 }
 

@@ -44,6 +44,21 @@ test('migration preserves existing paper and attempt history and rolls every cha
   const converted = store.all('papers').find(p => p.legacyBankId === 'collision'); assert.ok(converted); assert.notEqual(converted.id, paper.id);
 });
 
+test('legacy filter cleanup loads only affected paper and draft bodies, including explicitly null obsolete fields', t => {
+  const store = fixture(t);
+  store.put('papers', 'modern', { id: 'modern', title: '现代题集', filters: { domainId: 'computer' }, snapshot: [{ stemMarkdown: '无需读取'.repeat(1000) }] });
+  store.put('papers', 'legacy', { id: 'legacy', title: '旧题集', filters: { bankId: null, domainId: 'computer' } });
+  store.put('paper_drafts', 'modern-draft', { id: 'modern-draft', state: { filters: {}, random: {} } });
+  store.put('paper_drafts', 'legacy-draft', { id: 'legacy-draft', state: { filters: { bankId: '' }, random: { bankId: 'old-bank', count: 20 } } });
+  const all = store.all.bind(store), get = store.get.bind(store), bodyReads: string[] = [];
+  store.all = function <T>(table: Parameters<Store['all']>[0]): T[] { assert.ok(!['papers', 'paper_drafts'].includes(table)); return all<T>(table); };
+  store.get = function <T>(table: Parameters<Store['get']>[0], id: string): T | undefined { if (table === 'papers' || table === 'paper_drafts') bodyReads.push(id); return get<T>(table, id); };
+  assert.equal(migrateLegacyBanks(store), 2); assert.deepEqual(bodyReads, ['legacy', 'legacy-draft']);
+  assert.deepEqual(get('papers', 'legacy').filters, { domainId: 'computer' });
+  assert.deepEqual(get('paper_drafts', 'legacy-draft').state, { filters: {}, random: { count: 20 } });
+  bodyReads.length = 0; assert.equal(migrateLegacyBanks(store), 0); assert.deepEqual(bodyReads, []);
+});
+
 test('legacy JSON imports convert collections without losing large membership, preserve review status and export only sets', t => {
   const source = fixture(t), target = fixture(t);
   const questions = Array.from({ length: 1001 }, (_, index) => question(`term-${index}`));

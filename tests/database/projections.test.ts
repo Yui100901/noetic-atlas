@@ -52,6 +52,7 @@ function derived(database: DatabaseConnection) {
   return {
     questions: database.all(database.query.selectFrom('question_read_model').selectAll().orderBy('id')).map(row => ({ ...row })),
     papers: database.all(database.query.selectFrom('paper_read_model').selectAll().orderBy('id')).map(row => ({ ...row })),
+    documents: database.all(database.query.selectFrom('document_read_model').selectAll().orderBy('id')).map(row => ({ ...row })),
     references: references(database), pending: pending(database),
   };
 }
@@ -87,11 +88,12 @@ test('persisted clean projections survive reopen and warm reads do not select ca
   } finally { database.all = originalAll; database.one = originalOne; database.close(); }
 });
 
-for (const table of ['question_read_model', 'paper_read_model', 'asset_references', 'projection_pending'] as const) {
+for (const table of ['question_read_model', 'paper_read_model', 'document_read_model', 'asset_references', 'projection_pending'] as const) {
   test(`missing ${table} is rebuilt on reopen without altering canonical JSON`, async t => {
     const path = await temporary(t); let database = new DatabaseConnection(path);
     seed(database); database.projections.refreshAll();
     const originals = canonical(database), expected = derived(database);
+    if (table === 'projection_pending') database.run(database.query.insertInto('document_read_model').values({ id: 'orphan', data: '{"id":"orphan","title":"ghost"}', search_text: 'ghost', source_order: 0 }));
     database.run(database.query.schema.dropTable(table)); database.close();
     database = new DatabaseConnection(path);
     try {
@@ -107,6 +109,7 @@ test('obsolete projection version invalidates stale derived content and rebuilds
   try {
     seed(database); database.projections.refreshAll(); const originals = canonical(database), expected = derived(database);
     database.run(database.query.updateTable('question_read_model').set({ data: '{"title":"stale"}', search_text: 'stale', title_key: 'stale' }));
+    database.run(database.query.insertInto('document_read_model').values({ id: 'orphan', data: '{"id":"orphan","title":"ghost"}', search_text: 'ghost', source_order: 0 }));
     database.run(database.query.insertInto('asset_references').values({ source_table: 'questions', source_id: 'ghost', asset_id: 'ghost-asset' }));
     database.run(database.query.updateTable('metadata').set({ value: 'obsolete-test-version' }).where('key', '=', 'read_projection_version'));
     database.projections.initialize(); assert.ok(pending(database).length > 0); database.projections.refreshAll();
@@ -126,10 +129,37 @@ test('compact paper snapshots retain original-root identities without retaining 
   }finally{database.close();}
 });
 
+test('library-only upgrades rebuild exact raw-text cards without invalidating question indexes, and follow external changes and rollback', async t => {
+  const path = await temporary(t); let database = new DatabaseConnection(path);
+  seed(database); database.projections.refreshAll();
+  const original = canonical(database), initial = derived(database), document = { id: 'new-book', title: 'ÉCOLE %_', author: 'Åuthor', bodyMarkdown: '# **READ**\n' + '书籍正文。'.repeat(500), categoryIds: [], tagIds: [] };
+  database.run(database.query.schema.dropTable('document_read_model')); database.close();
+  database = new DatabaseConnection(path);
+  try {
+    assert.equal(database.schemaChanged, true);
+    assert.ok(pending(database).length && pending(database).every(row => row.source_table === 'documents'));
+    database.projections.refreshAll(); assert.deepEqual(derived(database), initial); assert.deepEqual(canonical(database), original);
+    const external = new DatabaseConnection(path);
+    try { external.putRecord('documents', document.id, document); } finally { external.close(); }
+    database.projections.ensure(['documents']);
+    const card = () => database.one(database.query.selectFrom('document_read_model').selectAll().where('id', '=', document.id));
+    const row = card()!, metadata = JSON.parse(row.data);
+    assert.equal(metadata.bodyMarkdown, undefined); assert.equal(metadata.excerpt, document.bodyMarkdown.replace(/[#*`\[\]>_]/g, '').slice(0, 110));
+    assert.equal(row.search_text, [document.title, document.author, '', '', document.bodyMarkdown].join(' ').toLowerCase());
+    assert.throws(() => database.transaction(() => {
+      database.putRecord('documents', document.id, { ...document, title: 'ROLLBACK' }); database.projections.ensure(['documents']);
+      assert.match(card()!.search_text, /rollback/); throw Error('abort');
+    }), /abort/);
+    assert.deepEqual(card(), row);
+    database.deleteRecord('documents', document.id); database.projections.ensure(['documents']); assert.equal(card(), undefined);
+  } finally { database.close(); }
+});
+
 test('explicit rebuild preserves byte-identical entities, notes, dates, statuses, settings and AI key', () => {
   const database = new DatabaseConnection(':memory:');
   try {
     seed(database); const originals = canonical(database); database.projections.refreshAll(); const expected = derived(database);
+    database.run(database.query.insertInto('document_read_model').values({ id: 'orphan', data: '{"id":"orphan","title":"ghost"}', search_text: 'ghost', source_order: 0 }));
     database.projections.rebuild(); database.projections.rebuild();
     assert.deepEqual(canonical(database), originals); assert.deepEqual(derived(database), expected);
     assert.equal(database.getRecord<any>('questions', 'question-original').status, 'pending');

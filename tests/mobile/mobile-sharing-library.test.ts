@@ -12,8 +12,8 @@ test('mobile shares self-contained content through production WASM routes and re
   await build({configFile:false,logLevel:'error',define:{'process.env':'{}'},resolve:{alias:nativeAliases},build:{outDir:folder,emptyOutDir:false,minify:false,lib:{entry:resolve('mobile/runtime.ts'),formats:['es'],fileName:()=> 'runtime.mjs'}}});
   const {createLocalRuntime}=await import(pathToFileURL(resolve(folder,'runtime.mjs')).href);
   const sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
-  const seed={schemaVersion:1,domains:[],categories:[],tags:[],questions:[],documents:[],papers:[]};let durable:Uint8Array|undefined,failSave=false;
-  const storage={async load(){return durable?.slice();},async save(bytes:Uint8Array){if(failSave)throw new Error('simulated full disk');durable=bytes.slice();}};
+  const seed={schemaVersion:1,domains:[],categories:[],tags:[],questions:[],documents:[],papers:[]};let durable:Uint8Array|undefined,failSave=false,saves=0;
+  const storage={async load(){return durable?.slice();},async save(bytes:Uint8Array){if(failSave)throw new Error('simulated full disk');durable=bytes.slice();saves++;}};
   let runtime=await createLocalRuntime(sql,seed,storage);t.after(()=>runtime.close());
   const api=async(path:string,method='GET',data?:unknown,status=200):Promise<any>=>{const response=await runtime.fetch(path,{method,...(data===undefined?{}:{body:JSON.stringify(data)})});const body=await response.json();assert.equal(response.status,status,JSON.stringify(body));return body;};
   const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9WQAAAAASUVORK5CYII=';
@@ -33,6 +33,14 @@ test('mobile shares self-contained content through production WASM routes and re
   });
   await t.test('mobile library metadata is queryable and failed share durable writes restore the complete graph',async()=>{
     const taxonomy=await api('/api/taxonomy');const importedDomain=taxonomy.domains.find((entry:any)=>entry.name==='移动分享源领域');const document=await api('/api/documents','POST',{title:'手机书籍',kind:'书籍',bodyMarkdown:'# 书籍',domainIds:[importedDomain.id],categoryIds:['mobile-share-category'],author:'移动作者',publisher:'出版社',publishedYear:'2025'},201);assert.equal((await api(`/api/documents?domainId=${importedDomain.id}&kind=书籍&search=移动作者`))[0].id,document.id);
+    const page=await api(`/api/documents/page?domainId=${importedDomain.id}&kind=书籍&search=移动作者&page=99&pageSize=10`);assert.equal(page.total,1);assert.equal(page.page,1);assert.equal(page.items[0].id,document.id);assert.equal(page.items[0].bodyMarkdown,undefined);assert.equal(page.items[0].excerpt,' 书籍');assert.equal((await api('/api/documents/page?search='+encodeURIComponent("%_' OR 1=1 --"))).total,0);
     const changed=structuredClone(data);changed.questions[0].id='mobile-failed-share-question';changed.questions[0].title='写入失败不得留下';changed.papers=[];const before=durable!.slice();failSave=true;await api('/api/sharing/import','POST',{data:changed,confirmed:true},507);failSave=false;assert.deepEqual(durable,before);await api('/api/questions/mobile-failed-share-question','GET',undefined,404);assert.equal((await api(`/api/documents/${document.id}`)).author,'移动作者');
+    const expected=await api('/api/documents/page');await runtime.close();
+    const legacy=new sql.Database(durable!);legacy.run('DROP TABLE document_read_model');durable=legacy.export();legacy.close();
+    runtime=await createLocalRuntime(sql,seed,storage,{dailyPushScheduler:false});assert.deepEqual(await api('/api/documents/page'),expected);
+    const beforeReads=saves;await api('/api/documents/page?search='+encodeURIComponent('移动作者'));await api('/api/documents/kinds');assert.equal(saves,beforeReads,'warm card reads do not persist the database');
+    failSave=true;await api('/api/documents/'+document.id,'PUT',{...document,bodyMarkdown:'UNSAVED_LIBRARY_SEARCH_GHOST'},507);failSave=false;
+    assert.equal((await api('/api/documents/page?search=UNSAVED_LIBRARY_SEARCH_GHOST')).total,0);assert.deepEqual(await api('/api/documents/page'),expected);
+
   });
 });

@@ -69,6 +69,7 @@ test('Android restores validated SQLite copies atomically with independent recov
   for (const bytes of [new TextEncoder().encode('not a SQLite database'), emptyBytes,
     mutate(db => db.run('DROP TABLE questions')),
     mutate(db => db.run("UPDATE metadata SET value='2' WHERE key='schema_version'")),
+    mutate(db => db.run("UPDATE metadata SET value='2' WHERE key='document_projection_version'")),
     mutate(db => db.run('PRAGMA user_version=2')),
     mutate(db => db.run('UPDATE questions SET data=? WHERE id=?', [JSON.stringify({ ...question, id: 'MISMATCH' }), questionId])),
     mutate(db => db.run('UPDATE questions SET data=? WHERE id=?', [JSON.stringify({ ...question, difficulty: 99 }), questionId])),

@@ -98,6 +98,8 @@ test('library pages preserve old inferred domains, combined filters, Unicode sea
     documents.push(document); store.put('documents', document.id, document);
   }
   const baseline = documents.filter(document => !document._archived).map(document => normalizeDocument(store, document, categories)).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  // Initial derived index work is separate from steady-state page-local reads.
+  store.database.projections.ensure(['documents']);
   const reads = observeReads(store), firstPage = responseJson(await app.inject('/api/documents?pageSize=10')); reads.restore();
   t.diagnostic(JSON.stringify({ documentPageReads: reads.result }));
   assert.equal(firstPage.items.length, 10); assert.equal(reads.result.documentRows, 10);

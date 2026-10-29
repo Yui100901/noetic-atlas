@@ -34,6 +34,9 @@ async function fixture(t: test.TestContext) {
 
 test('versions normalize an optional v prefix and reject unsafe or unsupported input', () => {
   for (const [value, expected] of [
+    ['1.5', '1.5'],
+    [' V1.6 ', '1.6'],
+    ['v2.0-rc.1', '2.0-rc.1'],
     ['v1.5.1', '1.5.1'],
     [' V2.0.0-rc.1 ', '2.0.0-rc.1'],
     ['0.1.0', '0.1.0'],
@@ -41,7 +44,12 @@ test('versions normalize an optional v prefix and reject unsafe or unsupported i
     assert.equal(normalizeReleaseVersion(value), expected);
   for (const value of [
     '',
-    '1.2',
+    '1',
+    '1.2.3.4',
+    '01.2',
+    '1.02',
+    '1.2.',
+    '1.2-rc.01',
     '01.2.3',
     '1.02.3',
     '1.2.3-rc.01',
@@ -62,10 +70,12 @@ test('versions normalize an optional v prefix and reject unsafe or unsupported i
 });
 
 test('Android mapping validates minor/patch, positivity and Google Play versionCode ceiling', () => {
+  assert.equal(androidVersionCode('1.5'), 10500);
+  assert.equal(androidVersionCode('v1.5-rc.1'), 10500);
   assert.equal(androidVersionCode('1.5.0'), 10500);
   assert.equal(androidVersionCode('v1.5.1-rc.1'), 10501);
   assert.equal(androidVersionCode('210000.0.0'), 2100000000);
-  for (const version of ['1.100.0', '1.0.100', '0.0.0', '210000.0.1']) {
+  for (const version of ['1.100', '1.100.0', '1.0.100', '0.0', '0.0.0', '210000.0.1']) {
     assert.throws(
       () => createReleasePlan(parseReleaseArgs(['android', '--version', version])),
       /Android/,
@@ -80,6 +90,7 @@ test('Android mapping validates minor/patch, positivity and Google Play versionC
 
 test('TTY version choice supports new/default versions while explicit and non-TTY choices do not prompt', async () => {
   for (const [answer, expected] of [
+    ['v1.6\n', '1.6'],
     ['v1.6.0\n', '1.6.0'],
     ['\n', '1.5.0'],
   ]) {
@@ -120,6 +131,29 @@ test('TTY version choice supports new/default versions while explicit and non-TT
     ).version,
     '1.5.0',
   );
+});
+
+test('two-part versions persist exactly in package metadata and every artifact name', async (t) => {
+  const f = await fixture(t),
+    update = await syncReleaseVersion(f.root, 'v1.6');
+  const [pkg, lock] = await f.current();
+  assert.equal(JSON.parse(pkg).version, '1.6');
+  assert.equal(JSON.parse(lock).version, '1.6');
+  assert.equal(JSON.parse(lock).packages[''].version, '1.6');
+  assert.equal(JSON.parse(lock).packages['node_modules/example'].version, '1.5.0');
+  assert.equal(
+    (await selectReleaseVersion(parseReleaseArgs(['web']), { root: f.root, isTTY: false })).version,
+    '1.6',
+  );
+  assert.deepEqual(expectedReleaseArtifacts('all', '1.6'), [
+    'noetic-atlas-1.6-source.zip',
+    'noetic-atlas-1.6-runtime.zip',
+    'noetic-atlas-1.6-windows-x64.zip',
+    'noetic-atlas-1.6-android.apk',
+    'noetic-atlas:1.6',
+  ]);
+  await update.rollback();
+  assert.deepEqual(await f.current(), [f.pkg, f.lock]);
 });
 
 test('metadata update changes only three version strings, preserves dependency versions and can roll back exact bytes', async (t) => {
@@ -182,23 +216,17 @@ test('invalid lock metadata fails before writes and rollback never overwrites su
 
 test('dry-run uses requested version and filenames with zero fixture mutation or signing access', async (t) => {
   const f = await fixture(t),
-    options = parseReleaseArgs([
-      'all',
-      '--version',
-      'v1.6.2',
-      '--dry-run',
-      '--docker-command-only',
-    ]);
+    options = parseReleaseArgs(['all', '--version', 'v1.6', '--dry-run', '--docker-command-only']);
   const result = await executeRelease(options, {
     root: f.root,
     platform: 'win32',
     env: { PATH: '' },
   });
-  assert.equal(result.version, '1.6.2');
-  assert.deepEqual(result.expectedArtifacts, expectedReleaseArtifacts('all', '1.6.2'));
-  assert.ok(result.expectedArtifacts.includes('noetic-atlas-1.6.2-android.apk'));
+  assert.equal(result.version, '1.6');
+  assert.deepEqual(result.expectedArtifacts, expectedReleaseArtifacts('all', '1.6'));
+  assert.ok(result.expectedArtifacts.includes('noetic-atlas-1.6-android.apk'));
   assert.ok(
-    result.steps.find((step: any) => step.target === 'docker').args.includes('noetic-atlas:1.6.2'),
+    result.steps.find((step: any) => step.target === 'docker').args.includes('noetic-atlas:1.6'),
   );
   assert.deepEqual(await f.current(), [f.pkg, f.lock]);
   assert.equal((await readdir(f.root)).length, 2);

@@ -41,7 +41,7 @@ export const HELP = `认知星图一键发布
 
   --skip-checks          跳过自动化测试；仍构建并校验公开数据和文档
   --dry-run              仅显示计划，不执行命令、不生成文件
-  --version <版本>      指定 x.y.z 或 x.y.z-rc.1，可带前导v；不创建Git标签或运行版本hooks
+  --version <版本>      指定 x.y 或 x.y.z，也可附 -rc.1 或前导v；不创建Git标签或运行版本hooks
   --docker-command-only  只打印 Docker 构建命令，不调用 Docker
   --java-root <路径>     Android 构建使用的 Java 21 路径（或 JAVA_HOME）
   --sdk-root <路径>      Android SDK 路径（或 ANDROID_HOME）

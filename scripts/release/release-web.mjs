@@ -5,6 +5,7 @@ import { resolve, relative, join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { pathToFileURL } from 'node:url';
+import { normalizeReleaseVersion } from './version.mjs';
 import { validateEmptyInstall, validateBaseConfiguration } from './validate-public-data.mjs';
 
 const excluded =
@@ -113,9 +114,8 @@ export async function packageWebRelease({
   onlySource = false,
 } = {}) {
   const packageJson = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-  const version = packageJson.version;
-  if (packageJson.name !== 'noetic-atlas' || !/^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(version))
-    throw new Error('项目名或版本无效');
+  if (packageJson.name !== 'noetic-atlas') throw new Error('项目名或版本无效');
+  const version = normalizeReleaseVersion(packageJson.version);
   const counts = validateEmptyInstall();
   validateBaseConfiguration(
     JSON.parse(await readFile(resolve(root, 'config/defaults.json'), 'utf8')),

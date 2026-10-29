@@ -51,13 +51,13 @@ Windows 也可双击 `启动学习站.cmd`。默认地址：
 
 | 环境 | 交互选择 | 指定目标与版本 |
 | --- | --- | --- |
-| Windows CMD | 双击 `release.cmd` | `.\release.cmd web --version 1.5.1` |
-| PowerShell | `.\release.ps1` | `.\release.ps1 all --version 1.5.1` |
-| Linux / Bash | `sh ./release.sh` | `sh ./release.sh web --version 1.5.1` |
+| Windows CMD | 双击 `release.cmd` | `.\release.cmd web --version 1.6` |
+| PowerShell | `.\release.ps1` | `.\release.ps1 all --version 1.6` |
+| Linux / Bash | `sh ./release.sh` | `sh ./release.sh web --version 1.6` |
 
 也可运行 `npm run release -- all`，目标支持 `all`、`windows`、`web`、`android`、`docker`、`source`、`clean`；`--dry-run` 查看计划，`--docker-command-only` 仅输出 Docker 命令。`all` 构建当前系统支持的版本，Linux/macOS 不构建 Windows 桌面包。`android` 和 `all` 在构建前检查正式签名、JDK 21 与 Android SDK，缺失时停止。构建输出位于 `artifacts/releases/`，包含版本化签名 APK、签名验证报告、清单与 SHA256。
 
-未指定`--version`时，交互终端会询问版本，回车沿用当前值；非交互运行沿用当前版本。正式执行会同步`package.json`与`package-lock.json`的版本，成功后持久保留；检查或构建失败时尽力回滚，遇到外部编辑则不覆盖并提示核对。Android构建自动映射版本号，各端产物按所选版本命名。`--dry-run --version 1.5.1`只预览，不写版本；`clean`不询问版本，也不接受`--version`。脚本不会自动commit、打Git标签或发布GitHub Release。
+发布版本支持`x.y`和`x.y.z`，例如`1.6`、`1.5.1`，也可附`-rc.1`等预发布段；保留所选段数用于版本显示及各端包名。未指定`--version`时，交互终端会询问版本，回车沿用当前值；非交互运行沿用当前版本。正式执行会同步`package.json`与`package-lock.json`的版本，成功后持久保留；检查或构建失败时尽力回滚，遇到外部编辑则不覆盖并提示核对。Android缺省修订号按0计算，`1.6`和`1.6.0`对应同一`versionCode`，升级时须提高版本。`--dry-run --version 1.6`只预览，不写版本；`clean`不询问版本，也不接受`--version`。脚本不会自动commit、打Git标签或发布GitHub Release。
 
 当前软件版本仍为 **1.5.0**，见[本次更新](./docs/版本说明-1.5.0.md)；新增版本输入能力不会自动升版。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
 

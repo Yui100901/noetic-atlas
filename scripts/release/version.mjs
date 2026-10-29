@@ -4,24 +4,25 @@ import { join, basename, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 
-const pattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?$/;
+const pattern =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:-([0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?$/;
 export function normalizeReleaseVersion(value) {
-  if (typeof value !== 'string') throw new Error('版本号须为 x.y.z，可附 -rc.1 等预发布段');
+  if (typeof value !== 'string') throw new Error('版本号须为 x.y 或 x.y.z，可附 -rc.1 等预发布段');
   const version = value.trim().replace(/^[vV]/, ''),
     match = pattern.exec(version);
   if (
     !match ||
-    match.slice(1, 4).some((part) => !Number.isSafeInteger(Number(part))) ||
+    match.slice(1, 4).some((part) => part !== undefined && !Number.isSafeInteger(Number(part))) ||
     match[4]?.split('.').some((part) => /^\d+$/.test(part) && part.length > 1 && part[0] === '0')
   ) {
-    throw new Error('版本号须为 x.y.z，可附 -rc.1 等预发布段；不支持前导零或 +build 元数据');
+    throw new Error('版本号须为 x.y 或 x.y.z，可附 -rc.1 等预发布段；不支持前导零或 +build 元数据');
   }
   return version;
 }
 
 export function androidVersionCode(value) {
   const version = normalizeReleaseVersion(value),
-    [major, minor, patch] = version.split('-')[0].split('.').map(Number);
+    [major, minor, patch = 0] = version.split('-')[0].split('.').map(Number);
   if (minor >= 100 || patch >= 100) throw new Error('Android 版本的 minor/patch 必须小于100');
   const code = major * 10000 + minor * 100 + patch;
   if (!Number.isSafeInteger(code) || code < 1 || code > 2100000000)

@@ -12,6 +12,8 @@ import type { SharePackage } from '../../shared/models/sharing.js';
 import { asShare } from './manage.js';
 // @ts-expect-error Release helpers deliberately use plain JavaScript.
 import { createZip } from '../release/release-web.mjs';
+// @ts-expect-error Release helpers deliberately use plain JavaScript.
+import { normalizeReleaseVersion } from '../release/version.mjs';
 
 const projectRoot = resolve(import.meta.dirname, '../..');
 export const DOMAIN_PART_MAX_QUESTIONS = 500;
@@ -129,8 +131,8 @@ const rightsFor = (domain: Domain) => ({
 export async function exportDomainPacks(options: DomainExportOptions = {}) {
   const root = await realpath(resolve(options.root || projectRoot));
   const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-  const version: string = packageJson.version;
-  if (packageJson.name !== 'noetic-atlas' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('项目名或版本无效');
+  if (packageJson.name !== 'noetic-atlas') throw new Error('项目名或版本无效');
+  const version: string = normalizeReleaseVersion(packageJson.version);
   const database = resolve(root, options.database || 'data/noetic-atlas.sqlite');
   const output = resolve(root, options.output || `artifacts/domain-packs/v${version}`);
   if (await exists(output)) throw new Error('输出目录已存在，请指定新目录，避免混入旧文件');

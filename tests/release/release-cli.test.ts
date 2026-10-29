@@ -197,6 +197,8 @@ test('Docker command-only plan does not contain local builds and command discove
 test('OS release entrypoints preserve spaced parameters and return the shared CLI exit status', () => {
   const args = [
     'all',
+    '--version',
+    '1.6',
     '--dry-run',
     '--java-root',
     'JDK 21 folder',
@@ -225,6 +227,7 @@ test('OS release entrypoints preserve spaced parameters and return the shared CL
       encoding: 'utf8',
     });
     assert.equal(result.status, 0, `${entrypoint.command}: ${result.stderr}`);
+    assert.match(result.stdout, /noetic-atlas-1\.6-android\.apk/);
     assert.match(result.stdout, /--java-root "JDK 21 folder" --sdk-root "Android SDK folder"/);
     const failure = spawnSync(entrypoint.command, [...entrypoint.args, 'invalid-target'], {
       cwd: root,

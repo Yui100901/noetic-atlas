@@ -9,17 +9,14 @@ import { prepareGithubRelease } from '../../scripts/release/prepare-github.mjs';
 // @ts-expect-error Release helpers deliberately use plain JavaScript.
 import { createZip, SOFTWARE_DATA_BOUNDARY } from '../../scripts/release/release-web.mjs';
 
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, version = '1.0.0') {
   const root = await mkdtemp(join(tmpdir(), 'atlas-github-release-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, 'artifacts/releases'), { recursive: true });
   await mkdir(join(root, 'data'), { recursive: true });
-  await writeFile(
-    join(root, 'package.json'),
-    JSON.stringify({ name: 'noetic-atlas', version: '1.0.0' }),
-  );
+  await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'noetic-atlas', version }));
   await writeFile(join(root, 'data/seed.json'), 'ignored private data');
-  const file = 'noetic-atlas-1.0.0-runtime.zip',
+  const file = `noetic-atlas-${version}-runtime.zip`,
     bytes = createZip(
       [
         { name: 'config/defaults.json', data: await readFile('config/defaults.json') },
@@ -33,12 +30,12 @@ async function fixture(t: test.TestContext) {
           ),
         },
       ],
-      'noetic-atlas-1.0.0',
+      `noetic-atlas-${version}`,
     );
   await writeFile(join(root, 'artifacts/releases', file), bytes);
   const report = {
     project: 'noetic-atlas',
-    version: '1.0.0',
+    version,
     checksSkipped: false,
     targets: [{ target: 'web', status: 'built', artifacts: [file] }],
     artifacts: [
@@ -51,29 +48,43 @@ async function fixture(t: test.TestContext) {
   return { root, report, save };
 }
 
-test('GitHub upload staging includes only verified software and never copies local data or optional content', async (t) => {
-  const { root } = await fixture(t);
-  await writeFile(join(root, 'data/private-configuration.json'), 'private');
-  await writeFile(
-    join(root, 'artifacts/releases/noetic-atlas-1.0.0-content.zip'),
-    'optional content',
-  );
-  const result = await prepareGithubRelease({ root });
-  assert.equal(result.softwareOnly, true);
-  assert.equal(result.expandedContentIncluded, false);
-  assert.deepEqual((await readdir(result.output)).sort(), [
-    'RELEASE-NOTES.md',
-    'SHA256SUMS.txt',
-    'noetic-atlas-1.0.0-runtime.zip',
-    'release-files.json',
-  ]);
-  assert.equal(result.initialData.questions, 0);
-  assert.match(
-    await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8'),
-    /密钥不会进入配置 JSON/,
-  );
-  await assert.rejects(() => prepareGithubRelease({ root }), /已存在/);
-});
+for (const version of ['1.0.0', '1.5']) {
+  test(`GitHub upload staging preserves ${version} and includes only verified software`, async (t) => {
+    const { root } = await fixture(t, version);
+    await writeFile(join(root, 'data/private-configuration.json'), 'private');
+    await writeFile(
+      join(root, `artifacts/releases/noetic-atlas-${version}-content.zip`),
+      'optional content',
+    );
+    const result = await prepareGithubRelease({ root });
+    assert.equal(result.version, version);
+    assert.equal(result.tag, `v${version}`);
+    assert.equal(result.output, join(root, 'artifacts/github', `v${version}`));
+    assert.equal(result.softwareOnly, true);
+    assert.equal(result.expandedContentIncluded, false);
+    assert.deepEqual((await readdir(result.output)).sort(), [
+      'RELEASE-NOTES.md',
+      'SHA256SUMS.txt',
+      `noetic-atlas-${version}-runtime.zip`,
+      'release-files.json',
+    ]);
+    assert.equal(result.initialData.questions, 0);
+    const manifest = JSON.parse(await readFile(join(result.output, 'release-files.json'), 'utf8'));
+    assert.equal(manifest.version, version);
+    assert.equal(manifest.tag, `v${version}`);
+    assert.equal(manifest.files[0].file, `noetic-atlas-${version}-runtime.zip`);
+    assert.ok(
+      (await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8')).startsWith(
+        `# 认知星图 ${version}\n`,
+      ),
+    );
+    assert.match(
+      await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8'),
+      /密钥不会进入配置 JSON/,
+    );
+    await assert.rejects(() => prepareGithubRelease({ root }), /已存在/);
+  });
+}
 
 test('upload notes include the matching version changelog when supplied', async (t) => {
   const { root } = await fixture(t);

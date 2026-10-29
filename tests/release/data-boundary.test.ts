@@ -52,9 +52,10 @@ test('a link inside an allowed source folder cannot bypass the local-data exclus
   await assert.rejects(collectReleaseFiles(folder, ['docs']), /受限本地文件/);
 });
 
-test('actual source and runtime ZIPs contain only base configuration and no local data', async t => {
+for (const version of ['1.0.0', '1.5']) {
+test(`source and runtime ZIPs preserve ${version} and contain only base configuration without local data`, async t => {
   const { folder, put } = await fixture(t);
-  await put('package.json', '{"name":"noetic-atlas","version":"1.0.0"}');
+  await put('package.json', JSON.stringify({ name: 'noetic-atlas', version }));
   await put('LICENSE', 'Publisher-selected license fixture');
   await put('data/seed.json', '{"questions":[{"id":"NEVER-BUNDLE"}]}');
   await put('config/defaults.json',await readFile(join(root,'config/defaults.json'),'utf8'));
@@ -70,20 +71,27 @@ test('actual source and runtime ZIPs contain only base configuration and no loca
   await mkdir(join(folder, 'tests'));
   await put('scripts/build/android-build.mjs', 'export const sourceBuildTool = true;');
   await put('android/app/build/intermediates/generated.txt', 'Must not be shipped');
-  await put('dist/package.json', '{"name":"noetic-atlas","version":"1.0.0","type":"module"}');
+  await put('dist/package.json', JSON.stringify({ name: 'noetic-atlas', version, type: 'module' }));
   const result = await packageWebRelease({ root: folder });
+  assert.equal(result.version, version);
+  assert.deepEqual(result.artifacts.map((artifact: { file: string }) => artifact.file), [`noetic-atlas-${version}-source.zip`, `noetic-atlas-${version}-runtime.zip`]);
   assert.equal(result.artifacts.length, 2);
   for (const artifact of result.artifacts) {
-    const entries = zipEntries(await readFile(join(folder, 'artifacts/releases', artifact.file)));
+    const bytes = await readFile(join(folder, 'artifacts/releases', artifact.file));
+    const firstName = bytes.subarray(30, 30 + bytes.readUInt16LE(26)).toString('utf8');
+    assert.ok(firstName.startsWith(`noetic-atlas-${version}/`));
+    const entries = zipEntries(bytes);
+    assert.equal(JSON.parse(entries.get('package.json')!.toString()).version, version);
     assert.deepEqual([...entries.keys()].filter(name => name.startsWith('data/')), []);
     assert.deepEqual([...entries.keys()].filter(name => name.startsWith('config/')), ['config/defaults.json']);
     assert.equal(entries.get('LICENSE')!.toString(), 'Publisher-selected license fixture');
     assert.equal(entries.get('docs/API-CONTRACT.md')!.toString(), 'API contract fixture');
     assert.ok(!entries.has('API-CONTRACT.md'));
-    if (artifact.file.includes('-runtime.zip')) assert.equal(JSON.parse(entries.get('dist/package.json')!.toString()).version, '1.0.0');
+    if (artifact.file.includes('-runtime.zip')) assert.equal(JSON.parse(entries.get('dist/package.json')!.toString()).version, version);
     if(artifact.file.includes('-source.zip'))assert.equal(entries.get('scripts/build/android-build.mjs')!.toString(),'export const sourceBuildTool = true;');
     assert.ok(!entries.has('android/app/build/intermediates/generated.txt'));
     const manifest = JSON.parse(entries.get('release-manifest.json')!.toString('utf8'));
+    assert.equal(manifest.version, version);
     assert.equal(manifest.dataBoundary.expandedBanks, 'separate-content-release');
     assert.equal(manifest.dataBoundary.includesUserConfiguration, false);
     assert.equal(manifest.counts.questions, 0);
@@ -91,6 +99,7 @@ test('actual source and runtime ZIPs contain only base configuration and no loca
     assert.equal(manifest.dataBoundary.includesQuestionData,false);
   }
 });
+}
 
 test('Git excludes the entire data directory and custom config while preserving only base config', async t => {
   if (spawnSync('git', ['--version']).status !== 0) { t.skip('Git is not installed'); return; }

@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
 import { validateEmptyInstall, validateBaseConfiguration } from './validate-public-data.mjs';
 import { validateAndroidSignatureProof } from './android-artifact.mjs';
+import { normalizeReleaseVersion } from './version.mjs';
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 function verifyEmptySoftwareZip(bytes) {
@@ -71,9 +72,8 @@ export async function prepareGithubRelease({
 } = {}) {
   root = await realpath(root);
   const config = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-  if (config.name !== 'noetic-atlas' || !/^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(config.version))
-    throw new Error('项目名或版本无效');
-  const version = config.version,
+  if (config.name !== 'noetic-atlas') throw new Error('项目名或版本无效');
+  const version = normalizeReleaseVersion(config.version),
     artifactsRoot = join(root, 'artifacts'),
     releaseRoot = join(artifactsRoot, 'releases');
   const initialData = validateEmptyInstall();

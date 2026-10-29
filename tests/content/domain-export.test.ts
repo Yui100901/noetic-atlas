@@ -31,12 +31,12 @@ function populate(store: Store) {
   store.put('categories', 'computer-root', { id: 'computer-root', domainId: 'computer-science', name: '基础', parentId: null, description: '', sortOrder: 0 });
   store.put('categories', 'category-computer-science', { ...store.require('categories','category-computer-science'), parentId: 'computer-root' });
 }
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, version = '1.0.0') {
   const root = await mkdtemp(join(tmpdir(),'atlas-domain-export-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root,'data/content-sources'), { recursive: true });
   await mkdir(join(root,'docs/licenses'), { recursive: true });
-  await writeFile(join(root,'package.json'), JSON.stringify({ name: 'noetic-atlas', version: '1.0.0' }));
+  await writeFile(join(root,'package.json'), JSON.stringify({ name: 'noetic-atlas', version }));
   await writeFile(join(root,'data/content-sources/source.json'), JSON.stringify({ source: 'fixture', license: 'source-specific' }));
   await writeFile(join(root,'docs/licenses/license.html'), '<p>Retain this licence.</p>');
   await writeFile(join(root,'data/private.json'), canary);
@@ -78,23 +78,29 @@ function unzip(bytes: Buffer) {
   return files;
 }
 
-test('domain CLI exports seven independently importable pending banks without modifying the source database', async t => {
-  const { root, database } = await fixture(t);
+for (const version of ['1.0.0', '1.5']) {
+test(`domain CLI preserves ${version} and exports importable pending banks without modifying source`, async t => {
+  const { root, database } = await fixture(t, version);
   const before = sha(await readFile(database));
   const result = await exportDomainPacks({ root });
+  assert.equal(result.version,version);
+  assert.equal(result.output,join(root,'artifacts/domain-packs',`v${version}`));
   assert.equal(sha(await readFile(database)),before);
   assert.deepEqual(result.counts,{ domains: 7, uniqueQuestions: 7, domainQuestionMemberships: 8, crossDomainQuestions: 1, duplicateMemberships: 1 });
   assert.equal((await readdir(result.output)).length,9);
   assert.deepEqual(result.domains.map(domain => domain.domainId),domainIds);
   const allIds = new Set<string>(), byDomain = new Map<string,SharePackage>();
   for (const domain of result.domains) {
-    assert.equal(domain.file,`noetic-atlas-content-${domain.domainId}-1.0.0.zip`);
+    assert.equal(domain.file,`noetic-atlas-content-${domain.domainId}-${version}.zip`);
     const bytes = await readFile(join(result.output,domain.file));
     assert.equal(sha(bytes),domain.sha256);
+    const firstName=bytes.subarray(30,30+bytes.readUInt16LE(26)).toString('utf8');
+    assert.ok(firstName.startsWith(`noetic-atlas-content-${domain.domainId}-${version}/`));
     const files = unzip(bytes);
     assert.ok(files.has('licenses/license.html')); assert.ok(files.has('sources/source.json'));
     assert.ok(![...files.values()].some(data => data.includes(canary)));
     const manifest = JSON.parse(files.get('domain-manifest.json')!.toString('utf8'));
+    assert.equal(manifest.version,version);
     assert.equal(manifest.redistributionReviewRequired,domain.domainId==='driving');
     assert.equal(manifest.rights.redistributionReviewRequired,domain.domainId==='driving');
     assert.equal(manifest.rights.blanketSublicense,false);
@@ -133,6 +139,7 @@ test('domain CLI exports seven independently importable pending banks without mo
   const sums = await readFile(join(result.output,'CONTENT-SHA256SUMS.txt'),'utf8');
   assert.ok(sums.includes(`${sha(await readFile(join(result.output,'domain-manifest.json')))}  domain-manifest.json`));
 });
+}
 
 test('explicit domain selection retains complete cross-domain taxonomy without leaking other questions', async t => {
   const { root } = await fixture(t);

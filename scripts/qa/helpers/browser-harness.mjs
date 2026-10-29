@@ -30,6 +30,7 @@ export async function stopChild(child, timeoutMs = 3000) {
 export async function startBrowserHarness({
   name,
   setup = '',
+  staticRoot = 'dist/web',
   viewport = { width: 1440, height: 1000 },
   reducedMotion = 'reduce',
   onDialog = (dialog) => void dialog.accept(),
@@ -42,7 +43,7 @@ export async function startBrowserHarness({
   assert.ok(childPath && !childPath.startsWith('..') && !isAbsolute(childPath));
   await mkdir(folder, { recursive: true });
   const fixture = `import assert from 'node:assert/strict';import {buildApp} from './server/index.ts';
-const app=await buildApp({databasePath:':memory:',seedPath:${JSON.stringify(resolve(folder, 'no-implicit-seed'))},staticRoot:'dist/web',dailyPushScheduler:false,logger:false});
+const app=await buildApp({databasePath:':memory:',seedPath:${JSON.stringify(resolve(folder, 'no-implicit-seed'))},staticRoot:${JSON.stringify(resolve(projectRoot, staticRoot))},dailyPushScheduler:false,logger:false});
 const state=await(async()=>{${setup}\n})();
 console.log(${JSON.stringify(readyPrefix)}+JSON.stringify({...state,origin:await app.listen({host:'127.0.0.1',port:0})}));`;
   const server = spawn(

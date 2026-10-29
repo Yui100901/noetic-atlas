@@ -69,7 +69,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   const reverse = reviewDirection === 'meaning_to_word' && !!(readingVocabulary || readingConcept);
   const recallPrompt = readingConcept?.meaningPrompt || readingVocabulary?.meaningPrompt || '';
   const recallTarget = readingConcept?.term || readingVocabulary?.headword || '';
-  return <div className="question-viewer" onClickCapture={event => {
+  return <div className={`question-viewer${presentation === 'page' ? ' question-viewer-page' : ''}`} onClickCapture={event => {
     if (presentation === 'page') return;
     const link = (event.target as HTMLElement).closest('a');
     if (link?.getAttribute('href')?.startsWith('#/') && link.getAttribute('target') !== '_blank' && !link.hasAttribute('data-question-history-review')) { event.preventDefault(); toast('请先关闭看题窗口，再打开其他页面'); }

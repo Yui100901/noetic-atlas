@@ -1,0 +1,17 @@
+/* Group material appears in practice, history and independently loaded readers. */
+.group-material {
+  margin: 18px 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: 10px;
+  background: var(--theme-inset, #f7f8f4);
+}
+.group-material .markdown > :last-child {
+  margin-bottom: 0;
+}
+@media (max-width: 700px) {
+  .group-material {
+    padding: 14px;
+  }
+}

@@ -44,5 +44,8 @@
   "scripts/qa/live-ai.ts",
   "scripts/release/release-windows.mjs",
   "scripts/release/version.mjs",
-  "tests/release/release-version.test.ts"
+  "tests/release/release-version.test.ts",
+  "scripts/qa/check-learning-reader-layout-ui.mjs",
+  "web/features/practice/learning-origins.css",
+  "web/shared/ui/group-material.css"
 ]

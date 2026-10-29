@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react';
 import type { GlobalLearningKind, GlobalLearningQuestion, LearningOrigin } from '../../../shared/practice/global-learning';
 import { href, idPath, localDate } from '../../shared/lib/api';
 import { vocabularyDirectionLabel } from '../papers/vocabulary-practice';
+import './learning-origins.css';
 
 function originTitle(origin: LearningOrigin) {
   const title = origin.source === 'library' ? '知识题库' : origin.source === 'quick' ? '随机与单题自测' : origin.paperTitle;

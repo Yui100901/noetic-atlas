@@ -23,6 +23,12 @@
 .question-viewer-study .full-width { min-height: 36px; padding: 6px 10px; }
 .question-viewer-notes h3 { display: flex; align-items: center; gap: 8px; }
 .question-viewer-notes > .field { margin-top: 18px; }
+/* Every independent reader uses this layout, including special learning sets.
+   Keep page spacing here rather than relying on the route loaded beforehand. */
+.question-viewer-page .question-viewer-layout { grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); gap: var(--layout-gap); }
+.question-viewer-page .question-viewer-reading.card { padding: var(--card-padding); }
+.question-viewer-page .question-viewer-reading > .question-meta { margin-bottom: var(--space-5); }
+.question-viewer-page .question-viewer-main > * + * { margin-top: var(--layout-gap); }
 .group-study-tools .question-viewer-layout { grid-template-columns: minmax(0, 1fr) minmax(220px, 240px); gap: 16px; }
 .question-viewer-reading { padding: 8px 0; }
 .question-viewer-title { font-size: 22px; line-height: 1.65; margin: 15px 0 20px; overflow-wrap: anywhere; }
@@ -34,6 +40,9 @@
 @media (max-width: 1050px) {
   .group-study-tools .question-viewer-layout { grid-template-columns: 1fr; }
   .group-study-tools .question-viewer-aside { grid-row: 1; }
+}
+@media (max-width: 1000px) {
+  .question-viewer-page .question-viewer-layout { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
   .question-viewer-layout { grid-template-columns: 1fr; gap: 18px; }

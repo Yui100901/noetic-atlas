@@ -6,11 +6,6 @@
 .paper-reader-navigation > span { min-width: 84px; text-align: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .paper-reader-navigation > [aria-disabled="true"] { opacity: .45; cursor: default; }
 .paper-reader-context { margin-bottom: var(--layout-gap); }
-.paper-question-page .question-viewer-layout { grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); gap: var(--layout-gap); }
-.paper-question-page .question-viewer-reading { padding: var(--card-padding); }
-.paper-question-page .question-viewer-reading > .question-meta { margin-bottom: var(--space-5); }
-.paper-question-page .question-viewer-main > * + * { margin-top: var(--layout-gap); }
-@media (max-width: 1000px) { .paper-question-page .question-viewer-layout { grid-template-columns: 1fr; } }
 @media (max-width: 600px) {
   .paper-question-page .header-actions, .paper-reader-navigation { width: 100%; }
   .paper-reader-navigation > .button { padding-inline: 10px; }

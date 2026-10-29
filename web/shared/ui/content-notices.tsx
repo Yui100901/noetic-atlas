@@ -3,6 +3,7 @@ import {createContext, memo, useContext, useMemo, useRef, useState, type ReactNo
 import {collectContentNotices, extractContentNotices} from '../../../shared/questions/content-notices';
 import {Markdown} from './components';
 import './content-notices.css';
+import './group-material.css';
 
 const NoticeScope = createContext(false);
 type Notices = ReturnType<typeof collectContentNotices>;

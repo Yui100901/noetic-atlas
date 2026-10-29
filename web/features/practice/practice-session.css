@@ -6,8 +6,6 @@
 .draft-option .text-button {white-space:nowrap; }
 .draft-modal-footer {display:grid;gap:16px;padding-top:16px;border-top:1px solid var(--border); }
 .draft-modal-footer .button {justify-self:end; }
-.group-material {margin:18px 0;padding:20px;border:1px solid var(--border);border-left:3px solid var(--green);border-radius:10px;background:var(--theme-inset, #f7f8f4); }
-.group-material .markdown > :last-child {margin-bottom:0; }
 .blank-answer-fields {display:grid;gap:14px;margin:22px 0; }
 .blank-answer-fields input {width:100%;max-width:680px; }
 .quick-filter-card, .quick-drafts {margin-bottom:24px; }
@@ -35,5 +33,4 @@
   .draft-option .text-button {font-size:12px; }
   .history-group > summary, .history-group-content {padding-left:16px;padding-right:16px; }
   .history-group-link {padding-left:16px;padding-right:16px; }
-  .group-material {padding:14px; }
 }

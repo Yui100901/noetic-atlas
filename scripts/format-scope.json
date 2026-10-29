@@ -42,5 +42,7 @@
   "server/modules/taxonomy/schema.ts",
   "server/modules/ai/run-storage.ts",
   "scripts/qa/live-ai.ts",
-  "scripts/release/release-windows.mjs"
+  "scripts/release/release-windows.mjs",
+  "scripts/release/version.mjs",
+  "tests/release/release-version.test.ts"
 ]

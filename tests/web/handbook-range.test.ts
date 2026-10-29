@@ -2,6 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handbookSections,handbookLink} from '../../web/features/help/handbook-model.js';
 import {periodRange,moveAnalyticsPeriod,readAnalyticsLocation} from '../../web/features/analytics/range-navigation.js';
+test('API contract stays navigable under docs from the manual, README and contract links', () => {
+ const docs = new Set(['README.md', 'docs/API-CONTRACT.md', 'docs/使用说明书.md', 'docs/题目字段与质量规则.md']);
+ assert.deepEqual(handbookLink('docs/使用说明书.md', './API-CONTRACT.md', docs), { kind: 'document', document: 'docs/API-CONTRACT.md', anchor: '' });
+ assert.deepEqual(handbookLink('README.md', './docs/API-CONTRACT.md', docs), { kind: 'document', document: 'docs/API-CONTRACT.md', anchor: '' });
+ assert.deepEqual(handbookLink('docs/API-CONTRACT.md', '../README.md', docs), { kind: 'document', document: 'README.md', anchor: '' });
+ assert.deepEqual(handbookLink('docs/API-CONTRACT.md', './使用说明书.md', docs), { kind: 'document', document: 'docs/使用说明书.md', anchor: '' });
+ assert.deepEqual(handbookLink('docs/API-CONTRACT.md', './题目字段与质量规则.md#字段清单', docs), { kind: 'document', document: 'docs/题目字段与质量规则.md', anchor: '字段清单' });
+ assert.equal(handbookLink('docs/使用说明书.md', '../API-CONTRACT.md', docs).kind, 'disabled');
+});
 test('manual navigation stays in bundled documents and ignores unsafe or unavailable paths',()=>{const docs=new Set(['docs/使用说明书.md','docs/题目字段与质量规则.md','README.md']);assert.deepEqual(handbookLink('docs/使用说明书.md','./题目字段与质量规则.md#字段',docs),{kind:'document',document:'docs/题目字段与质量规则.md',anchor:'字段'});assert.deepEqual(handbookLink('docs/使用说明书.md','../README.md',docs),{kind:'document',document:'README.md',anchor:''});for(const value of ['javascript:alert(1)','../../secrets','/etc/passwd','https://user:pass@example.org','./missing.md','#/settings'])assert.equal(handbookLink('docs/使用说明书.md',value,docs).kind,'disabled');});
 test('manual sections retain Markdown code fences without interpreting example headings as chapters',()=>{const sections=handbookSections('# 手册\n## 目录\n- A\n## 第一步\n```md\n## 假章节\n```\n内容\n## 第二步\n正文');assert.deepEqual(sections.map(value=>value.title),['第一步','第二步']);assert.ok(sections[0].body.includes('## 假章节'));});
 test('plain bundled documents become a searchable chapter with a real directory target',()=>{const sections=handbookSections('Copyright notice\nRedistribution terms','许可证');assert.equal(sections.length,1);assert.equal(sections[0].title,'许可证');assert.equal(sections[0].id,'许可证');assert.ok(sections[0].body.startsWith('## 许可证\n'));assert.ok(sections[0].body.includes('Redistribution'));const titled=handbookSections('# 内置协议\n\n正文','文件名');assert.equal(titled[0].title,'内置协议');assert.ok(!titled[0].body.includes('\n# 内置协议'));assert.deepEqual(handbookSections(''),[]);});

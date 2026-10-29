@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
-export interface ListPage<T> { items: T[]; total: number; page: number; pageSize: number }
-export const PAGE_SIZES = [10,20,50,100] as const;
+export type { Paged as ListPage } from '../../../shared/utils/pagination';
+export { PAGE_SIZES } from '../../../shared/utils/pagination';
 
 /** Client pagination for bootstrap-backed trees and local, cross-page selections. */
 export function usePagination<T>(items: T[], resetKey: unknown = '', initialSize = 20) {

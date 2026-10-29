@@ -1,8 +1,8 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, glob } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { inflateRawSync } from 'node:zlib';
 // @ts-expect-error Release tooling deliberately runs without a TypeScript runtime.
@@ -65,7 +65,8 @@ test('actual source and runtime ZIPs contain only base configuration and no loca
   await put('data/desktop/browser/Preferences', 'private-local-profile');
   const directories = ['docs','server','shared','web','mobile','android','desktop','scripts','public','dist/server','dist/shared','dist/web'];
   for (const directory of directories) await mkdir(join(folder, directory), { recursive: true });
-  for (const name of ['package-lock.json','README.md','API-CONTRACT.md','Dockerfile','compose.yaml','index.html','capacitor.config.ts','tsconfig.server.json','tsconfig.web.json','tsconfig.mobile.json','vite.config.ts','vite.mobile.config.ts','.gitignore','.dockerignore','.gitattributes','启动学习站.cmd','release.cmd','release.ps1','release.sh']) await put(name, 'fixture');
+  for (const name of ['package-lock.json','README.md','Dockerfile','compose.yaml','index.html','capacitor.config.ts','tsconfig.server.json','tsconfig.web.json','tsconfig.mobile.json','vite.config.ts','vite.mobile.config.ts','.gitignore','.dockerignore','.gitattributes','启动学习站.cmd','release.cmd','release.ps1','release.sh']) await put(name, 'fixture');
+  await put('docs/API-CONTRACT.md', 'API contract fixture');
   await mkdir(join(folder, 'tests'));
   await put('scripts/build/android-build.mjs', 'export const sourceBuildTool = true;');
   await put('android/app/build/intermediates/generated.txt', 'Must not be shipped');
@@ -77,6 +78,8 @@ test('actual source and runtime ZIPs contain only base configuration and no loca
     assert.deepEqual([...entries.keys()].filter(name => name.startsWith('data/')), []);
     assert.deepEqual([...entries.keys()].filter(name => name.startsWith('config/')), ['config/defaults.json']);
     assert.equal(entries.get('LICENSE')!.toString(), 'Publisher-selected license fixture');
+    assert.equal(entries.get('docs/API-CONTRACT.md')!.toString(), 'API contract fixture');
+    assert.ok(!entries.has('API-CONTRACT.md'));
     if (artifact.file.includes('-runtime.zip')) assert.equal(JSON.parse(entries.get('dist/package.json')!.toString()).version, '1.0.0');
     if(artifact.file.includes('-source.zip'))assert.equal(entries.get('scripts/build/android-build.mjs')!.toString(),'export const sourceBuildTool = true;');
     assert.ok(!entries.has('android/app/build/intermediates/generated.txt'));
@@ -111,6 +114,39 @@ test('Docker excludes all data and only copies default configuration', async () 
   assert.match(dockerfile, /RUN npm run data:validate && npm run build/);
   assert.match(dockerfile, /COPY config\/defaults\.json \.\/config\/defaults\.json/);
   assert.ok(!/^(?:COPY|ENV).*data\/seed|SEED_PATH/m.test(dockerfile));
+});
+
+test('Docker build inputs include every bundled handbook source before the Web build', async () => {
+  const dockerfile = await readFile(join(root, 'Dockerfile'), 'utf8');
+  const build = dockerfile.indexOf('RUN npm run data:validate && npm run build');
+  assert.ok(build > 0);
+  const beforeBuild = dockerfile.slice(0, build);
+  assert.match(beforeBuild, /^COPY docs \.\/docs\s*$/m);
+  const rootInputs = new Set([...beforeBuild.matchAll(/^COPY\s+(.+?)\s+\.\/\s*$/gm)].flatMap(match => match[1].split(/\s+/)));
+  for (const file of ['README.md']) assert.ok(rootInputs.has(file), `${file} must be copied before building`);
+
+  // Follow the application's real raw-document glob list instead of keeping a
+  // second handwritten list that could silently omit a newly bundled chapter.
+  const handbook = join(root, 'web/features/help/handbook.tsx');
+  const source = await readFile(handbook, 'utf8');
+  const globList = source.match(/import\.meta\.glob\(\[([\s\S]*?)\]/)?.[1];
+  assert.ok(globList, 'Expected the handbook raw-document imports');
+  const patterns = [...globList.matchAll(/'([^']+)'/g)].map(match => match[1]);
+  assert.ok(patterns.length > 0);
+  const bundled = new Set<string>();
+  for (const pattern of patterns) {
+    const localPattern = relative(root, resolve(dirname(handbook), pattern)).replaceAll('\\', '/');
+    assert.ok(localPattern.startsWith('docs/') || rootInputs.has(localPattern), `Uncopied handbook input: ${localPattern}`);
+    let matches = 0;
+    for await (const file of glob(pattern, { cwd: dirname(handbook) })) {
+      const path = resolve(dirname(handbook), file);
+      assert.ok((await readFile(path, 'utf8')).trim(), `Empty handbook input: ${file}`);
+      bundled.add(relative(root, path).replaceAll('\\', '/')); matches++;
+    }
+    assert.ok(matches > 0, `Missing handbook input: ${pattern}`);
+  }
+  const main = source.match(/const main\s*=\s*'([^']+)'/)?.[1];
+  assert.ok(main && bundled.has(main), 'The default manual must be available inside Docker');
 });
 
 test('empty-install validation rejects opaque configuration and any bundled taxonomy or questions', async () => {

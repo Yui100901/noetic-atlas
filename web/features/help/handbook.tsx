@@ -7,7 +7,7 @@ import {handbookLink,handbookSections,handbookSlug} from './handbook-model';
 import './handbook.css';
 
 const main='docs/使用说明书.md';
-const imported=import.meta.glob(['../../../docs/使用说明书.md','../../../docs/题目字段与质量规则.md','../../../docs/题库内容与来源.md','../../../docs/术语概念卡.md','../../../docs/发布与部署.md','../../../docs/licenses/*.md','../../../docs/licenses/*.txt','../../../README.md','../../../API-CONTRACT.md'],{query:'?raw',import:'default'});
+const imported=import.meta.glob(['../../../docs/使用说明书.md','../../../docs/题目字段与质量规则.md','../../../docs/题库内容与来源.md','../../../docs/术语概念卡.md','../../../docs/发布与部署.md','../../../docs/licenses/*.md','../../../docs/licenses/*.txt','../../../README.md','../../../docs/API-CONTRACT.md'],{query:'?raw',import:'default'});
 const documents=Object.fromEntries(Object.entries(imported).map(([key,loader])=>[key.replace('../../../',''),loader as ()=>Promise<string>]));
 const available=new Set(Object.keys(documents));
 const text=(nodes:ReactNode):string=>Children.toArray(nodes).map(node=>typeof node==='string'||typeof node==='number'?String(node):isValidElement<{children?:ReactNode}>(node)?text(node.props.children):'').join('');

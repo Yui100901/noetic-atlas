@@ -1,7 +1,18 @@
 import { readFile, readdir, access } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
-const files = [resolve(root, 'README.md'), resolve(root, 'API-CONTRACT.md'), ...(await readdir(resolve(root, 'docs'))).filter(name => name.endsWith('.md')).map(name => resolve(root, 'docs', name))];
+// Include nested history and license notices so moving a document cannot
+// silently remove its outgoing links from validation. Do not follow symlinks.
+async function markdownFiles(directory) {
+  const files = [];
+  for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await markdownFiles(path));
+    else if (entry.isFile() && entry.name.endsWith('.md')) files.push(path);
+  }
+  return files;
+}
+const files = [resolve(root, 'README.md'), ...await markdownFiles(resolve(root, 'docs'))];
 const stripCode = text => text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
 const slug = text => text.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
 const errors = []; let count = 0;

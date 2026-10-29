@@ -78,7 +78,10 @@ test('GitHub upload staging includes only verified software and never copies loc
 test('upload notes include the matching version changelog when supplied', async (t) => {
   const { root } = await fixture(t);
   await mkdir(join(root, 'docs'), { recursive: true });
-  await writeFile(join(root, 'docs/版本说明-1.0.0.md'), '# 认知星图 1.0.0\n\n专项更新说明。\n');
+  await writeFile(
+    join(root, 'docs/版本说明-1.0.0.md'),
+    '\uFEFF# 认知星图 1.0.0\r\n\r\n专项更新说明。\r\n',
+  );
   const result = await prepareGithubRelease({ root });
   const notes = await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8');
   assert.match(notes, /## 本次更新\n\n专项更新说明。/);

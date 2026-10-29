@@ -130,7 +130,6 @@ export async function packageWebRelease({
     'package.json',
     'package-lock.json',
     'README.md',
-    'API-CONTRACT.md',
     'docs',
     'config/defaults.json',
     ...legalFiles,

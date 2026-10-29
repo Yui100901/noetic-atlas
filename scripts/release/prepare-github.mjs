@@ -195,7 +195,7 @@ export async function prepareGithubRelease({
   let changes = '';
   try {
     changes = (await readFile(join(root, 'docs', `版本说明-${version}.md`), 'utf8'))
-      .replace(/^# .*\n+/, '')
+      .replace(/^\uFEFF?# [^\r\n]*(?:\r?\n)+/, '')
       .trim();
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;

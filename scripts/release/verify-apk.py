@@ -1,10 +1,11 @@
-"""Inspect the actual APK payload; does not install or start any device."""
+"""Inspect the actual APK payload with Python 3.11+; does not start a device."""
 from pathlib import Path
 import hashlib, json, zipfile, sys
 
 root = Path(__file__).resolve().parents[2]
 apk = (root / sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/noetic-atlas-debug.apk'
-with zipfile.ZipFile(apk) as archive:
+# Android stores UTF-8 entry names even when its ZIP writer leaves the EFS bit clear.
+with zipfile.ZipFile(apk, metadata_encoding='utf-8') as archive:
     files = set(archive.namelist())
     assert 'classes.dex' in files
     assert any(b'Lcn/noetic/atlas/LearningFileSharePlugin;' in archive.read(name)
@@ -40,7 +41,12 @@ with zipfile.ZipFile(apk) as archive:
     expected_public = set()
     for source in (root / 'dist/mobile').rglob('*'):
         if source.is_file():
-            packaged = 'assets/public/' + source.relative_to(root / 'dist/mobile').as_posix()
+            relative = source.relative_to(root / 'dist/mobile').as_posix()
+            # Vite's build manifest is metadata; Capacitor intentionally omits
+            # dot-directories from Android assets. Runtime files still match exactly.
+            if relative == '.vite/manifest.json':
+                continue
+            packaged = 'assets/public/' + relative
             expected_public.add(packaged)
             assert archive.read(packaged) == source.read_bytes(), f'APK contains stale web asset: {packaged}'
     # Capacitor adds only these two compatibility files. Old hash-named JS or

@@ -1,11 +1,11 @@
-# 认知星图 API 契约 · v1.0
+# 认知星图 API 契约
 
 认知星图（noetic-atlas）采用 React、Fastify、TypeScript 与 SQLite。桌面服务默认监听 `127.0.0.1:4317`；Android 使用同一业务模块和 SQLite WASM。本文说明关键行为和事务边界，字段结构以启动时自动生成的 OpenAPI 为准。
 
 - [交互式接口文档](http://127.0.0.1:4317/api/docs/)：Swagger UI，可查看参数并在本机试用。
 - [OpenAPI JSON](http://127.0.0.1:4317/api/openapi.json)：由当前注册路由及共用 Zod 校验器自动生成；Android 本地 API 也提供此 JSON。
-- [数据类型](shared/models/types.ts)、[系统配置](shared/models/settings.ts)、[自适应复习](shared/models/adaptive-review.ts)、[学习统计](shared/models/analytics.ts)、[AI 类型](shared/ai/ai.ts)、[分享封包](shared/models/sharing.ts)。
-- [使用说明书](docs/使用说明书.md)、[README](README.md)。
+- [数据类型](../shared/models/types.ts)、[系统配置](../shared/models/settings.ts)、[自适应复习](../shared/models/adaptive-review.ts)、[学习统计](../shared/models/analytics.ts)、[AI 类型](../shared/ai/ai.ts)、[分享封包](../shared/models/sharing.ts)。
+- [使用说明书](./使用说明书.md)、[README](../README.md)。
 
 服务为单用户本地应用，默认没有多用户鉴权。写操作限制同源，远程部署应在受保护的入口后使用。接口文档只生成说明，不安装额外业务校验器，也不改变响应序列化。返回错误统一为 `{error:{code,message,details?}}`；批量写入先验证后以事务提交。
 
@@ -205,13 +205,13 @@ AI 使用 OpenAI-compatible Chat Completions 协议，结果为结构化 JSON，
 | `GET /api/ai/runs/:id` | 单条结构化分析记录 |
 | `DELETE /api/ai/runs/:id` | 删除分析记录，不撤销已经采纳的内容 |
 
-key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根地址或完整 chat/completions 路径；不允许嵌入账号、查询参数或片段。密钥通过 Authorization Bearer 发送，不自动跟随重定向。默认超时 60 秒（可设 5–180），输出上限 4096 tokens（可设 256–32000）。
+key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根地址或完整 chat/completions 路径；不允许嵌入账号、查询参数或片段。密钥通过 Authorization Bearer 发送，不自动跟随重定向。默认超时 60 秒（可设 5–180），输出上限 16384 tokens（可设 256–32000）。
 
 任务成功返回 `AiRun<Result>`，kind 为 `explain|grade|import|review|paper_plan`，含 id、createdAt、model、warnings、questionIds、result 及应用标记。内部版本上下文和 API 凭据不对外返回。失败不伪造成功记录。
 
 ### 实时进度与取消
 
-`POST /api/ai/test、explain、grade、import、review、paper-plan` 及 `POST /api/attempts/:id/ai-review` 默认保持 JSON 请求／响应。Web 和 Windows 桌面端发送 `Accept: text/event-stream`，服务立即建立 SSE，逐帧发送 `data: <JSON>\n\n`；注释心跳应忽略。事件协议见 [AiProgressUpdate / AiStreamEvent](shared/ai/ai-progress.ts)：
+`POST /api/ai/test、explain、grade、import、review、paper-plan` 及 `POST /api/attempts/:id/ai-review` 默认保持 JSON 请求／响应。Web 和 Windows 桌面端发送 `Accept: text/event-stream`，服务立即建立 SSE，逐帧发送 `data: <JSON>\n\n`；注释心跳应忽略。事件协议见 [AiProgressUpdate / AiStreamEvent](../shared/ai/ai-progress.ts)：
 
 | type | 字段及含义 |
 | --- | --- |
@@ -257,7 +257,7 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 
 题库准入仍由审核接口负责；用户反馈、规则发现、内容改进统一使用质量问题队列，处理不改发布状态、标准答案或学习成绩。参考来源可省略或为空数组，不生成缺来源问题；已填写来源的结构与地址仍校验。独立解析可省略或为空，答案可以已含完整解释，不生成空解析问题。
 
-完整字段必填性、默认值及各题型的条件结构见[题目字段与质量规则](./docs/题目字段与质量规则.md)。以`questionSchema`为结构契约，表单和通用导入不另加必填；客观题的判分答案与可选的答案说明文本分开。
+完整字段必填性、默认值及各题型的条件结构见[题目字段与质量规则](./题目字段与质量规则.md)。以`questionSchema`为结构契约，表单和通用导入不另加必填；客观题的判分答案与可选的答案说明文本分开。
 
 网页审核和质量管理的详情入口均使用题目编辑器；管理上下文由仅允许 `#/questions/review`、`#/content-quality` 的规范 `returnTo` 保存筛选与分页，`qualityIssueId` 只用于定位本题的独立问题项，不替代服务端归属和版本校验。管理编辑页默认展开题面与参考答案，不加载学习状态或作答历史组件；保存留在编辑页，审核通过／退回后返回管理列表。质量主列表只呈现题目和问题简要行，扫描及批量处理收进工具区；具体证据、AI复核及单项状态在编辑页前置质量面板处理。
 

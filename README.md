@@ -47,17 +47,19 @@ Windows 也可双击 `启动学习站.cmd`。默认地址：
 
 ## 打包与发布
 
-三个入口支持交互选择或直接传目标，均调用同一个发布流程：
+在源码项目根目录运行以下命令。三个入口支持交互选择或直接传目标与版本，均调用同一个发布流程：
 
-| 环境 | 交互选择 | 直接指定目标 |
+| 环境 | 交互选择 | 指定目标与版本 |
 | --- | --- | --- |
-| Windows CMD | 双击 `release.cmd` | `.\release.cmd web` |
-| PowerShell | `.\release.ps1` | `.\release.ps1 all` |
-| Linux / Bash | `sh ./release.sh` | `sh ./release.sh web` |
+| Windows CMD | 双击 `release.cmd` | `.\release.cmd web --version 1.5.1` |
+| PowerShell | `.\release.ps1` | `.\release.ps1 all --version 1.5.1` |
+| Linux / Bash | `sh ./release.sh` | `sh ./release.sh web --version 1.5.1` |
 
 也可运行 `npm run release -- all`，目标支持 `all`、`windows`、`web`、`android`、`docker`、`source`、`clean`；`--dry-run` 查看计划，`--docker-command-only` 仅输出 Docker 命令。`all` 构建当前系统支持的版本，Linux/macOS 不构建 Windows 桌面包。`android` 和 `all` 在构建前检查正式签名、JDK 21 与 Android SDK，缺失时停止。构建输出位于 `artifacts/releases/`，包含版本化签名 APK、签名验证报告、清单与 SHA256。
 
-当前版本为 **1.5.0**，见[本次更新](./docs/版本说明-1.5.0.md)。新版只需更新package与lock版本，各端共享同一版本来源。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
+未指定`--version`时，交互终端会询问版本，回车沿用当前值；非交互运行沿用当前版本。正式执行会同步`package.json`与`package-lock.json`的版本，成功后持久保留；检查或构建失败时尽力回滚，遇到外部编辑则不覆盖并提示核对。Android构建自动映射版本号，各端产物按所选版本命名。`--dry-run --version 1.5.1`只预览，不写版本；`clean`不询问版本，也不接受`--version`。脚本不会自动commit、打Git标签或发布GitHub Release。
+
+当前软件版本仍为 **1.5.0**，见[本次更新](./docs/版本说明-1.5.0.md)；新增版本输入能力不会自动升版。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
 
 Android 首次正式发布运行 `npm run android:signing:init` 创建本地签名，之后正式打包自动使用；请独立备份私钥和密码，详见[Android 构建与签名](./docs/发布与部署.md#android-构建与签名)。
 
@@ -70,10 +72,11 @@ Android 首次正式发布运行 `npm run android:signing:init` 创建本地签�
 - [使用说明书](./docs/使用说明书.md)：功能规则、审核、学习与迁移操作。
 - [题库内容与来源](./docs/题库内容与来源.md)：各领域数量、覆盖、许可与复现方法。
 - [术语概念卡](./docs/术语概念卡.md)：双语名称、缩写、概念辨析与可迁移英文引用。
-- [开发与维护](./docs/开发与维护.md) · [架构与迁移](./docs/架构与迁移.md) · [API 约定](./API-CONTRACT.md)。
+- [开发与维护](./docs/开发与维护.md) · [架构与迁移](./docs/架构与迁移.md) · [API 约定](./docs/API-CONTRACT.md)。
 - [测试隔离与CI](./docs/测试隔离与CI.md)：自动化入口、复用边界与可选浏览器验收。
 - [项目结构](./docs/项目结构.md)：模块边界、稳定入口和新增代码的放置约定。
 - [发布与部署](./docs/发布与部署.md) · [验收记录](./docs/验收记录.md)。
+- [历史专项与核查报告](./docs/history/README.md)：按年月保存原始测试范围、测量口径和整改证据。
 - [查询性能与数据库访问](./docs/查询性能与数据库访问.md)：性能测量、统一查询层及数据库替换边界。
 - [后续扩展规划](./docs/后续扩展规划.md)：基于全量测试的优先级、实施依赖和验收标准。
 

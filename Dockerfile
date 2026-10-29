@@ -6,6 +6,8 @@ COPY tsconfig*.json vite.config.ts index.html ./
 COPY shared ./shared
 COPY server ./server
 COPY web ./web
+COPY docs ./docs
+COPY README.md ./
 COPY scripts ./scripts
 COPY public ./public
 COPY config/defaults.json ./config/defaults.json

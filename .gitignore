@@ -76,3 +76,9 @@ android/.externalNativeBuild/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local scratch directories and crash dumps
+/.tmp/
+/tmp/
+/temp/
+*.stackdump

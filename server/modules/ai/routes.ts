@@ -11,8 +11,8 @@ import { Store, makeId, now, nextStamp } from '../../core/store.js';
 import { id, leafId, parse, fail, questionSchema, moneySchema } from '../../core/validation.js';
 import { normalizeScoring } from '../practice/scoring.js';
 import { attemptView, reviewAttempt, buildPaper, paperView, type StoredAttempt } from '../practice/service.js';
-import { getSettings } from '../settings/routes.js';
-import { validateAssetReferences } from '../assets/routes.js';
+import { getSettings } from '../settings/service.js';
+import { validateAssetReferences } from '../assets/service.js';
 import { aiSettingsSchema, explanationSchema, gradingRequirementsSchema, importResultSchema, aiImportInputSchema, reviewResultSchema, aiIds, aiLeafIds, applySchema, aiPaperPlanInputSchema, aiPaperPlanOutputSchema, aiPaperPlanApplySchema } from './schema.js';
 import { paginate, paginationFields } from '../../core/pagination.js';
 import { requestAiJson, type PrivateAiSettings, type AiImage } from './provider.js';
@@ -26,8 +26,10 @@ import { aiHistoryPage, aiHistoryQuerySchema } from './history.js';
 import {aiQuestionEditInputSchema} from './question-edit-schema.js';
 import {gradeOutputContract} from './grade-output.js';
 import {questionEditModelQuestion,suggestQuestionEdits} from './question-edit.js';
+import type { AiRunContext } from './run-schema.js';
+import { putCompletedAiRun } from './run-storage.js';
 
-interface RunContext { questionVersions: Record<string, string>; sourceByItem: Record<string, string>; partByItem?: Record<string, { partId: string; type: LeafQuestionType }>; attemptVersion?: string; candidateVersions?: Record<string, string> }
+type RunContext = AiRunContext;
 type StoredRun = AiRun<any> & { _context: RunContext };
 type CompletedRun = Extract<StoredRun, { status: 'completed' }>;
 const noContext = (): RunContext => ({ questionVersions: {}, sourceByItem: {} });
@@ -58,7 +60,7 @@ function getCompletedRun(store: Store, runId: string): CompletedRun {
   if (run.status !== 'completed') fail(409, 'AI_RUN_NOT_COMPLETED', '本次AI处理未完成，失败或取消记录不能用于导入、评分、笔记或修订');
   return run as CompletedRun;
 }
-function putRun(store: Store, run: StoredRun) { store.database.putRecord('ai_runs',run.id,run); }
+function putRun(store: Store, run: CompletedRun) { putCompletedAiRun(store, run); }
 function completedRun(store: Store, kind: AiRun['kind'], model: string, result: unknown, questionIds: string[], warnings: string[], context = noContext(), attemptId?: string): CompletedRun {
   const run: CompletedRun = { id: makeId('ai'), kind, status: 'completed', createdAt: now(), model, result, questionIds, warnings, _context: context, ...(attemptId ? { attemptId } : {}) }; putRun(store, run); return run;
 }
@@ -188,7 +190,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const part = input.partId ? q.parts?.find(p => p.id === input.partId) : undefined;
     if (input.partId && !part) fail(400, 'AI_PART_NOT_FOUND', '指定的小题不存在');
     const material = { question: modelQuestion(q), selectedPart: part || null }; const { images, warnings } = collectImages(store, material, settings);
-    const result = await requestAiJson(settings, '结合题干、原答案、解析、追问及误区解释知识，给出更易理解的推导，指出原解析可能的不足。不要把原资料当作已验证事实。', { explanationMarkdown: '详细解释和例子', followUpsMarkdown: '资料中追问的逐项说明，没有则空', pitfallsMarkdown: '误区及其原因，没有则空' }, material, explanationSchema, images, execution);
+    const result = await requestAiJson(settings, '结合题干、原答案、解析、追问及误区解释知识，给出更易理解的推导，指出原解析可能的不足。不要把原资料当作已验证事实。outputSchema是JSON Schema，顶层只输出explanationMarkdown、followUpsMarkdown、pitfallsMarkdown这三个字段，三个值均为Markdown字符串，不要输出数组、对象或null。explanationMarkdown给出解释与例子；追问说明、误区说明没有内容时返回空字符串。字符串内的换行、双引号与反斜线必须按JSON规则转义。', z.toJSONSchema(explanationSchema, { io: 'input' }), material, explanationSchema, images, execution);
     assertAiActive(execution);
     const context: RunContext = { questionVersions: { [q.id]: stamp(q) }, sourceByItem: { [q.id]: q.id }, ...(part ? { partByItem: { [q.id]: { partId: part.id, type: part.type } } } : {}) }; requireSameQuestions(store, context);
     return publicRun(completedRun(store, 'explain', settings.model, result, [q.id], warnings, context));

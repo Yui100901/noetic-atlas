@@ -32,7 +32,7 @@ export function AiDocumentWorkspace() {
   const opened = useRef(''), explicitOpened = useRef(false), loadEpoch = useRef(0);
   const jobs = useResource<Paged<AiDocumentJobSummary>>(`/api/ai/document-jobs?page=${page}&pageSize=${pageSize}`);
   const domains = Array.from(new Set(categoryIds.map(id => bootstrap.categories.find(category => category.id === id)?.domainId).filter(Boolean))) as string[];
-  const draft = useAiWorkspaceDraft({ kind: 'documents', state: { local, sourceName, sourceUrl, requirements, first, last, perBlock, maximum, mode, types, difficulty, categoryIds, tagIds, jobId: jobId || null, page, pageSize }, busy,
+  const draft = useAiWorkspaceDraft({ kind: 'documents', compact: true, state: { local, sourceName, sourceUrl, requirements, first, last, perBlock, maximum, mode, types, difficulty, categoryIds, tagIds, jobId: jobId || null, page, pageSize }, busy,
     hasContent: !!local || !!jobId || !!sourceName || !!sourceUrl || !!requirements || !!first || !!last || perBlock !== 10 || maximum !== 200 || mode !== 'generate' || types.length > 0 || !!difficulty || categoryIds.length > 0 || tagIds.length > 0 || page !== 1 || pageSize !== 10,
     restore: value => { loadEpoch.current++; opened.current = ''; setBusy(false); setLocal(documentFilesDraft(value.local)); setSourceName(draftString(value.sourceName)); setSourceUrl(draftString(value.sourceUrl)); setRequirements(draftString(value.requirements)); setFirst(draftString(value.first)); setLast(draftString(value.last)); setPerBlock(draftNumber(value.perBlock, 10)); setMaximum(draftNumber(value.maximum, 200)); setMode(value.mode === 'extract' ? 'extract' : 'generate'); setTypes(draftStrings(value.types)); setDifficulty(draftString(value.difficulty)); setCategoryIds(draftStrings(value.categoryIds)); setTagIds(draftStrings(value.tagIds)); setPage(draftNumber(value.page, 1)); setPageSize(draftNumber(value.pageSize, 10)); setJob(null); setJobId(draftString(value.jobId)); setError(''); }
   });
@@ -78,8 +78,8 @@ export function AiDocumentWorkspace() {
   if (!draft.ready) return draft.controls;
   return <div className="ai-document-workspace form-stack">
     {draft.controls}
-    <section className="card ai-tools form-stack">
-      <div className="list-toolbar"><div><h2>1. 读取多份资料或整本教材</h2><p className="muted">先在本机分块，再逐轮总结。选择需要的知识块后生成练习，成功批次保留，失败批次可单独重试。</p></div><button className="button" disabled={busy} onClick={() => input.current?.click()}><FileInput size={16} />选择多个 PDF / 文本文件</button></div>
+    <section className="card ai-tools form-stack ai-import-source">
+      <div className="list-toolbar"><div><h2>1. 读取多份资料或整本教材</h2><p className="muted">先提取分块，再选择知识块出题；成功批次可恢复。</p></div><button className="button" disabled={busy} onClick={() => input.current?.click()}><FileInput size={16} />选择多个 PDF / 文本文件</button></div>
       <input ref={input} type="file" multiple className="sr-only" aria-label="AI分批原始文件" accept=".pdf,.txt,.md,.markdown,.json,.csv" disabled={busy} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; void extract(files); }} />
       <AiServiceNotice />
       <div className="form-grid"><Field label="PDF起始页（可选）" hint="文件中的页码，从1开始；留空从首页。"><input type="number" min="1" value={first} disabled={busy} onChange={event => setFirst(event.target.value)} /></Field><Field label="PDF结束页（可选）" hint="留空到末页；范围用于本次选择的每份PDF。"><input type="number" min="1" value={last} disabled={busy} onChange={event => setLast(event.target.value)} /></Field></div>

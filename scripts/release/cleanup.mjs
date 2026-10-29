@@ -16,6 +16,7 @@ const SOFTWARE_FILES = ['artifacts/android-signing-report.json'];
 const slash = path => path.replaceAll('\\', '/');
 const equalPath = (left, right) => process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
 const databaseFile = /\.(?:sqlite(?:3)?|db(?:3)?)(?:-(?:wal|shm|journal))?$/i;
+const contentArchiveFile = name => /^noetic-atlas-(?:[\w.+-]+-)?content(?:-[\w.+-]+)?\.(?:zip|json)$/i.test(basename(name));
 const privateKeyFile = /\.(?:keystore|jks|p12|pfx|key|pem)$/i;
 
 async function statIfExists(path) {
@@ -45,7 +46,7 @@ async function checkedPath(root, path) {
   return path;
 }
 
-async function listTree(root, directory, { protectData = false, digest = false } = {}) {
+async function listTree(root, directory, { protectData = false, digest = false, allowContentArchives = false } = {}) {
   await checkedPath(root, directory);
   const files = [];
   async function visit(path) {
@@ -55,7 +56,7 @@ async function listTree(root, directory, { protectData = false, digest = false }
     const stat = await lstat(path);
     if (stat.isSymbolicLink()) throw new Error(`拒绝清理符号链接或目录联接：${path}`);
     if (!stat.isDirectory() && !stat.isFile()) throw new Error(`不支持的发布文件类型：${path}`);
-    if (protectData && (stat.isDirectory() && /^(?:data|signing)$/i.test(basename(path)) || stat.isFile() && (databaseFile.test(path) || privateKeyFile.test(path)))) {
+    if (protectData && (stat.isDirectory() && /^(?:data|signing)$/i.test(basename(path)) || stat.isFile() && (databaseFile.test(path) || privateKeyFile.test(path) || contentArchiveFile(path) && !allowContentArchives))) {
       throw new Error(`发布目录中含用户数据、数据库或签名私钥，拒绝删除：${path}`);
     }
     const name = slash(relative(directory, path));
@@ -132,6 +133,21 @@ export async function cleanupReleaseArtifacts({ root = resolve(import.meta.dirna
       archives.push({ from, to, manifest, deduplicated: !!existing, ...summary(manifest) });
     }
   }
+  // Older releases placed self-contained content packages alongside software.
+  // Hash and archive those too; a late new content package must block deletion.
+  const legacySource = await checkedPath(root, join(root, 'artifacts/releases'));
+  if (await statIfExists(legacySource)) {
+    for (const name of (await readdir(legacySource)).sort()) {
+      if (!contentArchiveFile(name)) continue;
+      const from = await checkedPath(root, join(legacySource, name));
+      const to = await checkedPath(root, join(root, 'data/release-archives/legacy-content', name));
+      refuseTracked(root, from, tracked); refuseTracked(root, to, tracked);
+      const manifest = await listTree(root, from, { digest: true });
+      const existing = await statIfExists(to);
+      if (existing && !identical(manifest, await listTree(root, to, { digest: true }))) throw new Error(`题库归档冲突；源数据和现有归档均已保留：${slash(relative(root, to))}`);
+      archives.push({ from, to, manifest, deduplicated: !!existing, ...summary(manifest) });
+    }
+  }
   const candidates = [...SOFTWARE_DIRECTORIES, ...SOFTWARE_FILES];
   await checkedPath(root, join(root, 'artifacts'));
   if (await statIfExists(join(root, 'artifacts'))) {
@@ -143,8 +159,10 @@ export async function cleanupReleaseArtifacts({ root = resolve(import.meta.dirna
     const path = await checkedPath(root, join(root, name));
     if (!await statIfExists(path)) continue;
     refuseTracked(root, path, tracked);
-    const manifest = await listTree(root, path, { protectData: true });
-    removals.push({ path, ...summary(manifest) });
+    const manifest = await listTree(root, path, { protectData: true, allowContentArchives: true });
+    // Archived content is moved out first, so it is not software removed bytes.
+    const softwareManifest = manifest.filter(entry => !archives.some(archive => equalPath(join(path, entry.name), archive.from)));
+    removals.push({ path, ...summary(softwareManifest) });
   }
 
   if (!dryRun) {

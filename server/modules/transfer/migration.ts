@@ -10,9 +10,9 @@ import { QUICK_PAPER_ID, validateAttemptSnapshot, type StoredAttempt, type Store
 import { normalizeScoring } from '../practice/scoring.js';
 import { validatePaperAnswers } from '../questions/structure.js';
 import { DEFAULT_SETTINGS } from '../../../shared/models/settings.js';
-import { settingsSchema, getSettings } from '../settings/routes.js';
+import { settingsSchema, getSettings } from '../settings/service.js';
 import { assetRecordSchema, validateAssetRecord } from '../assets/schema.js';
-import { validateAllAssetReferences } from '../assets/routes.js';
+import { validateAllAssetReferences } from '../assets/service.js';
 import { paperDraftSchema, validatePaperDraft } from '../practice/paper-drafts.js';
 import type { PaperDraftState } from '../../../shared/practice/paper-drafts.js';
 import { cleanLearningEnvelope } from '../../../shared/questions/learning-records.js';

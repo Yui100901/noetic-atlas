@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { assetMimeTypes, base64ToBytes, bytesToBase64, type AssetRecord, type AssetMimeType } from '../../../shared/assets/assets.js';
+import { paginationFields } from '../../core/pagination.js';
 import { fail, id, parse } from '../../core/validation.js';
+
+export const assetListQuerySchema = z.object({ ...paginationFields }).strict();
 
 export interface AssetLimits { maxDocumentMiB: number; maxImageMiB: number }
 export const DEFAULT_ASSET_LIMITS: AssetLimits = { maxDocumentMiB: 20, maxImageMiB: 5 };

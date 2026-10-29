@@ -1,3 +1,4 @@
+import { readOnlyOperation } from '../../http/operation.js';
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -115,7 +116,7 @@ export function registerConfigurationRoutes(app: FastifyInstance, store: Store) 
     const query = parse(configurationExportQuerySchema, request.query);
     return exportConfiguration(store, query.includeAi === 'true');
   });
-  app.post('/api/settings/import/preview', { bodyLimit: 1024 * 1024 }, async request => {
+  app.post('/api/settings/import/preview', { ...readOnlyOperation, bodyLimit: 1024 * 1024 }, async request => {
     const { data } = parse(configurationPreviewInputSchema, request.body);
     return previewConfiguration(store, data);
   });

@@ -1,16 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 
 test('native WASM paper paging and metadata stay page-local and survive restart with legacy projections', async t => {
-  const directory=resolve('test-results/native-paper-page');await mkdir(directory,{recursive:true});
-  await build({configFile:false,logLevel:'error',define:{'process.env':'{}'},resolve:{alias:nativeAliases},build:{outDir:directory,emptyOutDir:false,minify:false,lib:{entry:resolve('mobile/runtime.ts'),formats:['es'],fileName:()=> 'runtime.mjs'}}});
-  const {createLocalRuntime}=await import(pathToFileURL(resolve(directory,'runtime.mjs')).href),sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
+
+
+  const {createLocalRuntime}=await loadNativeRuntime(),sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
   let durable:Uint8Array|undefined,saves=0;const storage={async load(){return durable?.slice();},async save(bytes:Uint8Array){durable=bytes.slice();saves++;}};
   const seed={schemaVersion:1,domains:[],categories:[],tags:[],questions:[],documents:[],papers:[]};let runtime=await createLocalRuntime(sql,seed,storage,{dailyPushScheduler:false});t.after(()=>runtime.close());
   const api=async(url:string,method='GET',body?:unknown,status=200)=>{const response=await runtime.fetch(url,{method,headers:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const result=await response.json();assert.equal(response.status,status,JSON.stringify(result));return result as any;};

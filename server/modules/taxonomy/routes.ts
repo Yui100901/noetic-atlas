@@ -2,14 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { PaperDraft } from '../../../shared/practice/paper-drafts.js';
 import { Store, makeId } from '../../core/store.js';
-import { fail, parse, id, domainSchema, categorySchema, tagSchema } from '../../core/validation.js';
-import { paginationFields, paginate } from '../../core/pagination.js';
+import { fail, parse, domainSchema, categorySchema, tagSchema } from '../../core/validation.js';
+import { paginate } from '../../core/pagination.js';
 import { getId } from '../../http/request.js';
+import { taxonomyQuerySchema } from './schema.js';
 
 export function registerTaxonomyRoutes(app: FastifyInstance, store: Store) {
   for (const table of ['domains', 'categories', 'tags'] as const) {
     app.get(`/api/${table}`, async request => {
-      const query = parse(z.object({ ...paginationFields, search: z.string().max(1000).optional(), domainId: id.optional(), parentId: id.optional(), kind: z.string().max(40).optional() }).strict(), request.query);
+      const query = parse(taxonomyQuerySchema, request.query);
       const items = store.all<any>(table).filter(item => (!query.search || item.name.toLowerCase().includes(query.search.toLowerCase())) && (!query.domainId || item.domainId === query.domainId) && (!query.parentId || item.parentId === query.parentId) && (!query.kind || item.kind === query.kind));
       return paginate(query, items);
     });

@@ -1,3 +1,4 @@
+import { readOnlyOperation } from '../../http/operation.js';
 import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
@@ -8,14 +9,14 @@ import { type AssetRecord } from '../../../shared/assets/assets.js';
 import { Store, makeId, now, type Table } from '../../core/store.js';
 import { id, parse, fail, domainSchema, categorySchema, tagSchema, questionSchema, questionBankSchema, storedScoringSchema, filtersSchema, types } from '../../core/validation.js';
 import { assetRecordSchema, validateAssetRecord } from '../assets/schema.js';
-import { collectAssetReferences, validateAssetReferences } from '../assets/routes.js';
+import { collectAssetReferences, validateAssetReferences } from '../assets/service.js';
 import { type StoredPaper, QUICK_PAPER_ID } from '../practice/service.js';
 import { resolveConceptQuestion, validateConceptPaperSnapshot } from '../practice/concept-practice.js';
 import { resolveVocabularyQuestion, validateVocabularyPaperSnapshot } from '../practice/vocabulary-practice.js';
 import { normalizeScoring } from '../practice/scoring.js';
 import { validatePaperAnswers } from '../questions/structure.js';
 import { paperExportDocument } from '../transfer/exports.js';
-import { getSettings } from '../settings/routes.js';
+import { getSettings } from '../settings/service.js';
 import { legacyBankPaper } from '../banks/legacy-banks.js';
 
 const selectionSchema = z.object({ kind: z.enum(['questions', 'paper']), id: id.optional(), ids: z.array(id).min(1).max(50000).optional(), filters: z.record(z.string(), z.unknown()).optional() }).strict();
@@ -264,8 +265,8 @@ export function importShare(store:Store,raw:unknown,expectedFingerprint?:string)
   return store.transaction(()=>{ const plan = planShareImport(store,raw); if (expectedFingerprint && expectedFingerprint !== plan.preview.fingerprint) fail(409,'SHARE_PREVIEW_STALE','本地题库已变化，请重新预览后导入'); for (const record of plan.records) store.insert(record.table,record.value.id,record.value); for (const category of store.all<Category>('categories')) store.validateCategory(category); store.validateTaxonomyReferences(); for (const record of plan.records) if (record.table === 'questions' || record.table === 'papers') validateAssetReferences(store,record.value); return {ok:true,...plan.preview}; });
 }
 export function registerSharingRoutes(app:FastifyInstance,store:Store) {
-  app.post('/api/sharing/export',async request=>exportShare(store,parse(selectionSchema,request.body)));
-  app.post('/api/sharing/preview',async request=>planShareImport(store,parse(z.object({data:z.unknown()}).strict(),request.body).data).preview);
+  app.post('/api/sharing/export', readOnlyOperation,async request=>exportShare(store,parse(selectionSchema,request.body)));
+  app.post('/api/sharing/preview', readOnlyOperation,async request=>planShareImport(store,parse(z.object({data:z.unknown()}).strict(),request.body).data).preview);
   app.post('/api/sharing/import',async request=>{const input=parse(z.object({data:z.unknown(),confirmed:z.literal(true),expectedFingerprint:z.string().length(64).optional()}).strict(),request.body); return importShare(store,input.data,input.expectedFingerprint);});
-  app.post('/api/sharing/export-document',async request=>{ const input=parse(selectionSchema,request.body); if(input.kind === 'paper') { const paper=store.require<StoredPaper>('papers',input.id || fail(400,'SHARE_SELECTION_REQUIRED','请选择题集')); if(paper.questionCount>500)fail(422,'SHARE_PDF_LIMIT','PDF单次最多500道题，请缩小范围或使用JSON分享'); return paperExportDocument(paper,'answers'); } const data=exportShare(store,input); if(data.questions.length > 500) fail(422,'SHARE_PDF_LIMIT','PDF单次最多500道题，请缩小范围或使用JSON分享'); const snapshot=data.questions; const stamp=now(); return paperExportDocument({id:'share-export',title:data.title,description:'题目分享 · 含参考答案与解析',mode:'manual',questionIds:snapshot.map(question=>question.id),questionCount:snapshot.length,filters:null,archived:false,version:1,createdAt:stamp,updatedAt:stamp,snapshot,scoring:normalizeScoring(snapshot,{enabled:false})},'answers'); });
+  app.post('/api/sharing/export-document', readOnlyOperation,async request=>{ const input=parse(selectionSchema,request.body); if(input.kind === 'paper') { const paper=store.require<StoredPaper>('papers',input.id || fail(400,'SHARE_SELECTION_REQUIRED','请选择题集')); if(paper.questionCount>500)fail(422,'SHARE_PDF_LIMIT','PDF单次最多500道题，请缩小范围或使用JSON分享'); return paperExportDocument(paper,'answers'); } const data=exportShare(store,input); if(data.questions.length > 500) fail(422,'SHARE_PDF_LIMIT','PDF单次最多500道题，请缩小范围或使用JSON分享'); const snapshot=data.questions; const stamp=now(); return paperExportDocument({id:'share-export',title:data.title,description:'题目分享 · 含参考答案与解析',mode:'manual',questionIds:snapshot.map(question=>question.id),questionCount:snapshot.length,filters:null,archived:false,version:1,createdAt:stamp,updatedAt:stamp,snapshot,scoring:normalizeScoring(snapshot,{enabled:false})},'answers'); });
 }

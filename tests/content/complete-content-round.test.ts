@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Store} from '../../server/core/store.js';
 import {questionSchema} from '../../server/core/validation.js';
-import {getSettings} from '../../server/modules/settings/routes.js';
+import {getSettings} from '../../server/modules/settings/service.js';
 import {buildPaper} from '../../server/modules/practice/service.js';
 import {completeContentRound} from '../../scripts/content/complete-content-round.js';
 import {BLANK_LINE} from '../../shared/questions/blank-markers.js';

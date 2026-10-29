@@ -29,7 +29,6 @@
 .similar-questions-ai-result { margin-top: 16px; }
 .similar-questions-ai-result > header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .similar-questions-ai-result > header small { color: var(--muted); }
-.question-viewer-feedback { flex-wrap: wrap; gap: 10px; }
 @media (max-width: 620px) {
   .similar-questions-search { flex-direction: column; align-items: stretch; gap: 10px; }
   .similar-questions-search > .button { margin-top: 0; align-self: flex-start; }

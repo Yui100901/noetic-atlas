@@ -2,16 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 
 test('mobile daily pushing uses durable serialized writes, catches up only today, and preserves disabled legacy upgrades', async t => {
   const folder = resolve('test-results/native-daily-push'); await mkdir(folder, { recursive: true });
-  await build({ configFile: false, logLevel: 'error', define: { 'process.env': '{}' }, resolve: { alias: nativeAliases }, build: { outDir: folder, emptyOutDir: false, minify: false, lib: { entry: resolve('mobile/runtime.ts'), formats: ['es'], fileName: () => 'runtime.mjs' } } });
-  const { createLocalRuntime } = await import(pathToFileURL(resolve(folder, 'runtime.mjs')).href);
+
+  const { createLocalRuntime } = await loadNativeRuntime();
   const sql = await initSqlJs({ locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm') });
   const questions = Array.from({ length: 68 }, (_, index) => ({ id: `MOBILE-DAILY-${index}`, title: `移动每日题${index}`, type: index < 60 ? 'true_false' : 'multiple_choice', stemMarkdown: `隔离测试命题${index}`, answerMarkdown: index < 60 ? '正确' : '两项均正确', explanationMarkdown: '本题仅供临时测试。', correctAnswers: index < 60 ? ['true'] : ['A', 'B'], options: index < 60 ? [] : [{ key: 'A', text: '正确选项一' }, { key: 'B', text: '正确选项二' }, { key: 'C', text: '错误选项' }], categoryIds: ['mobile-daily-category'], status: 'published' }));
   const seed = { schemaVersion: 1, domains: [{ id: 'mobile-daily-domain', name: '手机每日范围', description: '', sortOrder: 0 }], categories: [{ id: 'mobile-daily-category', domainId: 'mobile-daily-domain', parentId: null, name: '基础分类', description: '', sortOrder: 0 }], tags: [], questions, documents: [], papers: [] };

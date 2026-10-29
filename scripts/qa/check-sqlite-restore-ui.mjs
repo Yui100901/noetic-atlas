@@ -57,7 +57,7 @@ export async function nativePreviewSQLiteRestore(file){
  await new Promise(resolve=>setTimeout(resolve,60));
  if(file.name.startsWith('invalid'))throw new Error('SQLite 备份校验失败：不是 SQLite 3 数据库文件');
  const bytes=new Uint8Array(await file.arrayBuffer());if(!bytes.length)throw new Error('empty');
- const counts={questions:25,papers:4,documents:3,assets:6,attempts:1,learning_results:7,study:4,study_parts:3,reviews:2,review_cards:3,review_events:8,question_history:7,question_banks:0,domains:2,categories:5,tags:4,paper_drafts:1,document_drafts:2,daily_pushes:1,settings:1,ai_settings:1,ai_runs:9,ai_import_jobs:2,question_feedback:4,quality_scans:2,quality_issues:7};
+ const counts={questions:25,papers:4,documents:3,assets:6,attempts:1,learning_results:7,study:4,study_parts:3,reviews:2,review_cards:3,review_events:8,question_history:7,question_banks:0,domains:2,categories:5,tags:4,paper_drafts:1,document_drafts:2,ai_workspace_drafts:3,daily_pushes:1,settings:1,ai_settings:1,ai_runs:9,ai_import_jobs:2,question_feedback:4,quality_scans:2,quality_issues:7};
  return {token:file.name,filename:file.name,byteLength:bytes.length,sha256:'1234567890abcdef'.repeat(4),schemaVersion:1,counts,currentCounts:{questions:8,papers:2,attempts:3},sourceHadAiKey:true,activeExamCount:0};
 }
 export async function nativeConfirmSQLiteRestore(token){localStorage.setItem('qa-backup',JSON.stringify(backup));if(token.startsWith('fail'))throw new Error('恢复失败，原数据已保留，应用可继续使用。');localStorage.setItem('qa-restored','yes');return {recoveryBackup:backup};}
@@ -69,7 +69,9 @@ await writeFile(resolve(folder,'entry.tsx'), `import React from 'react';import {
 const built=resolve(folder,'built');
 await build({root,configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},plugins:[react()],resolve:{alias:[{find:'@platform',replacement:resolve(folder,'platform.ts')}]},publicDir:false,build:{outDir:built,emptyOutDir:true,lib:{entry:resolve(folder,'entry.tsx'),formats:['es'],fileName:()=> 'ui.mjs'}}});
 const css=(await readdir(built)).find(file=>file.endsWith('.css'));
-const server=createServer(async(req,res)=>{if(req.url==='/ui.mjs'){res.setHeader('Content-Type','application/javascript');res.end(await readFile(resolve(built,'ui.mjs')));}else if(req.url==='/ui.css'){res.setHeader('Content-Type','text/css');res.end(css?await readFile(resolve(built,css)):'');}else{res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"/><link rel="stylesheet" href="/ui.css"/><title>恢复界面隔离验证</title></head><body><div id="root"></div><script type="module" src="/ui.mjs"></script></body></html>');}});
+// Vite may emit shared JSX/runtime chunks; serve every generated root asset.
+const generatedFiles=new Set(await readdir(built));
+const server=createServer(async(req,res)=>{if(req.url==='/ui.mjs'){res.setHeader('Content-Type','application/javascript');res.end(await readFile(resolve(built,'ui.mjs')));}else if(req.url==='/ui.css'){res.setHeader('Content-Type','text/css');res.end(css?await readFile(resolve(built,css)):'');}else if(generatedFiles.has(new URL(req.url,'http://127.0.0.1').pathname.slice(1))&&/\.(?:m?js|css)$/.test(new URL(req.url,'http://127.0.0.1').pathname)){const name=new URL(req.url,'http://127.0.0.1').pathname.slice(1);res.setHeader('Content-Type',name.endsWith('.css')?'text/css':'application/javascript');res.end(await readFile(resolve(built,name)));}else{res.setHeader('Content-Type','text/html');res.end('<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"/><link rel="stylesheet" href="/ui.css"/><title>恢复界面隔离验证</title></head><body><div id="root"></div><script type="module" src="/ui.mjs"></script></body></html>');}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;
 let browser;
 try {
@@ -81,8 +83,8 @@ try {
  const file=page.getByLabel('选择 SQLite 数据库备份');const choose=page.getByRole('button',{name:'选择 SQLite 数据库备份',exact:true});
  await file.setInputFiles({name:'invalid.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('invalid')});await page.getByRole('alert').filter({hasText:'不是 SQLite'}).waitFor();assert.equal(await choose.isEnabled(),true);
  await file.setInputFiles({name:'fail.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('SQLite format 3 mock')});await page.getByRole('heading',{name:'已通过校验：fail.sqlite'}).waitFor();
- const restore=page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true});assert.equal(await restore.isDisabled(),true);assert.equal(await page.locator('tbody tr').count(),25);
- for(const [label,count]of [['自适应复习卡片',3],['自适应复习事件',8],['每日推荐记录',1],['AI 教材处理任务',2],['题目反馈',4]])assert.deepEqual(await page.getByRole('row').filter({has:page.getByRole('cell',{name:label,exact:true})}).getByRole('cell').allTextContents(),[label,'0',String(count)]);
+ const restore=page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true});assert.equal(await restore.isDisabled(),true);assert.equal(await page.locator('tbody tr').count(),26);
+ for(const [label,count]of [['自适应复习卡片',3],['自适应复习事件',8],['每日推荐记录',1],['AI 教材处理任务',2],['AI工作台草稿',3],['题目反馈',4]])assert.deepEqual(await page.getByRole('row').filter({has:page.getByRole('cell',{name:label,exact:true})}).getByRole('cell').allTextContents(),[label,'0',String(count)]);
  await page.getByRole('checkbox').check();assert.equal(await restore.isEnabled(),true);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'mobile preview has no horizontal page overflow');
  await page.screenshot({path:resolve(folder,'preview-mobile.png'),fullPage:true});
@@ -91,7 +93,7 @@ try {
  await page.setViewportSize({width:1280,height:900});await file.setInputFiles({name:'success.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('SQLite format 3 mock')});await page.getByRole('heading',{name:'已通过校验：success.sqlite'}).waitFor();await page.getByRole('checkbox').check();await page.screenshot({path:resolve(folder,'preview-desktop.png'),fullPage:true});
  await Promise.all([page.waitForEvent('load'),page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true}).click()]);
  await page.getByRole('button',{name:'保存或分享恢复前副本'}).waitFor();assert.equal(await page.evaluate(()=>localStorage.getItem('qa-restored')),'yes');assert.equal(await page.getByRole('checkbox').count(),0);assert.deepEqual(errors,[]);
- const report={passed:6,checks:['拒绝无效SQLite文件，选择器保持可用','预览25类数据及FSRS/每日推荐/教材任务/反馈数量，显式勾选后才允许替换','390px恢复预览无页面横向溢出','恢复失败保持原数据及页面可用，可导出恢复前副本','成功恢复重载页面并保留恢复前副本入口','全程无浏览器异常'],browserErrors:errors,isolatedNativeBridge:true};
+ const report={passed:6,checks:['拒绝无效SQLite文件，选择器保持可用','预览26类数据及FSRS/每日推荐/教材任务/AI草稿/反馈数量，显式勾选后才允许替换','390px恢复预览无页面横向溢出','恢复失败保持原数据及页面可用，可导出恢复前副本','成功恢复重载页面并保留恢复前副本入口','全程无浏览器异常'],browserErrors:errors,isolatedNativeBridge:true};
  await writeFile(resolve(folder,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  } catch(error) { console.error('Browser errors:',errors); console.error('Page snapshot:',await page.locator('body').innerHTML()); throw error; }
 } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); }

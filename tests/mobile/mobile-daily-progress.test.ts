@@ -1,17 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 import { DEFAULT_SETTINGS } from '../../shared/models/settings.ts';
 
 test('mobile daily recommendation progress survives saved drafts, grading, history pruning and restarts', async t => {
-  const folder = resolve('test-results/native-daily-progress'); await mkdir(folder, { recursive: true });
-  await build({ configFile: false, logLevel: 'error', define: { 'process.env': '{}' }, resolve: { alias: nativeAliases }, build: { outDir: folder, emptyOutDir: false, minify: false, lib: { entry: resolve('mobile/runtime.ts'), formats: ['es'], fileName: () => 'runtime.mjs' } } });
-  const { createLocalRuntime } = await import(pathToFileURL(resolve(folder, 'runtime.mjs')).href);
+
+
+  const { createLocalRuntime } = await loadNativeRuntime();
   const sql = await initSqlJs({ locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm') });
   const objective = (id: string) => ({ id, title: id, type: 'true_false', stemMarkdown: '判断命题', answerMarkdown: '正确', correctAnswers: ['true'], categoryIds: ['progress-category'], status: 'published' });
   const subjective = { id: 'PROGRESS-SA', title: '解释概念', type: 'short_answer', stemMarkdown: '说明概念', answerMarkdown: '说明原理及边界', categoryIds: ['progress-category'], status: 'published' };

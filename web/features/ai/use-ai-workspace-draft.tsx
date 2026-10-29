@@ -3,8 +3,10 @@ import type {AiWorkspaceDraft,AiWorkspaceDraftKind} from '../../../shared/ai/wor
 import {ApiError,idPath,localDate,request,send} from '../../shared/lib/api';
 import {ErrorNotice,Loading,Modal,useApp} from '../../shared/ui/components';
 import {useAiDraftSession} from './ai-workspace-draft-context';
+import { ActionDropdown } from '../../shared/ui/action-dropdown';
+import './ai-import-layout.css';
 
-interface Options {kind:AiWorkspaceDraftKind;contextId?:string;state:Record<string,unknown>;restore(state:Record<string,unknown>):void;ready?:boolean;busy?:boolean;hasContent:boolean}
+interface Options {kind:AiWorkspaceDraftKind;contextId?:string;state:Record<string,unknown>;restore(state:Record<string,unknown>):void;ready?:boolean;busy?:boolean;hasContent:boolean;compact?:boolean}
 /** Drafts contain editor snapshots only: never file handles, credentials, or
  * in-flight model output. Serialized writes prevent an older save winning. */
 export function useAiWorkspaceDraft(options:Options){
@@ -61,6 +63,19 @@ export function useAiWorkspaceDraft(options:Options){
  const change=()=>transition(async()=>{setChoices(await request<AiWorkspaceDraft[]>(query()));});
  const newDraft=()=>transition(reset);
  const copy=async()=>{selected.current=null;conflicted.current=false;setConflict(false);saved.current='';await saveRef.current();};
- const controls:ReactNode=<section className="ai-workspace-draft notice info" aria-label="AI工作台草稿" data-draft-kind={options.kind}><div className="form-stack"><strong>{saving?'正在保存草稿…':savedAt?`草稿已保存 · ${localDate(savedAt)}`:ready?'草稿自动保存在本机':'正在检查工作台草稿…'}</strong><small>每种工作保留最近3份；教材内的编辑按任务分别保存。草稿不会自动调用AI、创建题集或导入题目。</small><div className="action-row"><button type="button" className="button" disabled={!ready||saving||options.busy} onClick={()=>void safely(saveNow)}>保存草稿</button><button type="button" className="button" disabled={!ready||saving||options.busy} onClick={()=>void safely(newDraft)}>新建草稿</button><button type="button" className="button" disabled={!ready||saving||options.busy} onClick={()=>void safely(change)}>切换草稿</button>{selected.current&&<button type="button" className="button" disabled={saving||options.busy} onClick={()=>{if(confirm('删除当前草稿并清空本页输入？已创建题集、教材任务和已导入题目保留。'))void safely(async()=>{await transition(async()=>{await clear();reset();});});}}>删除当前草稿</button>}{conflict&&<button type="button" className="button primary" onClick={()=>void safely(copy)}>另存为新草稿</button>}</div>{error&&<ErrorNotice message={error} retry={!ready?()=>setRevision(value=>value+1):undefined}/>} {!ready&&!choices&&!error&&<Loading text="正在读取草稿…"/>}</div>{choices&&<Modal title="继续AI工作台草稿" onClose={()=>{if(enabled.current)setChoices(null);else reset();}}><div className="form-stack"><p>选择一份继续，或新建草稿。当前草稿会覆盖更新，其他草稿保留。</p>{choices.map(value=><article className="ai-workspace-draft-choice" key={value.id}><div><strong>{String(value.state.title||value.state.sourceName||value.state.prompt||'未命名草稿').slice(0,100)}</strong><p className="muted">{localDate(value.updatedAt)}</p></div><button type="button" className="button" onClick={()=>void safely(()=>transition(()=>resume(value)))}>继续此草稿</button></article>)}<div className="action-row"><button type="button" className="button primary" onClick={()=>void safely(newDraft)}>新建草稿</button>{enabled.current&&<button className="button" onClick={()=>setChoices(null)}>取消</button>}</div></div></Modal>}</section>;
+ const disabled=!ready||saving||!!options.busy;
+ const status=saving?'正在保存草稿…':dirty()?'有修改，等待自动保存…':savedAt?`草稿已保存 · ${localDate(savedAt)}`:ready?'草稿自动保存在本机':'正在检查工作台草稿…';
+ const remove=()=>{if(confirm('删除当前草稿并清空本页输入？已创建题集、教材任务和已导入题目保留。'))void safely(async()=>{await transition(async()=>{await clear();reset();});});};
+ const saveButton=<button type="button" className="button" disabled={disabled} onClick={()=>void safely(saveNow)}>保存草稿</button>;
+ const controls:ReactNode=<section className={`ai-workspace-draft${options.compact?' ai-workspace-draft-compact':' notice info'}`} aria-label="AI工作台草稿" data-draft-kind={options.kind}>
+  {options.compact?<div className="ai-draft-status-row"><div className="ai-draft-status"><strong>{status}</strong><small>仅保存到本机，不会自动运行AI或导入题目。</small></div><div className="action-row">{saveButton}<ActionDropdown label="草稿操作" disabled={disabled} items={[
+   {id:'new',label:'新建草稿',onSelect:()=>void safely(newDraft)},
+   {id:'switch',label:'切换草稿',onSelect:()=>void safely(change)},
+   ...(selected.current?[{id:'remove',label:'删除当前草稿',danger:true,separatorBefore:true,onSelect:remove}]:[]),
+  ]}/></div></div>:<div className="form-stack"><strong>{status}</strong><small>每种工作保留最近3份；教材内的编辑按任务分别保存。草稿不会自动调用AI、创建题集或导入题目。</small><div className="action-row">{saveButton}<button type="button" className="button" disabled={disabled} onClick={()=>void safely(newDraft)}>新建草稿</button><button type="button" className="button" disabled={disabled} onClick={()=>void safely(change)}>切换草稿</button>{selected.current&&<button type="button" className="button" disabled={saving||options.busy} onClick={remove}>删除当前草稿</button>}</div></div>}
+  {conflict&&<div className="ai-draft-conflict"><button type="button" className="button primary" disabled={saving||options.busy} onClick={()=>void safely(copy)}>另存为新草稿</button></div>}
+  {error&&<ErrorNotice message={error} retry={!ready?()=>setRevision(value=>value+1):undefined}/>} {!ready&&!choices&&!error&&<Loading text="正在读取草稿…"/>}
+  {choices&&<Modal title="继续AI工作台草稿" onClose={()=>{if(enabled.current)setChoices(null);else reset();}}><div className="form-stack"><p>选择一份继续，或新建草稿。当前草稿会覆盖更新，其他草稿保留；每种工作保留最近3份。</p>{choices.map(value=><article className="ai-workspace-draft-choice" key={value.id}><div><strong>{String(value.state.title||value.state.sourceName||value.state.prompt||'未命名草稿').slice(0,100)}</strong><p className="muted">{localDate(value.updatedAt)}</p></div><button type="button" className="button" onClick={()=>void safely(()=>transition(()=>resume(value)))}>继续此草稿</button></article>)}<div className="action-row"><button type="button" className="button primary" onClick={()=>void safely(newDraft)}>新建草稿</button>{enabled.current&&<button className="button" onClick={()=>setChoices(null)}>取消</button>}</div></div></Modal>}
+ </section>;
  return{ready:ready&&options.ready!==false,controls,saveNow,clear,runBusy};
 }

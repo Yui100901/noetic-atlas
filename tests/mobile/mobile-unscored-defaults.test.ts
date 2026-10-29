@@ -1,18 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 import { DEFAULT_SETTINGS } from '../../shared/models/settings.ts';
 
 /** Real Android business runtime and SQLite WASM, with private test-only bytes. */
 test('mobile opens old unscored type-default snapshots under new defaults and preserves them across restart', async t => {
-  const folder = resolve('test-results/native-unscored-defaults'); await mkdir(folder, { recursive: true });
-  await build({ configFile: false, logLevel: 'error', define: { 'process.env': '{}' }, resolve: { alias: nativeAliases }, build: { outDir: folder, emptyOutDir: false, minify: false, lib: { entry: resolve('mobile/runtime.ts'), formats: ['es'], fileName: () => 'runtime.mjs' } } });
-  const { createLocalRuntime } = await import(pathToFileURL(resolve(folder, 'runtime.mjs')).href);
+
+
+  const { createLocalRuntime } = await loadNativeRuntime();
   const sql = await initSqlJs({ locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm') });
   const stamp = '2026-10-24T00:00:00Z', submittedAt = '2026-10-24T00:00:10Z';
   const question = { id: 'OLD-MULTI', title: '独立测试多选题', type: 'multiple_choice', stemMarkdown: '选择两个正确选项。', options: [{ key: 'A', text: '正确一' }, { key: 'B', text: '正确二' }, { key: 'C', text: '错误' }], correctAnswers: ['A', 'B'], answerMarkdown: 'A、B', explanationMarkdown: '临时回归数据', status: 'published' };

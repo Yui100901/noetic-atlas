@@ -1,31 +1,42 @@
 /** Reset confirmation UI against mocked API responses; never opens a database. */
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { extname, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { createServer } from 'vite';
 import { tsImport } from 'tsx/esm/api';
 
 const root = resolve(import.meta.dirname, '../..');
 const output = resolve(root, 'test-results/learning-reset-ui');
 const { DEFAULT_SETTINGS } = await tsImport('../../shared/models/settings.ts', import.meta.url);
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href : 'playwright');
-const vite = await createServer({ root, cacheDir: resolve(output, 'vite-cache'), logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: false, hmr: false } });
+const staticRoot = resolve(root, 'dist/web');
+const origin = 'http://noetic-reset.invalid';
 let browser, page;
 const checks = [], errors = [], unexpected = [], submissions = [], pendingModules = new Set();
 let previews = 0, settingsWrites = 0;
 const preview = { counts: { states: 6, partStates: 4, reviews: 9, results: 12 }, retained: { attempts: 15, drafts: 2 } };
 await mkdir(output, { recursive: true });
 try {
-  await vite.listen();
-  const origin = 'http://127.0.0.1:' + vite.httpServer.address().port;
   browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined), headless: true });
   page = await browser.newPage({ viewport: { width: 1360, height: 940 } });
   page.setDefaultTimeout(20000); page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => pendingModules.add(request.url()));
   page.on('requestfinished', request => pendingModules.delete(request.url()));
   page.on('requestfailed', request => pendingModules.delete(request.url()));
+  // This suite verifies deployed UI against mocked APIs, not Vite/StrictMode.
+  // Serve the exact built files through interception; no server or DB is opened.
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.origin !== origin) { unexpected.push('EXTERNAL ' + url.origin); return route.abort(); }
+    const file = resolve(staticRoot, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
+    if (!file.startsWith(staticRoot + sep)) return route.fulfill({ status: 404 });
+    try {
+      const body = await readFile(file);
+      const contentType = ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.wasm': 'application/wasm' })[extname(file)] || 'application/octet-stream';
+      return route.fulfill({ status: 200, contentType, body });
+    } catch { unexpected.push('STATIC ' + url.pathname); return route.fulfill({ status: 404 }); }
+  });
   await page.route('**/api/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
     const fulfill = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -89,7 +100,7 @@ try {
   assert.equal(await page.getByLabel('随机无分练习默认题量', { exact: true }).inputValue(), '43');
   checks.push('390px确认窗无横向溢出，成功提示保留内容且不提交未保存的系统配置');
   assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
-  const report = { passed: checks.length, checks, errors, unexpected, previewRequests: previews, resetRequests: submissions.length, settingsWrites, databaseAccessed: false };
+  const report = { passed: checks.length, checks, errors, unexpected, previewRequests: previews, resetRequests: submissions.length, settingsWrites, databaseAccessed: false, mode: 'built-web-mocked-api' };
   await writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
 } catch (error) { await page?.screenshot({ path: resolve(output, 'failure.png') }).catch(() => {}); await writeFile(resolve(output, 'failure.json'), JSON.stringify({ message: error.message, pendingModules: [...pendingModules], errors, unexpected, checks }, null, 2)); throw error; }
-finally { await browser?.close(); await vite.close(); }
+finally { await browser?.close(); }

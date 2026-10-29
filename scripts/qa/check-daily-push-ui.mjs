@@ -48,7 +48,7 @@ try{
   let navigation=0;const go=async path=>{await page.goto(origin+'/?daily-ui='+ ++navigation+'#/'+path);await page.waitForLoadState('networkidle');};
   const noOverflow=async()=>assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow');
   const capture=async name=>{await noOverflow();await page.screenshot({path:resolve(output,name+'.png'),fullPage:true});};
-  await go('settings?tab=practice');await page.getByRole('heading',{name:'每题型默认分值',exact:true}).waitFor();
+  await go('settings?tab=practice');await page.getByRole('heading',{name:'每题型默认分值',exact:true}).waitFor();await page.locator('.settings-points-disclosure > summary').click();
   assert.equal(await page.getByLabel('多选默认分值',{exact:true}).inputValue(),'4');
   let overview=await api('/api/daily-push');assert.equal(overview.config.enabled,false);assert.equal(overview.today,null);
   await api('/api/daily-push/check','POST');assert.equal((await api('/api/daily-push')).today,null);

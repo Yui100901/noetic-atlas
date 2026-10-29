@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildApp } from '../../server/index.js';
 import { bytesToBase64, assetUrl, assetIdFromUrl } from '../../shared/assets/assets.js';
 import { decodeAssetBase64, sanitizeAssetFilename, validateAssetBytes, validateAssetRecord } from '../../server/modules/assets/schema.js';
-import { collectAssetReferences, validateAssetReferences } from '../../server/modules/assets/routes.js';
+import { collectAssetReferences, validateAssetReferences } from '../../server/modules/assets/service.js';
 import { Store } from '../../server/core/store.js';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9WQAAAAASUVORK5CYII=';

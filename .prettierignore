@@ -1,0 +1,10 @@
+node_modules/
+dist/
+artifacts/
+test-results/
+data/
+.localtools/
+public/pdfjs/
+mobile/assets/
+android/
+package-lock.json

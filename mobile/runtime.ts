@@ -55,10 +55,9 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       if (options.signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
       const method=(options.method||'GET').toUpperCase();
       const pathname = new URL(url, 'https://localhost').pathname;
-      // These queries carry JSON through POST rather than a long URL. They
-      // must also work with read-only storage and never trigger a full save.
-      const readOnlyPost=method==='POST'&&['/api/settings/import/preview','/api/questions/metadata','/api/learning/card-summaries','/api/question-feedback/summaries'].includes(new URL(url,'https://localhost').pathname);
-      const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method)&&!readOnlyPost;
+      // JSON queries declare their storage effect beside the server handler.
+      // Unknown mutations remain conservative writes; security runs in inject.
+      const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(method) && app.storageEffect(method, url) !== 'read';
       // Freeze only the daily calendar for this serialized operation. A no-op
       // check must not export/rewrite a potentially large SQLite file, and the
       // preflight and handler must agree even across the midnight boundary.

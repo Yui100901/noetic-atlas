@@ -1,3 +1,4 @@
+import { readOnlyOperation } from '../../http/operation.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Question, StudyState } from '../../../shared/models/types.js';
@@ -162,5 +163,5 @@ export function learningCardSummaries(store:Store,paperIds:readonly string[]):Le
 export function registerGlobalLearningRoutes(app:FastifyInstance,store:Store) {
   app.get('/api/learning/global/summary',async request=>{parse(globalLearningSummaryQuerySchema,request.query);return globalLearningSummary(store);});
   app.get('/api/learning/global/questions',async request=>globalLearningQuestions(store,parse(globalLearningQuestionsQuerySchema,request.query)));
-  app.post('/api/learning/card-summaries',async request=>learningCardSummaries(store,parse(learningCardSummariesInputSchema,request.body).paperIds));
+  app.post('/api/learning/card-summaries', readOnlyOperation,async request=>learningCardSummaries(store,parse(learningCardSummariesInputSchema,request.body).paperIds));
 }

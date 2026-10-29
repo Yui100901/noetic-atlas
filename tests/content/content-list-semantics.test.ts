@@ -5,7 +5,8 @@ import type { Category, DocumentRecord } from '../../shared/models/types.js';
 import { Store } from '../../server/core/store.js';
 import { ApiError } from '../../server/core/validation.js';
 import { registerAssetRoutes } from '../../server/modules/assets/routes.js';
-import { normalizeDocument, registerLibraryRoutes } from '../../server/modules/library/routes.js';
+import { registerLibraryRoutes } from '../../server/modules/library/routes.js';
+import { normalizeDocument } from '../../server/modules/library/service.js';
 
 const stamp = '2026-10-23T00:00:00.000Z';
 async function fixture(t: test.TestContext) {

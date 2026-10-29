@@ -1,3 +1,4 @@
+import { putCompletedAiRun } from '../ai/run-storage.js';
 import { createHash } from 'node:crypto';
 import type { Question, QuestionPart } from '../../../shared/models/types.js';
 import type { AiRun } from '../../../shared/ai/ai.js';
@@ -130,6 +131,6 @@ export async function recommendSimilarQuestions(store: Store, input: AiSimilarQu
   const result: AiSimilarQuestionsResult = { items: output.items, candidates: pool.items.map(item => ({ id: item.question.id, title: item.question.title, type: item.question.type })), scope: `${localScope} AI仅比较本轮检索的前${pool.items.length}道候选，不生成新题。` };
   const run: AiRun<AiSimilarQuestionsResult> = { id: makeId('ai'), kind: 'similar_questions', status: 'completed', createdAt: now(), model: settings.model,
     warnings: ['AI根据有限候选及文本摘录提供建议；图片未发送，相似性请结合原题核对。'], questionIds: [input.questionId], result };
-  assertAiActive(execution); store.database.putRecord('ai_runs', run.id, { ...run, _context: { questionVersions: {}, sourceByItem: {} } });
+  assertAiActive(execution); putCompletedAiRun(store, { ...run, _context: { questionVersions: {}, sourceByItem: {} } });
   return run;
 }

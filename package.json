@@ -1,6 +1,6 @@
 {
   "name": "noetic-atlas",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -37,7 +37,10 @@
     "android:signing:verify": "node scripts/build/android-signing.mjs verify",
     "release:smoke": "node scripts/qa/check-release.mjs",
     "windows:release": "node scripts/release/release-windows.mjs",
-    "windows:smoke": "node scripts/qa/check-windows.mjs"
+    "windows:smoke": "node scripts/qa/check-windows.mjs",
+    "format": "node scripts/format.mjs --write",
+    "format:check": "node scripts/format.mjs --check",
+    "check": "npm run format:check && npm run typecheck && npm run mobile:typecheck && npm run docs:check"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
@@ -46,7 +49,7 @@
     "@capacitor/share": "^8.0.3",
     "@fastify/static": "^10.1.6",
     "@fastify/swagger": "^9.9.2",
-    "@fastify/swagger-ui": "^5.2.6",
+    "@fastify/swagger-ui": "^6.1.2",
     "@pdf-lib/fontkit": "^1.1.1",
     "fastify": "^5.12.7",
     "kysely": "0.29.7",
@@ -64,7 +67,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.3",
+    "@capacitor/cli": "^8.6.0",
     "@electron/packager": "20.3.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
@@ -72,6 +75,7 @@
     "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^5.1.0",
     "electron": "45.0.0",
+    "prettier": "3.9.10",
     "tsx": "^4.20.0",
     "typescript": "~5.9.3",
     "vite": "^8.3.4"

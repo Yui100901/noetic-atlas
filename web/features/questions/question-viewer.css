@@ -6,6 +6,8 @@
 .question-set-question-tools { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .question-set-question-tools .search-box { flex: 1; }
 .question-viewer { min-width: 0; }
+/* Shared viewer actions own their layout; feedback/similarity modules own only their buttons. */
+.question-viewer-feedback { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .question-viewer-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 280px); align-items: start; gap: 22px; }
 .question-viewer-main, .question-viewer-aside { min-width: 0; }
 .question-viewer-main > * + * { margin-top: 20px; }
@@ -41,4 +43,8 @@
   .question-set-question-title { font-size: 14px; }
   .question-viewer-title { font-size: 19px; }
   .question-viewer-study { padding: 16px 12px; }
+}
+
+@media (max-width: 600px) {
+  .question-viewer-feedback { justify-content: flex-start; }
 }

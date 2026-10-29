@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { buildApp } from '../../server/index.js';
+import { createViteQaPreparation } from './helpers/vite-preparation.mjs';
 
 const app = await buildApp({ databasePath: ':memory:', seedPath: 'no-practice-timing-fixture', staticRoot: resolve('dist/web'), dailyPushScheduler: false });
 let paperId = '', attemptId = '', failNextPause = false;
@@ -26,14 +27,10 @@ const backend = await app.listen({ host: '127.0.0.1', port: 0 }); let origin = b
 if (process.env.QA_PRACTICE_DEV === '1') {
   const { createServer } = await import('vite');
   const proxy = { target: backend, changeOrigin: false };
-  const vite = await createServer({ configFile: resolve('vite.config.ts'), logLevel: 'error', cacheDir: resolve('test-results/practice-timing-strict-ui/vite-cache'), optimizeDeps: { entries: [resolve('index.html')] }, server: { host: '127.0.0.1', port: 0, strictPort: false, proxy: { '/api': proxy, '/qa': proxy } } });
-  await vite.listen();
-  // Separate dev module transformation from the stopwatch assertions, as in
-  // the existing source-loading QA harness. Do not alter interaction timeouts.
-  const preparation = performance.now();
-  await vite.environments.client.warmupRequest('/web/app/main.tsx');
-  await vite.environments.client.waitForRequestsIdle();
-  console.log('PRACTICE_TIMING_DEV_PREPARATION ' + JSON.stringify({ milliseconds: Math.round(performance.now() - preparation) }));
+  const preparation = await createViteQaPreparation({ root: resolve('.'), cacheDir: resolve('test-results/practice-timing-strict-ui/vite-cache') });
+  const vite = await createServer({ configFile: resolve('vite.config.ts'), logLevel: 'error', ...preparation.config, server: { host: '127.0.0.1', port: 0, strictPort: false, proxy: { '/api': proxy, '/qa': proxy } } });
+  await preparation.ready(vite);
+  console.log('PRACTICE_TIMING_DEV_PREPARATION ' + JSON.stringify(preparation.diagnostics));
   dev = vite; origin = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`;
 }
 console.log('PRACTICE_TIMING_READY ' + JSON.stringify({ origin }));

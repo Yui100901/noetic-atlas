@@ -3,7 +3,7 @@ import type { DocumentDraftState } from '../../../shared/models/document-drafts.
 import type { Store } from '../../core/store.js';
 import { documentSchema, fail, id } from '../../core/validation.js';
 import { getSettings } from '../settings/service.js';
-import { validateAssetReferences } from '../assets/routes.js';
+import { validateAssetReferences } from '../assets/service.js';
 
 const stamp = z.string().datetime({ offset: true });
 export const documentDraftStateSchema = documentSchema.omit({ id: true, updatedAt: true }).extend({

@@ -1,0 +1,111 @@
+/* Input-first composition belongs to the import workspace. Other AI screens
+ * keep their own draft tools and spacing, including per-textbook task drafts. */
+.ai-workspace-import .page-header {
+  margin-bottom: var(--space-4, 16px);
+}
+.ai-workspace-import .ai-section-tabs {
+  margin-bottom: var(--space-3, 12px);
+}
+.ai-workspace-import .ai-import-mode-switch {
+  margin-bottom: var(--space-4, 16px);
+}
+.ai-workspace-import > .ai-tools {
+  margin-top: 0;
+}
+.ai-workspace-draft-compact {
+  display: grid;
+  gap: var(--space-3, 12px);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  min-width: 0;
+}
+.ai-draft-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.ai-draft-status {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.ai-draft-status strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.ai-draft-status small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.ai-draft-status-row > .action-row {
+  flex-shrink: 0;
+}
+.ai-draft-status-row .button {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.ai-draft-conflict {
+  display: flex;
+  align-items: center;
+}
+.ai-import-source .list-toolbar {
+  margin-bottom: 0;
+}
+.ai-import-source .list-toolbar h2 {
+  font-size: 16px;
+}
+.ai-import-source .list-toolbar p {
+  max-width: 660px;
+  font-size: 12px;
+}
+.ai-import-source .ai-source-text {
+  min-height: 180px;
+}
+@media (max-width: 600px) {
+  .ai-workspace-import .page-header .eyebrow {
+    display: none;
+  }
+  .ai-workspace-import .page-header h1 {
+    font-size: 24px;
+  }
+  .ai-workspace-import .page-description {
+    line-height: 1.65;
+  }
+  .ai-workspace-import .ai-section-tabs {
+    gap: 5px;
+  }
+  .ai-workspace-import .ai-section-tabs button {
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+  .ai-workspace-import .ai-import-mode-switch button {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .ai-workspace-draft-compact {
+    padding: 9px 10px;
+  }
+  .ai-draft-status {
+    flex-basis: 100%;
+  }
+  .ai-draft-status-row > .action-row {
+    width: 100%;
+  }
+  .ai-draft-status-row .button {
+    min-height: 44px;
+  }
+  .ai-import-source .list-toolbar {
+    gap: 10px;
+  }
+  .ai-import-source .ai-source-text {
+    min-height: 160px;
+  }
+}

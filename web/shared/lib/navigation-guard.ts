@@ -6,6 +6,12 @@ let hashGuard: ((event: HashChangeEvent) => boolean) | null = null;
  * This is explicit so Window event-listener registration order cannot unmount
  * the editor before its unsaved-change check runs. */
 export const allowHashNavigation = (event: HashChangeEvent): boolean => hashGuard?.(event) ?? true;
+/** Async save guards use the same router boundary as discard-confirmation
+ * guards, so event registration order cannot unmount a pending writer. */
+export function registerAsyncHashGuard(guard: (event: HashChangeEvent) => boolean): () => void {
+  hashGuard = guard;
+  return () => { if (hashGuard === guard) hashGuard = null; };
+}
 export function navigationIndex(): number | null {
   const value = window.history.state?.[HISTORY_INDEX];
   return Number.isSafeInteger(value) && value >= 0 ? value : null;

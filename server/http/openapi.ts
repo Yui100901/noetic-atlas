@@ -1,3 +1,4 @@
+import packageInfo from '../../package.json' with { type: 'json' };
 import * as quality from '../modules/content-quality/schema.js';
 import type { FastifyInstance, FastifySchema } from 'fastify';
 import { z } from 'zod';
@@ -5,27 +6,30 @@ import { DEFAULT_SETTINGS } from '../../shared/models/settings.js';
 import * as validation from '../core/validation.js';
 import { settingsSchema } from '../modules/settings/service.js';
 import { configurationSchema, configurationPreviewInputSchema, configurationImportInputSchema, configurationExportQuerySchema, configurationPreviewSchema, configurationImportResultSchema } from '../modules/settings/configuration.js';
-import { assetInputSchema } from '../modules/assets/schema.js';
+import { assetInputSchema, assetListQuerySchema } from '../modules/assets/schema.js';
 import * as ai from '../modules/ai/schema.js';
 import {aiQuestionEditInputSchema,aiQuestionEditResultSchema} from '../modules/ai/question-edit-schema.js';
-import { aiDiagnosticsSchema, aiFailedRunSchema } from '../modules/ai/audit-schema.js';
+import { aiFailedRunSchema } from '../modules/ai/audit-schema.js';
+import { completedAiRunMetadataSchema, completedAiResultSchemas } from '../modules/ai/run-schema.js';
 import { aiHistoryQuerySchema } from '../modules/ai/history.js';
-import { aiDocumentCreateSchema, aiDocumentProcessSchema, aiDocumentImportSchema, aiDocumentPlanResultSchema, aiDocumentGenerateResultSchema, storedAiDocumentJobSchema } from '../modules/ai/document-schema.js';
-import { questionFeedbackSchema, questionFeedbackInputSchema, questionFeedbackResolveSchema, questionFeedbackAiInputSchema, questionFeedbackReviewSchema } from '../modules/quality-feedback/schema.js';
-import { questionFeedbackQuerySchema, questionFeedbackSummariesSchema } from '../modules/quality-feedback/routes.js';
+import { aiDocumentCreateSchema, aiDocumentProcessSchema, aiDocumentImportSchema, storedAiDocumentJobSchema } from '../modules/ai/document-schema.js';
+import { questionFeedbackSchema, questionFeedbackInputSchema, questionFeedbackResolveSchema, questionFeedbackAiInputSchema } from '../modules/quality-feedback/schema.js';
+import { questionFeedbackQuerySchema, questionFeedbackSummariesSchema } from '../modules/quality-feedback/schema.js';
 import { paperDraftStateSchema, paperDraftSchema } from '../modules/practice/paper-drafts.js';
 import { paperListPageQuerySchema } from '../modules/practice/paper-list.js';
 import { documentDraftSchema, documentDraftQuerySchema, createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema } from '../modules/library/document-drafts.js';
 import { documentListQuerySchema } from '../modules/library/list.js';
 import { aiWorkspaceDraftSchema,aiWorkspaceDraftQuerySchema,aiWorkspaceDraftCreateSchema,aiWorkspaceDraftUpdateSchema,aiWorkspaceDraftDeleteSchema } from '../modules/ai/workspace-draft-schema.js';
 import { paginationFields } from '../core/pagination.js';
+import { questionQuerySchema } from '../modules/questions/query-schema.js';
+import { taxonomyQuerySchema } from '../modules/taxonomy/schema.js';
 import { vocabularyQuerySchema } from '../modules/questions/vocabulary.js';
 import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuestionsQuerySchema, learningContextsQuerySchema } from '../modules/practice/learning.js';
 import { globalLearningSummaryQuerySchema, globalLearningQuestionsQuerySchema, learningCardSummariesInputSchema } from '../modules/practice/global-learning.js';
 import { learningResetInputSchema } from '../modules/study/reset.js';
 import { questionHistoryQuerySchema } from '../modules/questions/history.js';
 import { practiceTimingInputSchema, practiceTimingStateSchema } from '../modules/practice/practice-timing.js';
-import { similarQuestionsQuerySchema, aiSimilarQuestionsInputSchema, aiSimilarQuestionsResultSchema } from '../modules/questions/similar-schema.js';
+import { similarQuestionsQuerySchema, aiSimilarQuestionsInputSchema } from '../modules/questions/similar-schema.js';
 import { dailyPushRecordSchema, dailyPushSettingsSchema } from '../modules/daily-push/schema.js';
 import { analyticsQuerySchema, weeklyQuerySchema } from '../modules/analytics/schema.js';
 import { analyticsReportOutputSchema, weeklyReportOutputSchema } from './analytics-schemas.js';
@@ -60,15 +64,11 @@ const qualityReviewContextOutput:JsonSchema={type:'object',required:['issue','fe
 const questionHistoryOutput:JsonSchema={type:'object',required:['retention','items','total','page','pageSize'],properties:{summary:questionStatisticsOutput,retention:{type:'object',properties:{limit:{type:'integer',minimum:0},available:{type:'integer',minimum:0}}},total:{type:'integer',minimum:0},page:{type:'integer',minimum:1},pageSize:{type:'integer'},items:{type:'array',items:{type:'object',required:['id','attemptId','source','paperId','paperTitle','paperVersion','submittedAt','historyAvailable','question','answer','verdict','points','score'],properties:{id:{type:'string'},attemptId:{type:'string'},source:{enum:['paper','quick']},paperId:{type:'string'},paperTitle:{type:'string'},paperVersion:{type:'integer'},submittedAt:{type:'string',format:'date-time'},historyAvailable:{type:'boolean'},beforeReset:{type:'boolean'},question:toJson(validation.snapshotQuestionSchema.safeExtend({id:validation.leafId})),answer:toJson(validation.answerSchema),verdict:{enum:['correct','partial','incorrect','ungraded']},points:{type:['number','null']},score:{type:['number','null']}}}}}};
 const {key:_writeOnlyKey,clearKey:_clearKey,...aiPublicFields}=ai.aiSettingsSchema.shape;
 const aiPublicSettingsSchema=z.object({...aiPublicFields,hasKey:z.boolean()});
-const aiRunOutput: JsonSchema = { oneOf: [
-  { type: 'object', required: ['id','kind','status','createdAt','model','questionIds','warnings','result'], properties: {
-    id: {type:'string'}, kind: toJson(aiFailedRunSchema.shape.kind), status: {const:'completed'}, createdAt: {type:'string',format:'date-time'},
-    model: {type:'string'}, warnings: {type:'array',items:{type:'string'}}, questionIds: {type:'array',items:{type:'string'}},
-    attemptId: {type:'string'}, jobId: {type:'string'}, batchId: {type:'string'}, feedbackId: {type:'string'}, createdPaperId: {type:'string'}, appliedAt: {type:'string',format:'date-time'}, diagnostics: toJson(aiDiagnosticsSchema),
-    result: {oneOf:[toJson(ai.explanationSchema),toJson(ai.gradeResultSchema),toJson(ai.aiImportResultOutputSchema),toJson(ai.reviewResultSchema.safeExtend({approvedIds:z.array(id)})),toJson(ai.aiPaperPlanOutputSchema.safeExtend({requestedCount:z.number().int(),candidateCount:z.number().int(),candidates:z.array(z.object({id,title:z.string(),type:z.string()}))})),toJson(aiDocumentPlanResultSchema),toJson(aiDocumentGenerateResultSchema),toJson(questionFeedbackReviewSchema),toJson(aiSimilarQuestionsResultSchema),toJson(aiQuestionEditResultSchema)]},
-  } },
-  toJson(aiFailedRunSchema.omit({_context:true})),
-] };
+const completedAiRunOutput = toJson(completedAiRunMetadataSchema.omit({ _context: true }));
+// Keep the public response catalog and restore/write contracts on the same
+// per-kind result registry. Provider repair schemas are intentionally separate.
+completedAiRunOutput.properties.result = { oneOf: Object.values(completedAiResultSchemas).map(toJson) };
+const aiRunOutput: JsonSchema = { oneOf: [completedAiRunOutput, toJson(aiFailedRunSchema.omit({ _context: true }))] };
 const aiDocumentJobOutput = toJson(storedAiDocumentJobSchema);
 delete aiDocumentJobOutput.properties.blocks.items.properties.text;
 aiDocumentJobOutput.properties.blocks.items.required = aiDocumentJobOutput.properties.blocks.items.required.filter((key: string) => key !== 'text');
@@ -163,6 +163,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   const parameters=[...url.matchAll(/:([A-Za-z0-9_]+)/g)].map(match=>match[1]!);
   if(parameters.length)schema.params={type:'object',properties:Object.fromEntries(parameters.map(name=>[name,{type:'string'}])),required:parameters};
   if(list)schema.querystring=toJson(z.object({...paginationFields}));
+  if(url==='/api/assets')schema.querystring=toJson(assetListQuerySchema);
   if(url==='/api/papers/:id')schema.querystring=toJson(z.object({summary:z.enum(['true','false']).optional()}).strict());
   if(url==='/api/papers/page')schema.querystring=toJson(paperListPageQuerySchema);
   if(url==='/api/papers/:id/metadata')schema.querystring=toJson(z.object({}).strict());
@@ -180,8 +181,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
   if(url==='/api/documents'||url==='/api/documents/page')schema.querystring=toJson(documentListQuerySchema);
-  if(url==='/api/questions')schema.querystring=toJson(z.object({page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(200).default(30),search:z.string().max(1000).optional(),domainId:id.optional(),categoryId:id.optional(),paperId:id.optional(),tagIds:z.string().optional(),tagMode:z.enum(['all','any']).optional(),type:validation.types.optional(),difficulty:z.coerce.number().int().min(1).max(4).optional(),depth:z.coerce.number().int().min(1).max(4).optional(),frequency:z.coerce.number().int().min(0).max(3).optional(),collection:z.enum(['general','personal','all']).optional(),status:z.enum(['published','pending','draft','archived','all']).optional(),favorite:z.enum(['true','false','1','0']).optional(),due:z.enum(['true','false','1','0']).optional(),wrong:z.enum(['true','false','1','0']).optional()}));
-  if(['/api/domains','/api/categories','/api/tags'].includes(url))schema.querystring=toJson(z.object({...paginationFields,search:z.string().max(1000).optional(),domainId:id.optional(),parentId:id.optional(),kind:z.string().max(40).optional()}));
+  if(url==='/api/questions')schema.querystring=toJson(questionQuerySchema);
+  if(['/api/domains','/api/categories','/api/tags'].includes(url))schema.querystring=toJson(taxonomyQuerySchema);
   if(url==='/api/reviews')schema.querystring=toJson(z.object({...paginationFields,questionId:id.optional(),partId:id.optional(),whole:z.enum(['true','false']).optional()}));
   if(url==='/api/paper-drafts')schema.querystring=toJson(z.object({context:z.string().min(1).max(160).optional()}));
   if(url==='/api/document-drafts')schema.querystring=toJson(documentDraftQuerySchema);
@@ -291,7 +292,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   return schema;
 }
 const configurationExample = { format:'noetic-atlas-configuration', schemaVersion:1, exportedAt:'2026-10-23T00:00:00.000Z', system:Object.fromEntries(Object.entries(DEFAULT_SETTINGS).filter(([key])=>key!=='id'&&key!=='updatedAt')) };
-function baseDocument(){return {components:{schemas:{QuestionInput:toJson(validation.questionSchema),PaperInput:toJson(validation.paperInputSchema),DocumentInput:toJson(validation.documentSchema),SystemSettings:toJson(settingsSchema),ConfigurationExport:toJson(configurationSchema),ConfigurationPreview:toJson(configurationPreviewSchema),ConfigurationImportResult:toJson(configurationImportResultSchema),PaperDraft:toJson(paperDraftSchema),PaperDraftState:toJson(paperDraftStateSchema),Paper:paperOutput,Attempt:attemptOutput,AiRun:aiRunOutput,AiQuestionEditInput:toJson(aiQuestionEditInputSchema),AiQuestionEditResult:toJson(aiQuestionEditResultSchema),AiProgressEvent:aiProgressEvent,AiRecommendationInput:toJson(ai.aiPaperPlanInputSchema),AiRecommendationOutput:toJson(ai.aiPaperPlanOutputSchema),ApiError:errorSchema}},openapi:'3.1.0',info:{title:'认知星图 · Noetic Atlas API',version:'1.0.0',description:'运行时自动生成的本地学习站API。AI密钥仅用于请求服务商，不进入文档、AI记录与分享包。交互文档在本机运行，可直接试用接口。'},servers:[{url:'/'}]};}
+function baseDocument(){return {components:{schemas:{QuestionInput:toJson(validation.questionSchema),PaperInput:toJson(validation.paperInputSchema),DocumentInput:toJson(validation.documentSchema),SystemSettings:toJson(settingsSchema),ConfigurationExport:toJson(configurationSchema),ConfigurationPreview:toJson(configurationPreviewSchema),ConfigurationImportResult:toJson(configurationImportResultSchema),PaperDraft:toJson(paperDraftSchema),PaperDraftState:toJson(paperDraftStateSchema),Paper:paperOutput,Attempt:attemptOutput,AiRun:aiRunOutput,AiQuestionEditInput:toJson(aiQuestionEditInputSchema),AiQuestionEditResult:toJson(aiQuestionEditResultSchema),AiProgressEvent:aiProgressEvent,AiRecommendationInput:toJson(ai.aiPaperPlanInputSchema),AiRecommendationOutput:toJson(ai.aiPaperPlanOutputSchema),ApiError:errorSchema}},openapi:'3.1.0',info:{title:'认知星图 · Noetic Atlas API',version:packageInfo.version,description:'运行时自动生成的本地学习站API。AI密钥仅用于请求服务商，不进入文档、AI记录与分享包。交互文档在本机运行，可直接试用接口。'},servers:[{url:'/'}]};}
 function nativeDocument(routes:RouteEntry[]){
   const paths:Record<string,any>={};
   for(const entry of routes){if(!entry.url.startsWith('/api/')||entry.url.startsWith('/api/docs')||entry.url==='/api/openapi.json'||entry.method==='HEAD')continue;const schema=documentationSchema(entry) as any;const path=entry.url.replace(/:([A-Za-z0-9_]+)/g,'{$1}');const operation:any={tags:schema.tags,summary:schema.summary,operationId:schema.operationId,description:schema.description,parameters:[],responses:Object.fromEntries(Object.entries(schema.response).map(([code,value])=>[code,{description:Number(code)<400?'成功':'请求失败',content:(value as any).content||{'application/json':{schema:value}}}]))};for(const [where,shape] of [['path',schema.params],['query',schema.querystring],['header',schema.headers]] as const){for(const [name,value] of Object.entries(shape?.properties||{}))operation.parameters.push({in:where,name,required:where==='path'||shape.required?.includes(name)||false,schema:value});}if(schema.body)operation.requestBody={required:true,content:{'application/json':{schema:schema.body}}};(paths[path]||={})[entry.method.toLowerCase()]=operation;}

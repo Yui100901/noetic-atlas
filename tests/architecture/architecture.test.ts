@@ -90,6 +90,46 @@ test('shared stays platform independent and browser code cannot import server im
   assert.deepEqual(violations, [], 'Platform boundary violations:\n' + violations.join('\n'));
 });
 
+test('reusable question and paper components keep route pages out of their dependency graph', () => {
+  const entryPages = new Set(['questions/questions.tsx', 'papers/paper-editor.tsx'].map(file => join(root, 'web/features', file)));
+  const violations: string[] = [];
+  const feature = (file: string) => relative(join(root, 'web/features'), file).replaceAll('\\', '/').split('/')[0];
+  // Same-feature page composition (for example the vocabulary reference page)
+  // is valid. Other features must consume the extracted reusable modules.
+  for (const file of sourceFiles(join(root, 'web/features'))) for (const dependency of dependencies(file)) {
+    if (!dependency.specifier.startsWith('.')) continue;
+    const target = localTarget(file, dependency.specifier);
+    if (target && entryPages.has(target) && feature(file) !== feature(target)) violations.push(diagnostic(file, dependency, 'import reusable components instead of another feature\'s route page'));
+  }
+  // Check transitive dependencies too: a helper must not reintroduce a heavy
+  // route chunk indirectly through a new barrel or component import.
+  const checked = new Set<string>();
+  const visit = (file: string) => {
+    if (checked.has(file)) return;
+    checked.add(file);
+    for (const dependency of dependencies(file)) {
+      if (!dependency.specifier.startsWith('.')) continue;
+      const target = localTarget(file, dependency.specifier);
+      if (!target) continue;
+      if (entryPages.has(target)) violations.push(diagnostic(file, dependency, 'reusable component graph cannot depend on a route page'));
+      else if (/\.[cm]?[jt]sx?$/.test(target)) visit(target);
+    }
+  };
+  for (const file of ['questions/question-filters.tsx', 'questions/question-row.tsx', 'questions/question-preview.tsx', 'papers/random-filters.tsx']) visit(join(root, 'web/features', file));
+  assert.deepEqual(violations, [], 'Page/component boundary violations:\n' + violations.join('\n'));
+});
+
+test('paper list and question viewer action layouts have one stylesheet owner', () => {
+  const owners = new Map([
+    ['.paper-list-tools', 'web/features/papers/paper-organization.css'],
+    ['.question-viewer-feedback', 'web/features/questions/question-viewer.css'],
+  ]);
+  for (const [selector, owner] of owners) {
+    const files = sourceFiles(join(root, 'web')).filter(file => file.endsWith('.css') && readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').includes(selector));
+    assert.deepEqual(files.map(file => relative(root, file).replaceAll('\\', '/')).sort(), [owner], selector + ' must not depend on route stylesheet loading order');
+  }
+});
+
 test('platform aliases use actual Vite resolution and remain exact in browser and Android builds', async () => {
   const { resolveConfig } = await import('vite');
   const importer = join(root, 'web/app/main.tsx');

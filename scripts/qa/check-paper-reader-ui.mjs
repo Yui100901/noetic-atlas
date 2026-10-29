@@ -57,7 +57,9 @@ try {
   let navigation = 0;
   const readerHref = (id, query = '') => '#/papers/' + paperId + '/questions/' + encodeURIComponent(id) + query;
   const go = async path => { await page.goto(origin + '/?paper-reader-ui=' + ++navigation + (path.startsWith('#') ? path : '#/' + path)); await page.waitForLoadState('networkidle'); };
-  const waitReader = async id => { await page.locator('.paper-question-page .question-viewer-reading').waitFor(); assert.equal(decodeURIComponent(new URL(page.url()).hash.split('?')[0]), decodeURIComponent(readerHref(id))); assert.equal(await page.getByRole('dialog').count(), 0); };
+  // The reader shell can appear before its deferred Markdown chunk. Wait for
+  // rendered content, not its status placeholder, before snapshot assertions.
+  const waitReader = async id => { await page.locator('.paper-question-page .question-viewer-reading .markdown:not([role="status"])').first().waitFor(); assert.equal(decodeURIComponent(new URL(page.url()).hash.split('?')[0]), decodeURIComponent(readerHref(id))); assert.equal(await page.getByRole('dialog').count(), 0); };
   const nav = () => page.getByRole('navigation', { name: '题集阅读导航', exact: true }).first();
   const previous = () => nav().locator('a,button').filter({ hasText: /^上一题/ });
   const next = () => nav().locator('a,button').filter({ hasText: /下一题/ });

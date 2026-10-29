@@ -1,16 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
 import initSqlJs from 'sql.js';
-import {build} from 'vite';
-import {nativeAliases} from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 
 test('native AI workspace drafts persist, roll back disk failures and pass full SQLite recovery validation',async t=>{
- const directory=resolve('test-results/native-ai-workspace-drafts');await mkdir(directory,{recursive:true});
- await build({configFile:false,logLevel:'error',define:{'process.env':'{}'},resolve:{alias:nativeAliases},build:{outDir:directory,emptyOutDir:false,minify:false,lib:{entry:resolve('mobile/runtime.ts'),formats:['es'],fileName:()=> 'runtime.mjs'}}});
- const {createLocalRuntime}=await import(pathToFileURL(resolve(directory,'runtime.mjs')).href),sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
+
+
+ const {createLocalRuntime}=await loadNativeRuntime(),sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
  const seed={schemaVersion:1,domains:[],categories:[],tags:[],questions:[],documents:[],papers:[]};
  let durable:Uint8Array|undefined,failSave=false,saves=0;
  const storage={async load(){return durable?.slice();},async save(bytes:Uint8Array){if(failSave)throw new Error('test disk full');durable=bytes.slice();saves++;}};

@@ -14,7 +14,7 @@
 
 #reference-answer{scroll-margin-top:25px}
 
-.paper-list-tools{display:flex;gap:20px;align-items:center}.archive-switch{font-size:10px;color:var(--theme-muted, #8b9d79);display:flex;gap:6px;align-items:center;white-space:nowrap}.archive-switch input{height:12px;width:12px}.paper-list-tools .search-box{width:230px;min-width:0}.markdown [id]{scroll-margin-top:24px}.document-anchor{display:block;scroll-margin-top:24px}.question-checkbox:disabled{opacity:.35;cursor:not-allowed}@media(max-width:760px){.paper-list-tools{flex-wrap:wrap;justify-content:flex-end;gap:7px}.paper-list-tools .search-box{width:170px}.archive-switch{font-size:9px}.archive-switch input{width:11px;height:11px}}
+.archive-switch{font-size:10px;color:var(--theme-muted, #8b9d79);display:flex;gap:6px;align-items:center;white-space:nowrap}.archive-switch input{height:12px;width:12px}.markdown [id]{scroll-margin-top:24px}.document-anchor{display:block;scroll-margin-top:24px}.question-checkbox:disabled{opacity:.35;cursor:not-allowed}@media(max-width:760px){.archive-switch{font-size:9px}.archive-switch input{width:11px;height:11px}}
 
 /* Optional paper scoring and review; shared by desktop and the offline Android shell. */
 .paper-score-label{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:17px;font-size:10px;color:var(--muted,var(--theme-muted, #768579))}

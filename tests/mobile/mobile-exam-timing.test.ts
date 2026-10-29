@@ -1,17 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.js';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 import type { SeedData } from '../../shared/models/types.js';
 
 test('actual offline runtime persists exam deadline, auto-submission and elapsed time across restart without accepting late answers', async t => {
-  const folder = resolve('test-results/native-exam-timing'); await mkdir(folder, { recursive: true });
-  await build({ configFile: false, logLevel: 'error', define: { 'process.env': '{}' }, resolve: { alias: nativeAliases }, build: { outDir: folder, emptyOutDir: false, minify: false, lib: { entry: resolve('mobile/runtime.ts'), formats: ['es'], fileName: () => 'runtime.mjs' } } });
-  const { createLocalRuntime } = await import(pathToFileURL(resolve(folder, 'runtime.mjs')).href);
+
+
+  const { createLocalRuntime } = await loadNativeRuntime();
   const sql = await initSqlJs({ locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm') });
   const start = Date.parse('2026-10-22T02:00:00.000Z');
   const seed: SeedData = { schemaVersion: 1, generatedAt: new Date(start).toISOString(), domains: [], categories: [], tags: [], documents: [], papers: [], questions: [{ id: 'TIMED-Q', title: '判断网络协议', type: 'true_false', stemMarkdown: 'TCP提供可靠传输', answerMarkdown: '对', explanationMarkdown: '', options: [], correctAnswers: ['true'], difficulty: 1, depth: 1, frequency: 1, frequencyScope: '', frequencyBasis: '', collection: 'general', status: 'published', categoryIds: [], tagIds: [], sourceRefs: [], sourceDocument: null, sourceAnchor: null }] };

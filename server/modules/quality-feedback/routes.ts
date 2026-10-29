@@ -1,20 +1,14 @@
+import { readOnlyOperation } from '../../http/operation.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Question } from '../../../shared/models/types.js';
 import type { QuestionFeedback, QuestionFeedbackSummary } from '../../../shared/models/question-feedback.js';
-import { QUESTION_FEEDBACK_KINDS } from '../../../shared/models/question-feedback.js';
 import type { Store } from '../../core/store.js';
 import { id, parse } from '../../core/validation.js';
-import { paginationFields } from '../../core/pagination.js';
 import { runAiAction } from '../ai/execution.js';
-import { questionFeedbackInputSchema, questionFeedbackResolveSchema, questionFeedbackAiInputSchema } from './schema.js';
+import { questionFeedbackInputSchema, questionFeedbackResolveSchema, questionFeedbackAiInputSchema, questionFeedbackQuerySchema, questionFeedbackSummariesSchema } from './schema.js';
 import { createQuestionFeedback, resolveQuestionFeedback, requireFeedback, feedbackView, feedbackFingerprint, enrichQuestionsWithFeedback, feedbackCandidates, reviewFeedbackBatch } from './service.js';
 
-export const questionFeedbackQuerySchema = z.object({
-  page: paginationFields.page.default(1), pageSize: paginationFields.pageSize.default(20), status: z.enum(['pending', 'confirmed', 'resolved', 'dismissed', 'open', 'all']).default('open'),
-  questionId: id.optional(), partId: id.optional(), domainId: id.optional(), kind: z.enum(QUESTION_FEEDBACK_KINDS).optional(), search: z.string().trim().max(200).default(''),
-}).strict().refine(value => !value.partId || !!value.questionId, '按小题筛选时还需提供原题ID');
-export const questionFeedbackSummariesSchema = z.object({ questionIds: z.array(id).min(1).max(500).refine(values => new Set(values).size === values.length, '题号不能重复') }).strict();
 export function questionFeedbackPage(store: Store, query: z.infer<typeof questionFeedbackQuerySchema>) {
   const d = store.database, x = d.expressions;
   let matches = d.query.selectFrom('question_feedback as f');
@@ -44,7 +38,7 @@ export function questionFeedbackPage(store: Store, query: z.infer<typeof questio
 export function registerQuestionFeedbackRoutes(app: FastifyInstance, store: Store, options: { native?: boolean } = {}) {
   app.get('/api/question-feedback', async request => questionFeedbackPage(store, parse(questionFeedbackQuerySchema, request.query)));
   app.post('/api/question-feedback', async (request, reply) => reply.code(201).send(createQuestionFeedback(store, parse(questionFeedbackInputSchema, request.body))));
-  app.post('/api/question-feedback/summaries', async request => {
+  app.post('/api/question-feedback/summaries', readOnlyOperation, async request => {
     const input = parse(questionFeedbackSummariesSchema, request.body), questions = enrichQuestionsWithFeedback(store, input.questionIds.map(id => ({ id })));
     const summaries: Record<string, QuestionFeedbackSummary> = Object.fromEntries(questions.map(question => [question.id, question.feedbackSummary])); return { summaries };
   });

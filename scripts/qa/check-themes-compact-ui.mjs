@@ -106,16 +106,22 @@ try {
   checks.push('题集查看复用紧凑学习情况，数据一致，390px正文与侧栏无横向溢出');
 
   await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('settings');
+  await page.locator('.settings-retention > summary').click();
+  await page.locator('.settings-points-disclosure > summary').click();
   await page.locator('#system-settings-form input[type="number"]').first().waitFor();
   measurements.settings = await page.locator('#system-settings-form input[type="number"]:visible').evaluateAll(nodes => nodes.map(node => ({ width: node.getBoundingClientRect().width, label: node.closest('.field')?.querySelector('.field-label')?.textContent })));
   assert.ok(measurements.settings.every(item => item.width > 0 && item.width <= 170), JSON.stringify(measurements.settings));
   const columns = await page.locator('.settings-sections-grid .form-grid').first().evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length);
   assert.ok(columns >= 3, 'desktop settings should use available width for multiple fields'); await snapshot('compact-settings-desktop');
   await setTheme('dark'); assert.equal((await api('/api/settings')).theme, 'green');
-  await page.getByRole('button', { name: '文件资源', exact: true }).click(); await waitTheme('green');
+  await page.getByRole('button', { name: '文件资源', exact: true }).click(); await waitTheme('dark');
+  await page.getByRole('button', { name: '学习与练习', exact: true }).click();
+  assert.equal(await page.locator('input[name="interface-theme"][value="dark"]').isChecked(), true);
+  await page.getByRole('region', { name: '系统配置保存操作', exact: true }).getByText('有未保存的修改', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '放弃当前修改', exact: true }).click(); await waitTheme('green');
   await navigate('questions/COMPACT-Q'); await waitTheme('green');
   assert.equal(await page.evaluate(() => localStorage.getItem('noetic-atlas-theme')), 'green');
-  checks.push('配置数字输入桌面不超过170px并多列组织；主题选择可预览，未保存离开恢复已确认主题');
+  checks.push('配置数字输入桌面不超过170px并多列组织；主题预览跨分区保留未保存输入，放弃修改恢复已确认主题');
 
   for (const theme of ['dark', 'pink', 'sky', 'mint', 'green']) {
     await navigate('settings'); await saveTheme(theme);

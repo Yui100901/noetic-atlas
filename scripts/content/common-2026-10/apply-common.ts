@@ -9,7 +9,7 @@ import { recordTables } from '../../../server/database/schema.js';
 import { DatabaseConnection } from '../../../server/database/connection.js';
 import type { Question } from '../../../shared/models/types.js';
 import { questionSchema } from '../../../server/core/validation.js';
-import { validateAssetReferences } from '../../../server/modules/assets/routes.js';
+import { validateAssetReferences } from '../../../server/modules/assets/service.js';
 import { importData } from '../../../server/modules/transfer/migration.js';
 import { validatePack, validatePackSet, assertImportCompatible } from '../manage.js';
 import { FOUNDATION_PACK_NAMES } from '../../qa/audit-foundations.js';

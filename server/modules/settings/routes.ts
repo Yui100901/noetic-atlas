@@ -5,8 +5,6 @@ import { parse } from '../../core/validation.js';
 import { getSettings, settingsSchema, saveSettings } from './service.js';
 import { registerConfigurationRoutes } from './configuration.js';
 
-export { settingsSchema, getSettings, ensureSettings, applyAttemptRetention } from './service.js';
-
 export function registerSettingsRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/settings', async () => getSettings(store));
   app.put('/api/settings', async request => {

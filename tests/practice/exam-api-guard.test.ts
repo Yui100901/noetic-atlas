@@ -1,3 +1,4 @@
+import packageInfo from '../../package.json' with { type: 'json' };
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -28,7 +29,7 @@ test('active exam locks all other application APIs including answers AI docs and
  ['GET','/api/settings',undefined],['GET','/api/attempts',undefined],['GET',`/api/attempts/${f.other.id}`,undefined],['POST','/api/paper-drafts',{}],['DELETE',`/api/papers/${f.paper.id}`,undefined]
  ] as const){const result=await f.api(method,url,payload,409);assert.equal(result.error.code,'EXAM_ACTIVE');assert.equal(result.error.details.attemptId,f.exam.id);}
  await f.api('GET','/api/health');await f.api('GET','/api/bootstrap');await f.api('GET','/api/exams/active');assert.equal((await f.api('GET',base)).status,'in_progress');await f.api('GET',`/api/assets/${f.asset.id}`);await f.api('GET',`/api/assets/${f.asset.id}/data`);const image=await f.app.inject({method:'GET',url:`/api/assets/${f.asset.id}/content`});assert.equal(image.statusCode,200);
- await f.api('PUT',base,{answers:{S1:{value:'操作全部完成或全部回滚。'}}});await f.api('POST',base+'/sync');assert.equal((await f.api('POST',base+'/submit',{})).status,'submitted');assert.equal((await f.api('GET','/api/questions/S1')).id,'S1');assert.equal((await f.api('GET','/api/openapi.json')).info.version,'1.0.0');
+ await f.api('PUT',base,{answers:{S1:{value:'操作全部完成或全部回滚。'}}});await f.api('POST',base+'/sync');assert.equal((await f.api('POST',base+'/submit',{})).status,'submitted');assert.equal((await f.api('GET','/api/questions/S1')).id,'S1');assert.equal((await f.api('GET','/api/openapi.json')).info.version,packageInfo.version);
 });
 
 test('expired exam GET stays read-only and locked until explicit sync durably auto-submits then unlocks',async t=>{

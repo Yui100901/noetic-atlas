@@ -76,7 +76,11 @@ test('closed or stale quality evidence is marked as history and unresolved issue
 test('image omission is explicit and real SSE forwards status, deltas and only the complete validated result',async t=>{
  const f=await fixture(t);f.put('Q',{stemMarkdown:'观察图片 ![图](https://example.org/remote.png) 后解释。'});f.mode('sse');
  const response=await f.call({}, {accept:'text/event-stream'});assert.equal(response.statusCode,200);assert.ok(String(response.headers['content-type']).includes('text/event-stream'));
- const events=response.body.split('\n\n').filter(frame=>frame.startsWith('data: ')).map(frame=>JSON.parse(frame.slice(6)));assert.ok(events.some(event=>event.type==='status'));assert.ok(events.some(event=>event.type==='delta'));const result=events.find(event=>event.type==='result');assert.ok(result);assert.ok(result.result.warnings.some((value:string)=>value.includes('图')));assert.equal(f.completions[0].stream,true);
+ const events=response.body.split('\n\n').filter(frame=>frame.startsWith('data: ')).map(frame=>JSON.parse(frame.slice(6)));
+ // An established SSE stream reports upstream/validation failures as error
+ // events with HTTP 200. Preserve strict forwarding checks, with safe evidence.
+ const diagnostic=JSON.stringify({events:events.map(event=>event.type==='error'?{type:event.type,code:event.error?.code,message:event.error?.message}:{type:event.type}),providerStream:f.completions.map(value=>value.stream)});
+ assert.deepEqual(events.filter(event=>event.type==='error'),[],diagnostic);assert.ok(events.some(event=>event.type==='status'),diagnostic);assert.ok(events.some(event=>event.type==='delta'),diagnostic);const result=events.find(event=>event.type==='result');assert.ok(result);assert.ok(result.result.warnings.some((value:string)=>value.includes('图')));assert.equal(f.completions[0].stream,true);
  assert.ok(!JSON.stringify(f.completions).includes('image_url'));assert.equal(f.store.all<any>('ai_runs').filter(run=>run.status==='completed').length,1);
 });
 

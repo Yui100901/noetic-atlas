@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import { Store } from '../../server/core/store.js';
 import { ApiError } from '../../server/core/validation.js';
-import { ensureSettings, getSettings } from '../../server/modules/settings/routes.js';
+import { ensureSettings, getSettings } from '../../server/modules/settings/service.js';
 import { registerPaperDraftRoutes } from '../../server/modules/practice/paper-drafts.js';
 import { DEFAULT_SETTINGS } from '../../shared/models/settings.js';
 import type { PaperDraftState } from '../../shared/practice/paper-drafts.js';

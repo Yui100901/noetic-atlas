@@ -44,7 +44,7 @@ export function QuestionImportPage() {
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   };
   return <><a className="back-link" href="#/questions"><ArrowLeft size={15} />返回知识题库</a>
-    <PageHeader eyebrow="BULK QUESTION IMPORT" title="批量收集，逐步核对。" description="把整理好的新题按模板导入。每道新题都进入待审核，通过审核后再加入正式题库。" actions={<a className="button" href="#/ai">AI辅助转换 PDF / 文本</a>} />
+    <PageHeader eyebrow="BULK QUESTION IMPORT" title="批量收集，逐步核对。" description="把整理好的新题按模板导入。每道新题都进入待审核，通过审核后再加入正式题库。" actions={<a className="button" href="#/ai?tab=import">AI辅助转换 PDF / 文本</a>} />
     <div className="import-purpose-grid"><section className="card"><strong>批量新增</strong><p>本页接收全新的题目。无论文件原状态是什么，导入后均为待审核，不覆盖已有题号。</p></section><a className="card" href="#/questions/review"><strong>修改待审核题 →</strong><p>在审核页导出、修改再回导，保留题号和版本；用于批量修正已有待审核内容。</p></a><a className="card" href="#/data"><strong>备份与题库迁移 →</strong><p>迁移可信备份，保留发布和审核状态、题集、学习记录及作答历史。</p></a></div>
     <div className="ui-stack"><section className="card form-stack"><h2>1. 下载模板并整理题目</h2><div className="action-row"><button className="button primary" disabled={busy} onClick={() => void template()}><Download size={16} />下载 JSON 新题模板</button><button className="button" disabled={busy} onClick={() => void taxonomy()}><Download size={16} />下载分类与标签 ID</button><a className="button" href="#/taxonomy">管理分类与标签</a></div>
       <p className="muted">模板包含判断、单选、多选、填空、简答、论述及组合题示例。可删除示例后填入自己的题目；示例本身也会被当作新题导入。</p>

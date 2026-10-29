@@ -8,6 +8,8 @@ import { registerAiRoutes } from '../../server/modules/ai/routes.js';
 import { registerAiDocumentRoutes } from '../../server/modules/ai/document-routes.js';
 import { documentJob, processDocumentJob } from '../../server/modules/ai/document-service.js';
 import { validateStoredAiDocumentJob } from '../../server/modules/ai/document-schema.js';
+import { registerAssetRoutes } from '../../server/modules/assets/routes.js';
+import { assetIsReferenced, validateAllAssetReferences } from '../../server/modules/assets/service.js';
 
 async function fixture(t: test.TestContext) {
   const store = new Store(':memory:');
@@ -16,7 +18,7 @@ async function fixture(t: test.TestContext) {
   const requests: Array<{ stage: string; label: string; text: string; path: string; stream: boolean }> = [];
   const failing = new Map<string, 'http' | 'json' | 'empty'>();
   const gates = new Map<string, { wait: Promise<void>; release(): void }>();
-  let duplicate = false, invalidImage = false;
+  let duplicate = false, invalidImage = false, managedImageId = '';
   const provider = createServer(async (request, response) => {
     const body: Buffer[] = []; for await (const chunk of request) body.push(Buffer.from(chunk));
     const input = JSON.parse(Buffer.concat(body).toString('utf8'));
@@ -27,7 +29,7 @@ async function fixture(t: test.TestContext) {
     await gates.get(label)?.wait;
     const problem = failing.get(`${stage}:${label}`);
     if (problem === 'http') { response.writeHead(429, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: 'secret-provider-detail DO_NOT_LEAK test-key' })); return; }
-    const question = { title: `练习${label}`, type: 'short_answer', stemMarkdown: invalidImage ? '根据图片回答 ![虚构图](/api/assets/missing-book-diagram/content)' : duplicate ? '重复的变量问题？' : `${label}：变量绑定的含义是什么？`, answerMarkdown: '名称引用一个值。', explanationMarkdown: '根据本块关于变量与赋值的说明。', difficulty: 2, categoryIds: [], tagIds: [] };
+    const question = { title: `练习${label}`, type: 'short_answer', stemMarkdown: managedImageId ? `根据图片回答 ![托管图](/api/assets/${managedImageId}/content)` : invalidImage ? '根据图片回答 ![虚构图](/api/assets/missing-book-diagram/content)' : duplicate ? '重复的变量问题？' : `${label}：变量绑定的含义是什么？`, answerMarkdown: '名称引用一个值。', explanationMarkdown: '根据本块关于变量与赋值的说明。', difficulty: 2, categoryIds: [], tagIds: [] };
     const value = stage === 'plan' ? { title: `主题${label}`, summary: '本块讲解变量名称和值的绑定关系。', topics: ['变量', '赋值'] } : { questions: [question], taxonomySuggestions: { domains: ['计算机'], categories: ['Python'], tags: ['变量'] } };
     const content = problem === 'json' ? '{"questions": [BROKEN' : problem === 'empty' ? '' : JSON.stringify(value);
     if (input.stream) {
@@ -42,7 +44,7 @@ async function fixture(t: test.TestContext) {
   const address = `http://127.0.0.1:${(provider.address() as { port: number }).port}`;
   const app = Fastify({ bodyLimit: 16_000_000 });
   app.setErrorHandler((reason, _request, reply) => reason instanceof ApiError ? reply.code(reason.status).send({ error: { code: reason.code, message: reason.message, details: reason.details } }) : reply.code(500).send({ error: { code: 'INTERNAL', message: reason.message } }));
-  registerAiRoutes(app, store); registerAiDocumentRoutes(app, store);
+  registerAiRoutes(app, store); registerAiDocumentRoutes(app, store); registerAssetRoutes(app, store);
   const api = async (path: string, payload?: unknown, expected = 200, method?: 'GET' | 'POST' | 'DELETE') => {
     const response = await app.inject({ url: path, method: method || (payload === undefined ? 'GET' : 'POST'), ...(payload === undefined ? {} : { payload }) });
     assert.equal(response.statusCode, expected, response.body); return response.json();
@@ -50,10 +52,38 @@ async function fixture(t: test.TestContext) {
   await app.inject({ url: '/api/ai/settings', method: 'PUT', payload: { enabled: true, baseUrl: address, model: 'isolated-document-model', key: 'test-key', supportsImages: false, sendImages: false, timeoutSeconds: 10, maxTokens: 4096 } });
   t.after(async () => { gates.forEach(gate => gate.release()); await app.close(); store.db.close(); await new Promise<void>(resolve => provider.close(() => resolve())); });
   const create = (changes = {}) => api('/api/ai/document-jobs', { confirmed: true, sourceName: '教材.pdf', sourceUrl: address + '/never-fetch.pdf', sections: [{ label: 'A', text: 'SOURCE_CANARY_A：变量名称引用值。', pageStart: 1, pageEnd: 3 }, { label: 'B', text: 'SOURCE_CANARY_B：赋值更新绑定。', pageStart: 4, pageEnd: 6 }], categoryIds: ['python'], mode: 'generate', questionsPerBlock: 2, maxQuestions: 20, questionTypes: ['short_answer'], difficulty: 2, ...changes }, 201);
-  return { app, store, api, requests, failing, create, duplicate: (value: boolean) => { duplicate = value; }, invalidImage: (value: boolean) => { invalidImage = value; }, hold(label: string) { let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; }); gates.set(label, { wait, release }); return release; } };
+  return { app, store, api, requests, failing, create, managedImage: (value: string) => { managedImageId = value; }, duplicate: (value: boolean) => { duplicate = value; }, invalidImage: (value: boolean) => { invalidImage = value; }, hold(label: string) { let release!: () => void; const wait = new Promise<void>(resolve => { release = resolve; }); gates.set(label, { wait, release }); return release; } };
 }
 const ids = (job: any) => job.blocks.map((block: any) => block.id);
 const path = (job: any, action = '') => `/api/ai/document-jobs/${job.id}${action ? '/' + action : ''}`;
+
+test('generated textbook candidates protect managed images before import and release references on edits, rollback and deletion', async t => {
+  const f = await fixture(t);
+  const image = await f.api('/api/assets', { filename: '教材示意图.png', mimeType: 'image/png', dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9WQAAAAASUVORK5CYII=' }, 201);
+  f.managedImage(image.id);
+  const job = await f.create({ sections: [{ label: 'A', text: '仅供测试的图解教材。' }], maxQuestions: 2 });
+  await f.api(path(job, 'plan'), { blockIds: ids(job) });
+  const generated = await f.api(path(job, 'generate'), { blockIds: ids(job) });
+  assert.equal(generated.questionCount, 1); assert.equal(f.store.all('questions').length, 0);
+  const original = documentJob(f.store, job.id); validateStoredAiDocumentJob(original); validateAllAssetReferences(f.store);
+  assert.equal((await f.api('/api/assets'))[0].referenced, true);
+  await f.api('/api/assets/' + image.id, undefined, 409, 'DELETE');
+  assert.throws(() => f.store.transaction(() => {
+    const changed = structuredClone(original); changed.blocks[0]!.questions = [];
+    f.store.database.putRecord('ai_import_jobs', job.id, changed);
+    assert.equal(assetIsReferenced(f.store, image.id), false);
+    throw Error('rollback candidate removal');
+  }), /rollback candidate removal/);
+  assert.equal(assetIsReferenced(f.store, image.id), true);
+  const edited = structuredClone(original); edited.blocks[0]!.questions![0]!.stemMarkdown = '移除图片后的教材候选题';
+  f.store.database.putRecord('ai_import_jobs', job.id, edited);
+  assert.equal((await f.api('/api/assets'))[0].referenced, false);
+  f.store.database.putRecord('ai_import_jobs', job.id, original);
+  assert.equal(assetIsReferenced(f.store, image.id), true);
+  await f.api(path(job), undefined, 200, 'DELETE');
+  assert.equal((await f.api('/api/assets'))[0].referenced, false);
+  await f.api('/api/assets/' + image.id, undefined, 200, 'DELETE');
+});
 
 test('document tasks retain confirmed private source chunks, bounded Unicode and pure public summaries', async t => {
   const f = await fixture(t);

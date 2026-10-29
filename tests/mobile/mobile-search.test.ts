@@ -1,16 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 
 test('native unified search updates safely, survives restart, upgrades old indexes and rebuilds restored caches', async t => {
-  const folder = resolve('test-results/native-search'); await mkdir(folder, { recursive: true });
-  await build({ configFile: false, logLevel: 'error', define: { 'process.env': '{}' }, resolve: { alias: nativeAliases }, build: { outDir: folder, emptyOutDir: false, minify: false, lib: { entry: resolve('mobile/runtime.ts'), formats: ['es'], fileName: () => 'runtime.mjs' } } });
-  const { createLocalRuntime } = await import(pathToFileURL(resolve(folder, 'runtime.mjs')).href);
+
+
+  const { createLocalRuntime } = await loadNativeRuntime();
   const sql = await initSqlJs({ locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm') });
   const seed = { schemaVersion: 1, domains: [{ id: 'search-domain', name: '搜索领域', description: '', sortOrder: 0 }], categories: [{ id: 'search-category', domainId: 'search-domain', parentId: null, name: '搜索分类', description: '', sortOrder: 0 }], tags: [{ id: 'search-tag', name: '搜索标签', color: '#66CCFF', description: '', domainId: null, kind: 'topic' }], documents: [], papers: [], questions: [
     { id: 'SEARCH-Q', title: '搜索事务', type: 'short_answer', stemMarkdown: '本地数据一致性', answerMarkdown: 'REFERENCE_ONLY_CANARY', status: 'published', categoryIds: ['search-category'], tagIds: ['search-tag'] },

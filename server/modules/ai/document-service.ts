@@ -1,3 +1,4 @@
+import { putCompletedAiRun } from './run-storage.js';
 import type { AiDocumentJob, AiDocumentJobSummary, AiDocumentFailure } from '../../../shared/ai/ai-document.js';
 import { AI_DOCUMENT_LIMITS } from '../../../shared/ai/ai-document.js';
 import type { AiDiagnostics } from '../../../shared/ai/ai.js';
@@ -5,8 +6,8 @@ import type { AiExecutionContext } from '../../../shared/ai/ai-progress.js';
 import type { Question, QuestionInput } from '../../../shared/models/types.js';
 import { Store, makeId, now, nextStamp } from '../../core/store.js';
 import { ApiError, fail, parse, questionSchema } from '../../core/validation.js';
-import { validateAssetReferences } from '../assets/routes.js';
-import { getSettings } from '../settings/routes.js';
+import { validateAssetReferences } from '../assets/service.js';
+import { getSettings } from '../settings/service.js';
 import { readPrivateSettings } from './settings.js';
 import { requestAiJson } from './provider.js';
 import { auditAiOperation, auditedFailure, aiFailureFromError } from './audit.js';
@@ -70,7 +71,7 @@ function failure(error: unknown, stage: 'plan' | 'generate'): AiDocumentFailure 
 }
 function completed(store: Store, kind: 'document_plan' | 'document_generate', job: StoredAiDocumentJob, block: StoredAiDocumentJob['blocks'][number], result: unknown, model: string, diagnostics?: AiDiagnostics) {
   const record = { id: makeId('ai'), kind, status: 'completed', createdAt: now(), model, warnings: ['教材任务只保存预览；新增题目仍需显式确认并进入待审核。'], result, questionIds: [], jobId: job.id, batchId: block.id, ...(diagnostics ? { diagnostics } : {}), _context: { questionVersions: {}, sourceByItem: {} } };
-  store.database.putRecord('ai_runs', record.id, record); return record.id;
+  putCompletedAiRun(store, record); return record.id;
 }
 function questionKey(question: QuestionInput) {
   const blanks = (question.blanks || []).map(({ id: _id, ...blank }) => blank);

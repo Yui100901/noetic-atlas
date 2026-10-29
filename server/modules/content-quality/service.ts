@@ -9,7 +9,7 @@ import { ApiError, fail } from '../../core/validation.js';
 import { qualityIssueQuerySchema, qualityResolveSchema } from './schema.js';
 import { inspectQuestionQuality, qualityContentFingerprint, qualitySignatures, type QualityFinding } from './rules.js';
 import type { z } from 'zod';
-import { validateAssetReferences } from '../assets/routes.js';
+import { validateAssetReferences } from '../assets/service.js';
 
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const scanning=new WeakMap<Store,Set<string>>();

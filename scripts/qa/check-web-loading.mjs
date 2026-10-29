@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from 'vite';
 import { tsImport } from 'tsx/esm/api';
+import { createViteQaPreparation } from './helpers/vite-preparation.mjs';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 const root = resolve(import.meta.dirname, '../..'), folder = resolve(root, 'test-results/web-loading');
@@ -34,9 +35,9 @@ function Harness(){
 createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(Harness)));
 `;
 const fixturePreparationStarted = performance.now();
+const preparation = await createViteQaPreparation({ root, cacheDir: resolve(folder, 'vite-cache'), extraUrls: ['/qa-loading-harness.tsx'] });
 const vite = await createServer({
-  root, configFile: resolve(root, 'vite.config.ts'), cacheDir: resolve(folder, 'vite-cache'),
-  optimizeDeps: { entries: [resolve(root, 'index.html')] },
+  root, configFile: resolve(root, 'vite.config.ts'), ...preparation.config,
   server: { host: '127.0.0.1', port: 0, strictPort: false, open: false },
   plugins: [{
     name: 'qa-web-loading-fixture',
@@ -55,14 +56,9 @@ const vite = await createServer({
 });
 let browser;
 try {
-  await vite.listen();
-  // This checks request scheduling/cancellation, not the dev server's source
-  // transformation startup. Do not crawl generated QA HTML as app entries.
-  await vite.environments.client.warmupRequest('/web/app/main.tsx');
-  await vite.environments.client.warmupRequest('/qa-loading-harness.tsx');
-  await vite.environments.client.waitForRequestsIdle();
+  await preparation.ready(vite);
   const fixturePreparationMs = Math.round(performance.now() - fixturePreparationStarted);
-  console.log('WEB_LOADING_PREPARATION ' + JSON.stringify({ fixturePreparationMs }));
+  console.log('WEB_LOADING_PREPARATION ' + JSON.stringify({ fixturePreparationMs, ...preparation.diagnostics }));
   const origin = vite.resolvedUrls.local[0].replace(/\/$/, '');
   console.log('WEB_LOADING_FIXTURE ' + origin);
   browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined), headless: true });
@@ -198,11 +194,12 @@ try {
   await page.getByRole('heading', { name: 'Updated heading', exact: true }).waitFor();
   checks.push('计时/输入等父级更新保持正文DOM，Markdown内容变化仍正常重解析');
   assert.deepEqual(unexpected, []); assert.deepEqual(pageErrors, []);
+  preparation.assertStable(vite);
   checks.push('全部请求使用隔离本地fixture，无真实数据库、AI调用或页面异常');
-  const report = { passed: checks.length, checks, requests, pageErrors, database: 'none', server: 'Vite source fixture', fixturePreparationMs };
+  const report = { passed: checks.length, checks, requests, pageErrors, database: 'none', server: 'Vite source fixture', fixturePreparationMs, preparation: preparation.diagnostics };
   await writeFile(resolve(folder, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   await rm(resolve(folder, 'failure.json'), { force: true });
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 } catch (error) {
-  await writeFile(resolve(folder, 'failure.json'), JSON.stringify({ error: String(error.stack || error), checks, requests, unexpected, pageErrors, networkErrors, pendingModules: [...pendingModules] }, null, 2) + '\n'); throw error;
+  await writeFile(resolve(folder, 'failure.json'), JSON.stringify({ error: String(error.stack || error), checks, requests, unexpected, pageErrors, networkErrors, pendingModules: [...pendingModules], preparation: preparation.diagnostics }, null, 2) + '\n'); throw error;
 } finally { await browser?.close(); await vite.close(); }

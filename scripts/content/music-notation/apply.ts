@@ -7,7 +7,7 @@ import {DatabaseConnection} from '../../../server/database/connection.js';
 import {recordTables,type RecordTable} from '../../../server/database/schema.js';
 import {questionSchema} from '../../../server/core/validation.js';
 import {validateAssetRecord} from '../../../server/modules/assets/schema.js';
-import {validateAssetReferences} from '../../../server/modules/assets/routes.js';
+import {validateAssetReferences} from '../../../server/modules/assets/service.js';
 import type {Question} from '../../../shared/models/types.js';
 import type {StoredPaper} from '../../../server/modules/practice/service.js';
 // @ts-expect-error Plain JavaScript authoring module, shared by package builds.

@@ -1,16 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
 import initSqlJs from 'sql.js';
-import {build} from 'vite';
-import {nativeAliases} from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 
 test('mobile shares self-contained content through production WASM routes and retains library subject metadata',async t=>{
-  const folder=resolve('test-results/native-sharing-library');await mkdir(folder,{recursive:true});
-  await build({configFile:false,logLevel:'error',define:{'process.env':'{}'},resolve:{alias:nativeAliases},build:{outDir:folder,emptyOutDir:false,minify:false,lib:{entry:resolve('mobile/runtime.ts'),formats:['es'],fileName:()=> 'runtime.mjs'}}});
-  const {createLocalRuntime}=await import(pathToFileURL(resolve(folder,'runtime.mjs')).href);
+
+
+  const {createLocalRuntime}=await loadNativeRuntime();
   const sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
   const seed={schemaVersion:1,domains:[],categories:[],tags:[],questions:[],documents:[],papers:[]};let durable:Uint8Array|undefined,failSave=false,saves=0;
   const storage={async load(){return durable?.slice();},async save(bytes:Uint8Array){if(failSave)throw new Error('simulated full disk');durable=bytes.slice();saves++;}};

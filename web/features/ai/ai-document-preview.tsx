@@ -2,11 +2,10 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { AiDocumentBlock, AiDocumentFailure } from '../../../shared/ai/ai-document';
 import { typeLabels, type QuestionInput } from '../../../shared/models/types';
 import { idPath } from '../../shared/lib/api';
-import { ErrorNotice, Markdown } from '../../shared/ui/components';
+import { ErrorNotice } from '../../shared/ui/components';
 
 export interface AiDocumentPreviewEdit { json: string; selected: number[] }
-const text = (value: unknown) => typeof value === 'string' ? value : '';
-const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+import { QuestionContentPreview } from '../questions/question-content-preview';
 function Failure({ value }: { value?: AiDocumentFailure }) {
   if (!value) return null;
   return <div className="ai-document-failure"><strong>{value.stage === 'plan' ? '总结失败' : '出题失败'}：{value.message}</strong><small>错误码 {value.code} · {value.retryable ? '可重试此批次' : '请先检查配置或资料条件'}</small>{value.auditId && <a className="button" href={`#/ai?tab=history&run=${idPath(value.auditId)}`}>查看具体失败记录</a>}</div>;
@@ -41,7 +40,7 @@ export function AiDocumentBlockCard({ block, checked, disabled, expanded, onTogg
           try { const value: unknown = JSON.parse(event.target.value); if (Array.isArray(value)) indexes = value.map((_, index) => index); } catch { /* Preserve selection while typing incomplete JSON. */ }
           onEdit({ json: event.target.value, selected: indexes });
         }} spellCheck={false} /></details>}
-        {parseError ? <ErrorNotice message={parseError} /> : <div className="ai-document-question-previews">{questions.map((question, index) => <details key={index}><summary>{!block.importedQuestionIds.length && <input type="checkbox" checked={selected.includes(index)} disabled={disabled} onClick={event => event.stopPropagation()} aria-label={`选中预览题 ${block.id} ${index + 1}`} onChange={event => onEdit({ json, selected: event.target.checked ? [...selected, index] : selected.filter(item => item !== index) })} />}<strong>{index + 1}. {question.title}</strong><small>{typeLabels[question.type] || question.type}</small></summary><div className="ai-document-question-body"><Markdown>{typeof question.stemMarkdown === 'string' ? question.stemMarkdown : ''}</Markdown>{Array.isArray(question.options) && question.options.length > 0 && <ul>{question.options.filter(record).map((option, optionIndex) => <li key={optionIndex}>{text(option.key)}. {text(option.text)}</li>)}</ul>}<h4>答案</h4><Markdown>{typeof question.answerMarkdown === 'string' ? question.answerMarkdown : ''}</Markdown><h4>解析</h4><Markdown>{typeof question.explanationMarkdown === 'string' ? question.explanationMarkdown : ''}</Markdown>{Array.isArray(question.parts) && question.parts.filter(record).map((part, partIndex) => <section key={partIndex}><h4>{text(part.title)}</h4><Markdown>{text(part.stemMarkdown)}</Markdown>{Array.isArray(part.options) && part.options.filter(record).map((option, optionIndex) => <p key={optionIndex}>{text(option.key)}. {text(option.text)}</p>)}<Markdown>{text(part.answerMarkdown)}</Markdown><Markdown>{text(part.explanationMarkdown)}</Markdown></section>)}</div></details>)}</div>}
+        {parseError ? <ErrorNotice message={parseError} /> : <div className="ai-document-question-previews">{questions.map((question, index) => <details key={index}><summary>{!block.importedQuestionIds.length && <input type="checkbox" checked={selected.includes(index)} disabled={disabled} onClick={event => event.stopPropagation()} aria-label={`选中预览题 ${block.id} ${index + 1}`} onChange={event => onEdit({ json, selected: event.target.checked ? [...selected, index] : selected.filter(item => item !== index) })} />}<strong>{index + 1}. {question.title}</strong><small>{typeLabels[question.type] || question.type}</small></summary><div className="ai-document-question-body"><QuestionContentPreview question={question}/></div></details>)}</div>}
       </> : <p className="muted">{block.planStatus === 'completed' ? '已总结，勾选本块后可生成题目。' : '先运行AI总结，核对章节摘要和知识点后再选择出题。'}</p>}
     </div>}
   </article>;

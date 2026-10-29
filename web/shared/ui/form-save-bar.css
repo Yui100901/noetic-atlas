@@ -1,0 +1,79 @@
+/* Keep the final fields reachable behind the sticky surface, including native
+ * keyboard focus scrolling. Modal layers remain above this local context. */
+html:has(.form-save-bar) {
+  scroll-padding-block-end: 200px;
+}
+body:has(.form-save-bar)
+  :is(.editor-layout, .settings-form)
+  :is(input, select, textarea, button, a) {
+  scroll-margin-block: 200px;
+}
+.form-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  min-width: 0;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 -4px 20px var(--theme-shadow-color, #1638290c);
+}
+.form-save-bar.is-dirty {
+  border-color: var(--theme-primary, var(--green));
+}
+.form-save-bar-status {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.form-save-bar-status strong {
+  display: block;
+  font-size: 13px;
+}
+.form-save-bar-status small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.form-save-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.form-save-bar-actions > .button {
+  min-height: 40px;
+  white-space: normal;
+}
+@media (max-width: 760px) {
+  body:has(.form-save-bar)
+    :is(.editor-layout, .settings-form)
+    :is(input, select, textarea, button, a) {
+    scroll-margin-block: 240px;
+  }
+  .form-save-bar {
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
+  }
+  .form-save-bar-status {
+    flex: 1 1 100%;
+  }
+  .form-save-bar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+  .form-save-bar-actions > .button {
+    min-height: 44px;
+    padding-inline: 10px;
+  }
+}

@@ -23,6 +23,19 @@
 .settings-page input[type="number"] {width:144px;max-width:100%;min-height:38px;padding:7px 10px;font-size:13px;}
 .settings-page .settings-section > .check-row {margin-bottom:var(--space-4,16px);}
 .settings-page .settings-section > p {margin-top:var(--space-3,12px);font-size:12px;line-height:1.75;}
+.settings-fields {width:100%;min-width:0;}
+.settings-form-intro {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;font-size:12px;}
+.settings-form-intro > .text-button {display:inline-flex;align-items:center;gap:6px;min-height:36px;}
+.settings-advanced > summary {display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;cursor:pointer;list-style:disclosure-closed;}
+.settings-advanced > summary::marker {color:var(--muted);}
+.settings-page .settings-advanced > summary h2 {margin:0;}
+.settings-advanced[open] > summary {margin-bottom:var(--space-4,16px);}
+.settings-advanced > summary::before {content:'＋';color:var(--muted);font-size:17px;}
+.settings-advanced[open] > summary::before {content:'−';}
+.settings-points-disclosure {margin-top:var(--space-4,16px);}
+.settings-points-disclosure > summary {font-size:13px;cursor:pointer;font-weight:600;}
+.settings-points-disclosure > summary h3 {display:inline;font-size:13px;font-weight:600;}
+.settings-points-disclosure > .form-grid {margin-top:var(--space-4,16px);}
 .settings-field-help {margin-top:var(--space-1,4px);font-size:11px;}
 .settings-field-help > summary,.settings-section-help > summary {width:fit-content;cursor:pointer;color:var(--muted);line-height:1.7;}
 .settings-field-help > summary {padding:2px 0;}

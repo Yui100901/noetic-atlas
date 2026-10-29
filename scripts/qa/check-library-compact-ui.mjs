@@ -1,0 +1,35 @@
+/** Compact library filters and long editor actions, isolated in-memory data. */
+import assert from 'node:assert/strict';
+import {writeFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {startBrowserHarness} from './helpers/browser-harness.mjs';
+
+const setup=`const api=async(url,payload,method='POST')=>{const r=await app.inject({url,method,payload});assert.ok(r.statusCode<400,r.body);return r.json();};
+await api('/api/domains',{id:'compact-cs',name:'计算机'});await api('/api/domains',{id:'compact-en',name:'英语'});await api('/api/categories',{id:'compact-db',name:'数据库',domainId:'compact-cs'});await api('/api/tags',{id:'compact-tag',name:'事务',domainId:'compact-cs'});
+for(let i=0;i<25;i++)await api('/api/documents',{id:'COMPACT-DOC-'+i,title:'事务书籍 '+i,kind:'书籍',bodyMarkdown:'# 事务教材\\n'+('事务整体提交或回滚。'.repeat(200)),collection:'general',domainIds:['compact-cs'],categoryIds:['compact-db'],tagIds:['compact-tag']});
+const q=await api('/api/questions',{id:'COMPACT-Q',title:'解释事务',type:'short_answer',stemMarkdown:'说明原子性',answerMarkdown:'全有或全无'});await api('/api/questions/review',{ids:[q.id],action:'approve',confirmed:true,expectedUpdatedAt:{[q.id]:q.updatedAt}});`;
+let harness,page,folder;let errors=[],external=[];const checks=[];
+try{
+
+ harness=await startBrowserHarness({name:'library-compact-ui',setup,viewport:{width:390,height:844}});({page,folder,errors,external}=harness);const {origin}=harness.state;
+ let visits=0;const go=async hash=>{await page.goto(origin+'/?library-compact='+ ++visits+hash);};
+ const ready=async(total=25)=>{await page.getByText('共 '+total+' 份资料',{exact:true}).waitFor();if(total)await page.locator('.document-card').first().waitFor();};
+ const bar=label=>page.getByRole('region',{name:label,exact:true});
+ const capture=async name=>{assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'overflow');await page.screenshot({path:resolve(folder,name+'.png'),fullPage:false});};
+ await go('#/documents');await ready();const toggle=()=>page.getByRole('button',{name:/高级筛选/});assert.equal(await toggle().getAttribute('aria-expanded'),'false');assert.equal(await page.getByLabel('资料类型',{exact:true}).isVisible(),false);
+ const first=await page.locator('.document-card').first().boundingBox();assert.ok(first.y+60<844,'the first resource must be visible on the initial mobile screen');await capture('library-mobile-default');checks.push('390px默认只展示搜索与领域，高级筛选收起，首屏可看到资料条目');
+ await toggle().focus();await page.keyboard.press('Enter');await page.getByLabel('资料类型',{exact:true}).selectOption('书籍');await page.getByLabel('资料细分类',{exact:true}).selectOption('compact-db');await page.getByLabel('资料集合',{exact:true}).selectOption('general');await page.getByLabel('资料标签',{exact:true}).selectOption('compact-tag');await page.getByLabel('资料文件格式',{exact:true}).selectOption('markdown');await ready();assert.match(await toggle().innerText(),/5/);
+ await toggle().click();assert.equal(await page.getByLabel('资料类型',{exact:true}).isVisible(),false);assert.equal(await page.getByRole('region',{name:'资料筛选',exact:true}).getByRole('button',{name:/^移除/}).count(),5);checks.push('高级筛选可键盘展开，五项条件收起后继续生效并显示数量与可移除摘要');
+ const pagination=page.getByRole('navigation',{name:'资料库分页',exact:true});await pagination.getByLabel('资料库每页数量',{exact:true}).selectOption('10');await ready();await pagination.getByRole('button',{name:/下一页/}).click();await pagination.getByText('共 25 条 · 第 2 / 3 页',{exact:true}).waitFor();const back=new URL(page.url()).hash;
+ await page.locator('.document-card').first().click();await page.getByRole('link',{name:'返回资料库',exact:true}).click();await ready();assert.equal(new URL(page.url()).hash,back);assert.equal(await toggle().getAttribute('aria-expanded'),'false');assert.equal(await page.getByLabel('资料类型',{exact:true}).inputValue(),'书籍');assert.equal(await page.getByRole('button',{name:/^移除/}).count(),5);checks.push('资料阅读返回保留全部高级条件、每页数量和第二页，收起状态不掩盖生效条件');
+ await page.getByRole('button',{name:'移除格式：Markdown筛选',exact:true}).click();await ready();assert.equal(new URLSearchParams(page.url().split('?').at(-1)).get('format'),null);assert.equal(await page.getByLabel('资料标签',{exact:true}).inputValue(),'compact-tag');await page.getByRole('button',{name:'清空筛选',exact:true}).click();await ready();assert.equal(await page.getByRole('button',{name:/^移除/}).count(),0);checks.push('单独移除只改对应条件，清空重置筛选和页码，保留每页数量');
+
+ await go('#/questions/COMPACT-Q/edit');await page.getByLabel('标题 *',{exact:true}).waitFor();const qbar=bar('题目保存操作');await qbar.waitFor();assert.equal(await page.getByRole('button',{name:'保存题目',exact:true}).count(),1);await page.getByLabel('标题 *',{exact:true}).fill('解释事务：保存条修订');await qbar.getByRole('status').filter({hasText:'未保存'}).waitFor();
+ await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight/2));let bounds=await qbar.boundingBox();assert.ok(bounds.y>=0&&bounds.y+bounds.height<=845,'question save bar in middle viewport');await capture('question-save-mobile');await qbar.getByRole('button',{name:'保存题目',exact:true}).click();await page.waitForURL(/#\/questions\/COMPACT-Q(?:\?|$)/);checks.push('题目长表单只有一个保存入口，手机页中持续可见并复用原正式保存与返回流程');
+
+ await go('#/documents/COMPACT-DOC-0/edit');await page.getByLabel('资料标题 *',{exact:true}).waitFor();const dbar=bar('资料保存操作');await dbar.getByRole('button',{name:'保存资料',exact:true}).waitFor();await page.getByLabel('资料标题 *',{exact:true}).fill('资料保存条修订');await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight/2));bounds=await dbar.boundingBox();assert.ok(bounds.y>=0&&bounds.y+bounds.height<=845,'document save bar in middle viewport');await dbar.getByRole('button',{name:'保存草稿',exact:true}).click();await page.getByLabel('资料草稿状态',{exact:true}).filter({hasText:'已保存'}).waitFor();
+ await page.route('**/api/document-drafts/*/publish',route=>route.request().method()==='POST'?route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'QA_WRITE_FAILED',message:'专项资料保存失败'}})}):route.continue());await dbar.getByRole('button',{name:'保存资料',exact:true}).click();await dbar.getByRole('status').filter({hasText:'保存未完成'}).waitFor();assert.equal(await page.getByLabel('资料标题 *',{exact:true}).inputValue(),'资料保存条修订');await page.unroute('**/api/document-drafts/*/publish');await dbar.getByRole('button',{name:'保存资料',exact:true}).click();await page.waitForURL(/#\/documents\/COMPACT-DOC-0(?:\?|$)/);checks.push('资料保存条可存草稿；正式保存失败保留内容并提示，重试成功走原保存流程');
+ await page.setViewportSize({width:320,height:844});await go('#/documents');await ready();await toggle().click();await capture('library-320');await page.setViewportSize({width:1440,height:1000});await go('#/documents');await ready();await capture('library-desktop');checks.push('320px高级筛选及桌面资料布局无横向溢出');
+ assert.deepEqual(errors,[]);assert.deepEqual(external,[]);await writeFile(resolve(folder,'report.json'),JSON.stringify({passed:checks.length,checks,errors,external,database:':memory:'},null,2));console.log(JSON.stringify({passed:checks.length,checks}));
+}catch(error){await harness?.captureFailure(error,{checks});throw error;}
+finally{await harness?.close();}

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { QUESTION_FEEDBACK_KINDS } from '../../../shared/models/question-feedback.js';
 import { id } from '../../core/validation.js';
+import { paginationFields } from '../../core/pagination.js';
 import { aiFailureSchema, aiDiagnosticsSchema } from '../ai/audit-schema.js';
 
 const date = z.string().datetime({ offset: true }), fingerprint = z.string().regex(/^[a-f0-9]{64}$/);
@@ -28,3 +29,9 @@ export const feedbackAiOutputSchema = z.object({
   verdict: z.enum(['valid', 'invalid', 'uncertain']), reason: z.string().trim().min(1).max(8000), suggestion: z.string().max(5000).default(''),
   comparisons: z.array(z.object({ candidateId: z.string().min(1).max(40), relation: z.enum(['similar', 'conflict', 'supports', 'unrelated']), reason: z.string().trim().min(1).max(3000) }).strict()).max(8).default([]),
 }).strict();
+
+export const questionFeedbackQuerySchema = z.object({
+  page: paginationFields.page.default(1), pageSize: paginationFields.pageSize.default(20), status: z.enum(['pending', 'confirmed', 'resolved', 'dismissed', 'open', 'all']).default('open'),
+  questionId: id.optional(), partId: id.optional(), domainId: id.optional(), kind: z.enum(QUESTION_FEEDBACK_KINDS).optional(), search: z.string().trim().max(200).default(''),
+}).strict().refine(value => !value.partId || !!value.questionId, '按小题筛选时还需提供原题ID');
+export const questionFeedbackSummariesSchema = z.object({ questionIds: z.array(id).min(1).max(500).refine(values => new Set(values).size === values.length, '题号不能重复') }).strict();

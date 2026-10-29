@@ -2,11 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.ts';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 import { learningSeed } from '../fixtures/learning-seed.js';
 
 // Bundle the exact Android API runtime with exactly the production aliases.
@@ -14,8 +12,7 @@ import { learningSeed } from '../fixtures/learning-seed.js';
 // be exercised without touching a user's device or installed application.
 test('offline Android SQLite runtime: scoring, persistence rollback, imports and desktop compatibility', async t => {
   const folder = resolve('test-results/native-runtime'); await mkdir(folder, { recursive: true });
-  await build({ configFile: false, logLevel: 'error', define: { 'process.env': '{}' }, resolve: { alias: nativeAliases }, build: { outDir: folder, emptyOutDir: false, minify: false, lib: { entry: resolve('mobile/runtime.ts'), formats: ['es'], fileName: () => 'runtime.mjs' } } });
-  const { createLocalRuntime } = await import(pathToFileURL(resolve(folder, 'runtime.mjs')).href);
+  const { createLocalRuntime } = await loadNativeRuntime();
   const sql = await initSqlJs({ locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm') });
   const fullSeed = learningSeed({ includeNonPublic: true });
   const publishedCount = fullSeed.questions.filter((q: any) => q.status === 'published').length;

@@ -1,5 +1,5 @@
 import {QuestionContent, SourceNoticeScope, questionNoticeContents} from '../../shared/ui/content-notices';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { ArrowLeft, BookOpen, Check, Clock3, Save } from 'lucide-react';
 import type { AnswerVerdict, Attempt, AttemptAnswer } from '../../../shared/models/types';
 import { typeLabels } from '../../../shared/models/types';
@@ -20,6 +20,8 @@ import './exam-guard.css';
 import { AttemptReviewControls, AttemptReviewProvider, AttemptReviewSummary } from '../review-scheduler/review-scheduling';
 import { usePracticeTimer } from './use-practice-timer';
 import { MarkdownEditor } from '../../shared/ui/markdown-editor';
+import { useSaveBeforeNavigation } from '../../shared/lib/save-before-navigation';
+import { reviewStateFromAttempt, reviewStateKey, type AttemptReviewState } from './attempt-review-state';
 
 const isAnswered = isAnswerPresent;
 
@@ -35,7 +37,7 @@ function usePaperPresence(paperId:string|null){
  return value?.id===paperId?value.exists:null;
 }
 
-export function AttemptPage({ id, embedded = false, onChanged }: { id: string; embedded?: boolean; onChanged?: () => void }) {
+export function AttemptPage({ id, embedded = false, onChanged, beforeReplace, replacementPending = false }: { id: string; embedded?: boolean; onChanged?: () => void; beforeReplace?: MutableRefObject<(() => Promise<boolean>) | null>; replacementPending?: boolean }) {
   const resource = useResource<Attempt>(`/api/attempts/${idPath(id)}`); const { toast, reload, bootstrap } = useApp(); const settings = bootstrap.settings || DEFAULT_SETTINGS;
   const paperExists=usePaperPresence(resource.data && resource.data.source !== 'quick' && (resource.data.practiceMode !== 'exam' || resource.data.status === 'submitted') ? resource.data.paperId : null);
   const [answers, setAnswers] = useState<Record<string, AttemptAnswer>>({}); const [scores, setScores] = useState<Record<string, number | ''>>({}); const [mastery, setMastery] = useState<Record<string, number>>({});
@@ -43,18 +45,26 @@ export function AttemptPage({ id, embedded = false, onChanged }: { id: string; e
   const [ready, setReady] = useState(''); const [dirty, setDirty] = useState(false); const [saveState, setSaveState] = useState('草稿已保存'); const [saveError, setSaveError] = useState(''); const [gradeError, setGradeError] = useState(''); const [busy, setBusy] = useState(false);
   const [previewError, setPreviewError] = useState(''); const [previewBusy, setPreviewBusy] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  const [reviewBaseline, setReviewBaseline] = useState(''), [leavingBusy, setLeavingBusy] = useState(false);
+  const reviewRef = useRef<AttemptReviewState>({ scores: {}, verdicts: {}, mastery: {} }); reviewRef.current = { scores, verdicts, mastery };
+  const reviewDirty = resource.data?.status === 'submitted' && ready === id && reviewStateKey(reviewRef.current) !== reviewBaseline;
+  const reviewDirtyRef = useRef(false); reviewDirtyRef.current = reviewDirty;
+  const transitionRef = useRef<Promise<boolean> | null>(null);
+  const prepareLeaveRef = useRef<(pauseTimer?: boolean) => Promise<boolean>>(async () => true);
+  const replacementPendingRef = useRef(false); replacementPendingRef.current = replacementPending;
+  const reviewWriteRef = useRef<Promise<boolean> | null>(null);
   useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const expirySyncRef = useRef(false);
   const answersRef = useRef(answers); const dirtyRef = useRef(false); const readyRef = useRef(false);
   const statusRef = useRef<Attempt['status'] | null>(null); statusRef.current = resource.data?.status ?? null;
   const mountedRef = useRef(true); const submittingRef = useRef(false);
-  const inFlightRef = useRef<{ snapshot: Record<string, AttemptAnswer>; promise: Promise<void> } | null>(null);
-  const saveLatestRef = useRef<(quiet?: boolean, lifecycle?: boolean) => Promise<void>>(async () => {});
+  const inFlightRef = useRef<{ snapshot: Record<string, AttemptAnswer>; promise: Promise<boolean> } | null>(null);
+  const saveLatestRef = useRef<(quiet?: boolean, lifecycle?: boolean) => Promise<boolean>>(async () => true);
   const practiceTimer = usePracticeTimer(id, resource.data, ready === id && resource.data?.status === 'in_progress' && resource.data.practiceMode !== 'exam');
   const loadReview = (attempt: Attempt) => {
-    setScores(Object.fromEntries(attempt.questions.filter(question => isSubjectiveType(question.type)).map(question => [question.id, attempt.answers[question.id]?.selfScore ?? ''])));
-    setVerdicts(Object.fromEntries(attempt.questions.filter(question => isSubjectiveType(question.type)).map(question => [question.id, attempt.answers[question.id]?.verdict || ''])));
-    setMastery(Object.fromEntries(Object.entries(attempt.answers).filter(([, answer]) => answer.mastery !== undefined && answer.mastery !== null).map(([questionId, answer]) => [questionId, answer.mastery as number])));
+    const state = reviewStateFromAttempt(attempt);
+    reviewRef.current = state; reviewDirtyRef.current = false;
+    setScores(state.scores); setVerdicts(state.verdicts); setMastery(state.mastery); setReviewBaseline(reviewStateKey(state));
   };
   useEffect(() => {
     if (resource.data && ready !== id) {
@@ -80,15 +90,15 @@ export function AttemptPage({ id, embedded = false, onChanged }: { id: string; e
       finally { expirySyncRef.current = false; submittingRef.current = false; if (mountedRef.current) setBusy(false); }
     })();
   }, [clock, id, resource.data?.status, resource.data?.deadlineAt]);
-  const save = async (quiet = false, lifecycle = false): Promise<void> => {
+  const save = async (quiet = false, lifecycle = false): Promise<boolean> => {
     const canSave = () => readyRef.current && statusRef.current === 'in_progress' && !submittingRef.current;
-    if (!canSave() || quiet && !dirtyRef.current) return;
+    if (!canSave() || quiet && !dirtyRef.current) return !dirtyRef.current;
     // Serialize draft writes: an older network response must never replace newer input.
     const pending = inFlightRef.current;
     if (pending) {
-      await pending.promise;
-      if (canSave() && dirtyRef.current && answersRef.current !== pending.snapshot) await saveLatestRef.current(quiet, lifecycle);
-      return;
+      const saved = await pending.promise;
+      if (canSave() && dirtyRef.current && answersRef.current !== pending.snapshot) return saveLatestRef.current(quiet, lifecycle);
+      return saved && !dirtyRef.current;
     }
     const snapshot = answersRef.current; const body = JSON.stringify({ answers: snapshot });
     if (mountedRef.current) { setSaveState('正在保存…'); setSaveError(''); }
@@ -97,15 +107,17 @@ export function AttemptPage({ id, embedded = false, onChanged }: { id: string; e
         if (!quiet) await practiceTimer.checkpoint();
         // Keep short browser requests alive across pagehide; native requests use the same serialized persistence API.
         const saved = await request<Attempt>(`/api/attempts/${idPath(id)}`, { method: 'PUT', body, ...(lifecycle && new TextEncoder().encode(body).length <= 60000 ? { keepalive: true } : {}) });
-        if (saved.status === 'submitted') { if (mountedRef.current) { acceptSubmitted(saved); toast(saved.autoSubmitted ? '考试已到时，已自动交卷' : '本次作答已交卷'); reload(); } return; }
+        if (saved.status === 'submitted') { if (mountedRef.current) { acceptSubmitted(saved); toast(saved.autoSubmitted ? '考试已到时，已自动交卷' : '本次作答已交卷'); reload(); } return true; }
         const current = answersRef.current === snapshot;
         if (current) dirtyRef.current = false;
         if (mountedRef.current) { if (current) setDirty(false); setSaveState(current ? '草稿已保存' : '等待自动保存…'); if (!quiet) toast('草稿已保存，可稍后继续'); onChanged?.(); }
-      } catch (err) { if (mountedRef.current) { setSaveState('尚未保存'); setSaveError((err as Error).message); } }
+        return true;
+      } catch (err) { if (mountedRef.current) { setSaveState('尚未保存'); setSaveError((err as Error).message); } return false; }
     })();
     inFlightRef.current = { snapshot, promise };
-    await promise;
+    const saved = await promise;
     if (inFlightRef.current?.promise === promise) inFlightRef.current = null;
+    return saved;
   };
   saveLatestRef.current = save;
   useEffect(() => { if (!dirty || ready !== id || resource.data?.status !== 'in_progress' || busy) return; const timer = setTimeout(() => void saveLatestRef.current(true), resource.data?.practiceMode === 'exam' ? Math.min(500, settings.autosaveDebounceMs) : settings.autosaveDebounceMs); return () => clearTimeout(timer); }, [answers, dirty, ready, id, busy, resource.data?.status, resource.data?.practiceMode, settings.autosaveDebounceMs]);
@@ -113,11 +125,11 @@ export function AttemptPage({ id, embedded = false, onChanged }: { id: string; e
     mountedRef.current = true;
     const flush = () => { if (dirtyRef.current) void saveLatestRef.current(true, true); };
     const visibility = () => { if (document.visibilityState === 'hidden') flush(); };
-    const beforeUnload = (event: BeforeUnloadEvent) => { flush(); if (dirtyRef.current && !submittingRef.current) { event.preventDefault(); event.returnValue = ''; } };
-    document.addEventListener('visibilitychange', visibility); window.addEventListener('pagehide', flush); window.addEventListener('hashchange', flush); window.addEventListener('beforeunload', beforeUnload);
+    const beforeUnload = (event: BeforeUnloadEvent) => { flush(); if ((dirtyRef.current || reviewDirtyRef.current) && !submittingRef.current) { event.preventDefault(); event.returnValue = ''; } };
+    document.addEventListener('visibilitychange', visibility); window.addEventListener('pagehide', flush); window.addEventListener('beforeunload', beforeUnload);
     return () => {
       mountedRef.current = false; flush();
-      document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', flush); window.removeEventListener('hashchange', flush); window.removeEventListener('beforeunload', beforeUnload);
+      document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', flush); window.removeEventListener('beforeunload', beforeUnload);
     };
   }, []);
   const setAnswer = (questionId: string, value: string | string[]) => {
@@ -132,18 +144,54 @@ export function AttemptPage({ id, embedded = false, onChanged }: { id: string; e
     submittingRef.current = true; setBusy(true); setSaveError('');
     try { await practiceTimer.pause(); await inFlightRef.current?.promise; const attempt = await send<Attempt>(`/api/attempts/${idPath(id)}/submit`, 'POST', { answers: answersRef.current }); acceptSubmitted(attempt); toast(attempt.scoring?.enabled === false ? '已交卷，可以核对正误与自测掌握度' : '已交卷，客观题已自动判分；主观题等待阅卷'); reload(); } catch (err) { setSaveError((err as Error).message); if (statusRef.current === 'in_progress') void practiceTimer.resume().catch(() => undefined); } finally { submittingRef.current = false; setBusy(false); }
   };
-  const saveReview = async () => {
-    if (!resource.data) return; setGradeError(''); const { scoring } = attemptGrading(resource.data);
+  const persistReview = async (): Promise<boolean> => {
+    if (!resource.data || resource.data.status !== 'submitted') return false; setGradeError(''); const { scoring } = attemptGrading(resource.data);
     if (scoring.enabled) {
       for (const question of resource.data.questions.filter(item => isSubjectiveType(item.type))) {
-        const score = scores[question.id]; const maximum = question.points ?? scoring.questionPoints[question.id] ?? legacyPoints[question.type];
-        if (score !== '' && score !== undefined && (!Number.isFinite(score) || score < 0 || score > maximum || Math.abs(score * 100 - Math.round(score * 100)) > 1e-6)) { setGradeError(`${question.title}：得分需为 0–${pointText(maximum)} 分，最多保留两位小数。空白表示未评，0 表示已评 0 分。`); return; }
+        const score = reviewRef.current.scores[question.id]; const maximum = question.points ?? scoring.questionPoints[question.id] ?? legacyPoints[question.type];
+        if (score !== '' && score !== undefined && (!Number.isFinite(score) || score < 0 || score > maximum || Math.abs(score * 100 - Math.round(score * 100)) > 1e-6)) { setGradeError(`${question.title}：得分需为 0–${pointText(maximum)} 分，最多保留两位小数。空白表示未评，0 表示已评 0 分。`); return false; }
       }
     }
-    const body = { ...(scoring.enabled ? { scores: Object.fromEntries(Object.entries(scores).map(([questionId, score]) => [questionId, score === '' ? null : score])) } : { verdicts: Object.fromEntries(Object.entries(verdicts).map(([questionId, verdict]) => [questionId, verdict || null])) }), mastery };
+    const body = { ...(scoring.enabled ? { scores: Object.fromEntries(Object.entries(reviewRef.current.scores).map(([questionId, score]) => [questionId, score === '' ? null : score])) } : { verdicts: Object.fromEntries(Object.entries(reviewRef.current.verdicts).map(([questionId, verdict]) => [questionId, verdict || null])) }), mastery: reviewRef.current.mastery };
     setBusy(true);
-    try { const attempt = await send<Attempt>(`/api/attempts/${idPath(id)}/review`, 'PUT', body); resource.setData(attempt); setAnswers(attempt.answers); loadReview(attempt); toast(scoring.enabled ? '人工阅卷与掌握自评已保存' : subjectiveCount ? '主观判定与掌握自评已保存' : '掌握自评已保存'); reload(); onChanged?.(); } catch (err) { setGradeError((err as Error).message); } finally { setBusy(false); }
+    try { const attempt = await send<Attempt>(`/api/attempts/${idPath(id)}/review`, 'PUT', body); resource.setData(attempt); setAnswers(attempt.answers); loadReview(attempt); toast(scoring.enabled ? '人工阅卷与掌握自评已保存' : subjectiveCount ? '主观判定与掌握自评已保存' : '掌握自评已保存'); reload(); onChanged?.(); return true; } catch (err) { setGradeError((err as Error).message); return false; } finally { setBusy(false); }
   };
+
+  const saveReview = (): Promise<boolean> => {
+    if (reviewWriteRef.current) return reviewWriteRef.current;
+    const promise = persistReview(); reviewWriteRef.current = promise;
+    void promise.finally(() => { if (reviewWriteRef.current === promise) reviewWriteRef.current = null; });
+    return promise;
+  };
+  const prepareLeave = (pauseTimer = true): Promise<boolean> => {
+    if (transitionRef.current) return transitionRef.current;
+    const transition = (async () => {
+      if (submittingRef.current || resource.data?.practiceMode === 'exam' && statusRef.current === 'in_progress') {
+        setSaveError('考试或交卷处理中，请先完成交卷。'); return false;
+      }
+      setLeavingBusy(true);
+      try {
+        if (statusRef.current === 'submitted') return reviewWriteRef.current ? await reviewWriteRef.current : !reviewDirtyRef.current || await saveReview();
+        // Await the latest answer, not just an older in-flight snapshot.
+        while (dirtyRef.current || inFlightRef.current) {
+          if (!await saveLatestRef.current(true)) return false;
+        }
+        try { if (pauseTimer) await practiceTimer.pause(); return true; }
+        catch (reason) { setSaveError(`离开前计时尚未保存：${(reason as Error).message}`); void practiceTimer.resume().catch(() => undefined); return false; }
+      } finally { if (mountedRef.current) setLeavingBusy(false); }
+    })();
+    transitionRef.current = transition;
+    void transition.finally(() => { if (transitionRef.current === transition) transitionRef.current = null; });
+    return transition;
+  };
+  prepareLeaveRef.current = prepareLeave;
+  useSaveBeforeNavigation({ pending: () => dirtyRef.current || reviewDirtyRef.current || !!inFlightRef.current || !!transitionRef.current || !!reviewWriteRef.current || replacementPendingRef.current, save: () => replacementPendingRef.current ? Promise.resolve(false) : prepareLeaveRef.current() });
+  useEffect(() => {
+    if (!beforeReplace) return;
+    beforeReplace.current = () => prepareLeaveRef.current(false);
+    return () => { beforeReplace.current = null; };
+  }, [beforeReplace]);
+  const controlsBusy = busy || leavingBusy || replacementPending;
 
   if (resource.loading || ready !== id && !resource.error) return <Loading text="正在恢复本次练习…" />;
   if (resource.error || !resource.data) return <ErrorNotice message={resource.error || '作答记录不存在'} retry={resource.refresh} />;
@@ -160,31 +208,32 @@ export function AttemptPage({ id, embedded = false, onChanged }: { id: string; e
   const exam = attempt.practiceMode === 'exam'; const expired = examExpired(attempt, clock);
   const elapsed = !exam && !submitted ? practiceTimer.elapsedSeconds : attemptElapsedSeconds(attempt, clock), remaining = examRemainingSeconds(attempt, clock);
   const stateFor = (question: Attempt['questions'][number]): AnswerState => submitted && attempt.answerStates?.[question.id] || answerState(question, submitted ? attempt.answers[question.id] : answers[question.id], submitted, scoring.enabled ? question.points ?? scoring.questionPoints[question.id] : undefined);
-  const reveal = async () => { setPreviewBusy(true); setPreviewError(''); try { await inFlightRef.current?.promise; if (dirtyRef.current) await saveLatestRef.current(true); resource.setData(await send<Attempt>(`/api/attempts/${idPath(id)}/reveal`, 'POST')); } catch (err) { setPreviewError((err as Error).message); } finally { setPreviewBusy(false); } };
-  return <AttemptReviewProvider attempt={attempt}><SourceNoticeScope contents={attempt.questions.flatMap(questionNoticeContents)}>{!embedded && !(exam && !submitted) && <a className="back-link" href={returnPath}><ArrowLeft size={15} />{quick ? '返回随机与单题记录' : '返回题集记录'}</a>}<PageHeader eyebrow={submitted ? 'PRACTICE REVIEW' : 'FOCUS SESSION'} title={attempt.paperTitle} description={`${submitted ? '练习复盘' : '专注练习'} · ${scoring.enabled ? `${scoring.scheme === 'legacy' ? '旧版计分' : '计分练习'} ${pointText(scoring.totalPoints)} 分` : '无分练习'}${quick ? ' · 单题自测' : ` · 版本 v${attempt.paperVersion}`}${attempt.vocabularyDirection ? ` · ${vocabularyDirectionLabel(attempt.vocabularyDirection, attempt.practiceKind)}` : ''} · ${localDate(attempt.startedAt)}`} actions={submitted ? <><ExportButton attemptId={attempt.id} />{!quick && !deletedPaper && <a className="button" href={href('papers', attempt.paperId)}>查看题集</a>}</> : <><button className="button" onClick={() => void save()} disabled={busy || expired}><Save size={16} />保存草稿</button><button className="button primary" onClick={submit} disabled={busy || expired}><Check size={16} />{busy ? '正在提交…' : '交卷并查看解析'}</button></>} />
+  const reveal = async () => { setPreviewBusy(true); setPreviewError(''); try { await inFlightRef.current?.promise; if (dirtyRef.current && !await saveLatestRef.current(true)) throw new Error('回答尚未保存，请重试后再查看解析。'); resource.setData(await send<Attempt>(`/api/attempts/${idPath(id)}/reveal`, 'POST')); } catch (err) { setPreviewError((err as Error).message); } finally { setPreviewBusy(false); } };
+  return <AttemptReviewProvider attempt={attempt}><SourceNoticeScope contents={attempt.questions.flatMap(questionNoticeContents)}>{!embedded && !(exam && !submitted) && <a className="back-link" href={returnPath}><ArrowLeft size={15} />{quick ? '返回随机与单题记录' : '返回题集记录'}</a>}<PageHeader eyebrow={submitted ? 'PRACTICE REVIEW' : 'FOCUS SESSION'} title={attempt.paperTitle} description={`${submitted ? '练习复盘' : '专注练习'} · ${scoring.enabled ? `${scoring.scheme === 'legacy' ? '旧版计分' : '计分练习'} ${pointText(scoring.totalPoints)} 分` : '无分练习'}${quick ? ' · 单题自测' : ` · 版本 v${attempt.paperVersion}`}${attempt.vocabularyDirection ? ` · ${vocabularyDirectionLabel(attempt.vocabularyDirection, attempt.practiceKind)}` : ''} · ${localDate(attempt.startedAt)}`} actions={submitted ? <><ExportButton attemptId={attempt.id} />{!quick && !deletedPaper && <a className="button" href={href('papers', attempt.paperId)}>查看题集</a>}</> : <><button className="button" onClick={() => void save()} disabled={controlsBusy || expired}><Save size={16} />保存草稿</button><button className="button primary" onClick={submit} disabled={controlsBusy || expired}><Check size={16} />{busy ? '正在提交…' : '交卷并查看解析'}</button></>} />
     {!quick && <section className={`attempt-timer ${exam && !submitted && remaining <= 300 ? 'timer-urgent' : ''}`} aria-label={submitted ? '本次作答时间' : exam ? '考试倒计时' : '练习顺计时'}><div><Clock3 size={20} /><span>{submitted ? '作答用时' : exam ? '剩余时间' : '已用时间'}</span><strong data-testid="attempt-clock">{durationText(exam && !submitted ? remaining : elapsed)}</strong></div><p className="muted">{submitted ? `${exam ? '考试模式' : '普通练习'}${attempt.autoSubmitted ? ' · 到时自动交卷' : ' · 已提交'}` : exam ? `限时 ${attempt.durationMinutes} 分钟；到时自动交卷，刷新与离开不会暂停计时。` : practiceTimer.running ? '仅累计当前答题时间；退出或切到后台暂停，继续草稿后接着计时。' : '计时已暂停，返回当前答题页后继续累计。'}</p></section>}
     {!exam && !submitted && practiceTimer.error && <ErrorNotice message={`计时同步未完成：${practiceTimer.error}`} retry={() => void practiceTimer.retry().catch(() => undefined)} />}
     {deletedPaper && <div className="notice info">原题集已删除；本次作答仍使用独立快照，可以继续答题、阅卷和复盘。</div>}<div className="attempt-progress card"><div><span className="section-label">{submitted ? '本次练习结果' : '本次练习进度'}</span><strong>{completed}<small> / {attempt.questions.length} 题已作答</small></strong></div>{submitted ? scoring.enabled ? <div className="score-summary scored-summary"><div>客观题<strong>{pointText(attempt.objectiveScore)}<small> / {pointText(attempt.objectiveMax)} 分</small></strong></div><div>{pending ? '主观阅卷中' : '主观得分'}<strong>{pointText(attempt.subjectiveScore)}<small> / {pointText(attempt.subjectiveMax)} 分</small></strong><span>{graded} 已评{pending > 0 ? ` · ${pending} 待阅` : ''}</span></div><div>{total === null ? '总成绩待阅卷完成' : '最终总分'}<strong>{total === null ? '—' : pointText(total)}<small> / {pointText(scoring.totalPoints)} 分</small></strong></div></div> : <div className="unscored-result"><span className="badge">无分练习</span><strong>客观题答对 {correctIds.size} / {objectiveQuestions.length} 题</strong><span>不计算总分，可以继续核对解析与自测掌握度。</span></div> : <div className="progress-content"><div className="progress-bar"><span style={{ width: `${attempt.questions.length ? completed / attempt.questions.length * 100 : 0}%` }} /></div><span className="muted" role="status">{saveState}</span></div>}</div>
     {quick && !submitted && <div className="quick-answer-preview"><button className="button" disabled={previewBusy} onClick={() => void reveal()}><BookOpen size={16} />{previewBusy ? '正在读取…' : preview ? '已展开参考解析' : '先看参考解析'}</button><span className="muted">查看解析不会提交本次作答，也不会添加错题记录。</span></div>}{previewError && <ErrorNotice message={previewError} />}{preview && !submitted && <div className="notice info">本次已查看参考解析。你仍可完成作答并提交，建议按真实情况记录掌握程度。</div>}
     {saveError && <ErrorNotice message={saveError} retry={() => void save()} />}
     {submitted && <div className="notice info">{scoring.enabled ? `客观题按本次试卷分值自动判分，多选需全对。主观题逐题人工评分：空白为未评，填 0 则是已评 0 分。${pending ? `当前 ${pending} 道主观题待阅，尚不生成最终总分。` : '主观题已完成阅卷。'}掌握程度与试卷得分独立记录。` : '本次为无分练习，不计算总分。客观题仍显示正误，主观题可人工判为正确、部分正确、错误或未判；0–3级掌握自评独立保存。'}</div>}
-    {submitted && subjectiveCount > 0 && <div className="ai-review-toolbar"><div><strong>AI辅助评价</strong><p>可选择一道或多道主观题，填写判题要求；核对评价后应用结果或追加学习笔记。</p></div><AiGradeButton attempt={attempt} onApplied={updated => { if(updated)resource.setData(updated);else resource.refresh(); onChanged?.(); }} /></div>}
+    {submitted && subjectiveCount > 0 && <div className="ai-review-toolbar"><div><strong>AI辅助评价</strong><p>可选择一道或多道主观题，填写判题要求；核对评价后应用结果或追加学习笔记。</p></div><AiGradeButton attempt={attempt} beforeApply={() => prepareLeave()} onApplied={updated => { if(updated)resource.setData(updated);else resource.refresh(); onChanged?.(); }} /></div>}
 
+    {submitted && <div className={`notice ${reviewDirty ? 'info' : ''}`} role="status" aria-label="人工阅卷保存状态">{controlsBusy ? '正在保存人工阅卷与自评…' : reviewDirty ? '人工阅卷或掌握自评尚未保存；离开或应用AI结果前会先保存。' : '人工阅卷与掌握自评已保存'}</div>}
     {submitted && <AttemptReviewSummary />}
     <div className="attempt-layout"><div className="attempt-questions">{attempt.questions.map((question, index) => {
       const answer = answers[question.id]?.value; const options = question.type === 'true_false' ? [{ key: 'true', text: '对 / 正确' }, { key: 'false', text: '错 / 错误' }] : question.options;
       const currentState = stateFor(question); const correct = correctIds.has(question.id); const maximum = question.points ?? scoring.questionPoints[question.id] ?? legacyPoints[question.type]; const persistedScore = attempt.answers[question.id]?.selfScore; const isGraded = persistedScore !== undefined && persistedScore !== null;
       return <section className="card exam-question" id={`exam-${index + 1}`} key={question.id}><div className="exam-heading"><span className={`number-label status-${currentState}`}>{String(index + 1).padStart(2, '0')}</span><div><div className="question-meta"><span className="type-badge">{typeLabels[question.type]}</span><span>D{question.difficulty} / L{question.depth}</span>{scoring.enabled && <span className="question-points">本题 {pointText(maximum)} 分</span>}{submitted && !isSubjectiveType(question.type) && <span className={`answer-state-text status-${currentState}`}>{answerStateLabels[currentState]}{scoring.enabled ? ` · ${correct ? pointText(maximum) : 0} 分` : ''}</span>}{submitted && isSubjectiveType(question.type) && <span className={`answer-state-text status-${currentState}`}>{answerStateLabels[currentState]}{scoring.enabled && isGraded ? ` · 已评 ${pointText(persistedScore)} 分` : ''}</span>}</div><h2>{question.title}</h2></div></div>
         {question.groupId && (index === 0 || attempt.questions[index - 1].groupId !== question.groupId) && <section className="group-material"><span className="section-label">共用材料 · {question.groupTitle}</span><QuestionContent>{question.groupStemMarkdown || ''}</QuestionContent></section>}<QuestionContent questionType={question.type}>{question.stemMarkdown}</QuestionContent>
-        {isSubjectiveType(question.type) ? <MarkdownEditor label={question.type === 'essay' ? '我的长文回答' : '我的回答'} heading={question.type === 'essay' ? '我的长文回答' : '我的回答'} rows={question.type === 'essay' ? 12 : 6} compact allowImages={false} disabled={submitted || busy || expired} value={typeof answer === 'string' ? answer : ''} onChange={value => setAnswer(question.id, value)} placeholder={question.type === 'essay' ? '写出论点、结构、推理依据和结论，可使用 Markdown…' : '用自己的话解释原理、边界和例子…'} /> : question.type === 'fill_blank' ? <div className="blank-answer-fields">{question.blanks?.map((blank, blankIndex) => <Field key={blank.id} label={`${blankIndex + 1}. ${blank.label || '填空'}`}><input disabled={submitted || busy || expired} value={Array.isArray(answer) ? answer[blankIndex] || '' : ''} onChange={event => { const values = question.blanks!.map((_, i) => Array.isArray(answer) ? answer[i] || '' : ''); values[blankIndex] = event.target.value; setAnswer(question.id, values); }} autoComplete="off" /></Field>)}</div> : <fieldset className="answer-options" disabled={submitted || busy || expired}><legend className="sr-only">{question.title}，{typeLabels[question.type]}</legend>{options.map(option => { const checked = Array.isArray(answer) ? answer.includes(option.key) : answer === option.key; const isCorrectOption = submitted && question.correctAnswers?.includes(option.key); return <label className={`answer-option ${checked ? 'chosen' : ''} ${isCorrectOption ? 'correct-option' : ''}`} key={option.key}><input name={`answer-${question.id}`} type={question.type === 'multiple_choice' ? 'checkbox' : 'radio'} checked={checked} onChange={() => setAnswer(question.id, question.type === 'multiple_choice' ? checked ? (Array.isArray(answer) ? answer : []).filter(value => value !== option.key) : [...(Array.isArray(answer) ? answer : []), option.key].sort() : option.key)} /><span className="option-letter">{question.type === 'true_false' ? '' : option.key}</span><QuestionContent>{option.text}</QuestionContent>{isCorrectOption && <Check size={16} />}</label>; })}</fieldset>}
+        {isSubjectiveType(question.type) ? <MarkdownEditor label={question.type === 'essay' ? '我的长文回答' : '我的回答'} heading={question.type === 'essay' ? '我的长文回答' : '我的回答'} rows={question.type === 'essay' ? 12 : 6} compact allowImages={false} disabled={submitted || controlsBusy || expired} value={typeof answer === 'string' ? answer : ''} onChange={value => setAnswer(question.id, value)} placeholder={question.type === 'essay' ? '写出论点、结构、推理依据和结论，可使用 Markdown…' : '用自己的话解释原理、边界和例子…'} /> : question.type === 'fill_blank' ? <div className="blank-answer-fields">{question.blanks?.map((blank, blankIndex) => <Field key={blank.id} label={`${blankIndex + 1}. ${blank.label || '填空'}`}><input disabled={submitted || controlsBusy || expired} value={Array.isArray(answer) ? answer[blankIndex] || '' : ''} onChange={event => { const values = question.blanks!.map((_, i) => Array.isArray(answer) ? answer[i] || '' : ''); values[blankIndex] = event.target.value; setAnswer(question.id, values); }} autoComplete="off" /></Field>)}</div> : <fieldset className="answer-options" disabled={submitted || controlsBusy || expired}><legend className="sr-only">{question.title}，{typeLabels[question.type]}</legend>{options.map(option => { const checked = Array.isArray(answer) ? answer.includes(option.key) : answer === option.key; const isCorrectOption = submitted && question.correctAnswers?.includes(option.key); return <label className={`answer-option ${checked ? 'chosen' : ''} ${isCorrectOption ? 'correct-option' : ''}`} key={option.key}><input name={`answer-${question.id}`} type={question.type === 'multiple_choice' ? 'checkbox' : 'radio'} checked={checked} onChange={() => setAnswer(question.id, question.type === 'multiple_choice' ? checked ? (Array.isArray(answer) ? answer : []).filter(value => value !== option.key) : [...(Array.isArray(answer) ? answer : []), option.key].sort() : option.key)} /><span className="option-letter">{question.type === 'true_false' ? '' : option.key}</span><QuestionContent>{option.text}</QuestionContent>{isCorrectOption && <Check size={16} />}</label>; })}</fieldset>}
         {preview && !submitted && <section className="attempt-answer preview-answer"><span className="section-label">参考答案与解析 · 已提前查看</span><VocabularyPronunciation vocabulary={question.vocabulary} /><BlankAnswerSummary blanks={question.blanks} /><QuestionContent>{question.answerMarkdown || ''}</QuestionContent><QuestionContent>{question.explanationMarkdown || ''}</QuestionContent></section>}
         {submitted && <details className="attempt-answer" open={!isSubjectiveType(question.type) && !correct}><summary>参考答案与解析 {question.correctAnswers?.length ? `· ${question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、')}` : ''}</summary><div><VocabularyPronunciation vocabulary={question.vocabulary} /><BlankAnswerSummary blanks={question.blanks} /><QuestionContent>{question.answerMarkdown || ''}</QuestionContent><QuestionContent>{question.explanationMarkdown || ''}</QuestionContent></div></details>}
-        {submitted && <div className="ai-actions"><a className="button feature-entry" href={`${href('questions', question.sourceQuestionId)}?answer=1${question.partId ? `&part=${idPath(question.partId)}` : ''}`}><BookOpen size={16} />查看原题与学习笔记</a></div>}{submitted && scoring.enabled && isSubjectiveType(question.type) && <div className="human-grade"><div><span className="section-label">人工阅卷</span><p>满分 {pointText(maximum)} 分。留空表示未评或撤销判分，0 分表示已完成阅卷。</p></div><div className="human-grade-controls"><Field label={`${question.id} 人工得分`}><input type="number" inputMode="decimal" min={0} max={maximum} step="0.01" value={scores[question.id] ?? ''} placeholder="未评" disabled={busy} onChange={event => setScores(old => ({ ...old, [question.id]: event.target.value === '' ? '' : Number(event.target.value) }))} /></Field><button className="text-button" disabled={busy} onClick={() => setScores(old => ({ ...old, [question.id]: '' }))}>设为未评</button><button className="text-button" disabled={busy} onClick={() => setScores(old => ({ ...old, [question.id]: maximum }))}>填入满分</button></div></div>}
-        {submitted && !scoring.enabled && isSubjectiveType(question.type) && <div className="human-grade"><div><span className="section-label">主观题人工判定</span><p>核对参考答案后判定；无需填写分数，保存后更新本次复习安排。关键遗漏可判部分正确；设为未判会撤销本次自动回忆事件。</p></div><div className="segmented" role="group" aria-label={`${question.id} 主观题判定`}>{([['','未判'],['correct','正确'],['partial','部分正确'],['incorrect','错误']] as const).map(([value,label]) => <button type="button" key={value || 'ungraded'} disabled={busy} className={(verdicts[question.id] || '') === value ? 'selected' : ''} onClick={() => setVerdicts(before => ({ ...before, [question.id]: value }))}>{label}</button>)}</div></div>}
-        {submitted && <div className="self-score"><span>自测掌握度（独立于得分）</span><div className="segmented">{[0, 1, 2, 3].map(value => <button key={value} disabled={busy} className={mastery[question.id] === value ? 'selected' : ''} onClick={() => setMastery(old => ({ ...old, [question.id]: value }))}>{value} · {['不会', '需提示', '能独立', '能深入'][value]}</button>)}</div></div>}
+        {submitted && <div className="ai-actions"><a className="button feature-entry" href={`${href('questions', question.sourceQuestionId)}?answer=1${question.partId ? `&part=${idPath(question.partId)}` : ''}`}><BookOpen size={16} />查看原题与学习笔记</a></div>}{submitted && scoring.enabled && isSubjectiveType(question.type) && <div className="human-grade"><div><span className="section-label">人工阅卷</span><p>满分 {pointText(maximum)} 分。留空表示未评或撤销判分，0 分表示已完成阅卷。</p></div><div className="human-grade-controls"><Field label={`${question.id} 人工得分`}><input type="number" inputMode="decimal" min={0} max={maximum} step="0.01" value={scores[question.id] ?? ''} placeholder="未评" disabled={controlsBusy} onChange={event => setScores(old => ({ ...old, [question.id]: event.target.value === '' ? '' : Number(event.target.value) }))} /></Field><button className="text-button" disabled={controlsBusy} onClick={() => setScores(old => ({ ...old, [question.id]: '' }))}>设为未评</button><button className="text-button" disabled={controlsBusy} onClick={() => setScores(old => ({ ...old, [question.id]: maximum }))}>填入满分</button></div></div>}
+        {submitted && !scoring.enabled && isSubjectiveType(question.type) && <div className="human-grade"><div><span className="section-label">主观题人工判定</span><p>核对参考答案后判定；无需填写分数，保存后更新本次复习安排。关键遗漏可判部分正确；设为未判会撤销本次自动回忆事件。</p></div><div className="segmented" role="group" aria-label={`${question.id} 主观题判定`}>{([['','未判'],['correct','正确'],['partial','部分正确'],['incorrect','错误']] as const).map(([value,label]) => <button type="button" key={value || 'ungraded'} disabled={controlsBusy} className={(verdicts[question.id] || '') === value ? 'selected' : ''} onClick={() => setVerdicts(before => ({ ...before, [question.id]: value }))}>{label}</button>)}</div></div>}
+        {submitted && <div className="self-score"><span>自测掌握度（独立于得分）</span><div className="segmented">{[0, 1, 2, 3].map(value => <button key={value} disabled={controlsBusy} className={mastery[question.id] === value ? 'selected' : ''} onClick={() => setMastery(old => ({ ...old, [question.id]: value }))}>{value} · {['不会', '需提示', '能独立', '能深入'][value]}</button>)}</div></div>}
         {submitted && <AttemptReviewControls leafId={question.id} onChanged={onChanged} />}
       </section>;
-    })}{submitted && <>{gradeError && <ErrorNotice message={gradeError} />}<div className="sticky-submit"><span className="muted">{scoring.enabled && subjectiveCount > 0 ? `主观题已保存判分 ${graded}/${subjectiveCount} · 待阅 ${pending} 题` : `已选择 ${Object.keys(mastery).length} 道题的掌握程度`}</span><button className="button primary" onClick={() => void saveReview()} disabled={busy || !hasReview}><Save size={16} />{scoring.enabled && subjectiveCount > 0 ? '保存人工阅卷与自评' : subjectiveCount > 0 ? '保存主观判定与自评' : '保存掌握自评'}</button></div></>}
-    </div><aside className="card question-navigator"><h3>答题卡</h3><div>{attempt.questions.map((question, index) => { const state = stateFor(question); return <a key={question.id} className={`status-${state}`} aria-label={`第${index + 1}题 · ${answerStateLabels[state]}`} title={`第${index + 1}题 · ${answerStateLabels[state]}`} data-answer-state={state} href={`#exam-${index + 1}`} onClick={event => { event.preventDefault(); document.getElementById(`exam-${index + 1}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{index + 1}</a>; })}</div><div className="answer-status-legend">{(submitted ? ['unanswered', 'correct', 'partial', 'incorrect', 'ungraded'] : ['unanswered', 'answered']).map(state => <span key={state}><i className={`status-${state}`} />{answerStateLabels[state as AnswerState]}</span>)}</div><p className="muted">{submitted ? '点击序号定位题目；主观题分别显示正确、部分正确、错误或未判定。' : exam ? '考试中不能切换其他功能。计时结束按已保存答案自动交卷。' : '草稿每次更改后自动保存。离开前也可手动保存。'}</p>{!submitted && <button className="button primary navigator-submit" onClick={submit} disabled={busy || expired}><Check size={16} />{expired ? '正在到时交卷…' : busy ? '正在提交…' : '交卷并查看解析'}</button>}</aside></div>
+    })}{submitted && <>{gradeError && <ErrorNotice message={gradeError} />}<div className="sticky-submit"><span className="muted">{scoring.enabled && subjectiveCount > 0 ? `主观题已保存判分 ${graded}/${subjectiveCount} · 待阅 ${pending} 题` : `已选择 ${Object.keys(mastery).length} 道题的掌握程度`}</span><button className="button primary" onClick={() => void saveReview()} disabled={controlsBusy || !hasReview || !reviewDirty}><Save size={16} />{scoring.enabled && subjectiveCount > 0 ? '保存人工阅卷与自评' : subjectiveCount > 0 ? '保存主观判定与自评' : '保存掌握自评'}</button></div></>}
+    </div><aside className="card question-navigator"><h3>答题卡</h3><div>{attempt.questions.map((question, index) => { const state = stateFor(question); return <a key={question.id} className={`status-${state}`} aria-label={`第${index + 1}题 · ${answerStateLabels[state]}`} title={`第${index + 1}题 · ${answerStateLabels[state]}`} data-answer-state={state} href={`#exam-${index + 1}`} onClick={event => { event.preventDefault(); document.getElementById(`exam-${index + 1}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{index + 1}</a>; })}</div><div className="answer-status-legend">{(submitted ? ['unanswered', 'correct', 'partial', 'incorrect', 'ungraded'] : ['unanswered', 'answered']).map(state => <span key={state}><i className={`status-${state}`} />{answerStateLabels[state as AnswerState]}</span>)}</div><p className="muted">{submitted ? '点击序号定位题目；主观题分别显示正确、部分正确、错误或未判定。' : exam ? '考试中不能切换其他功能。计时结束按已保存答案自动交卷。' : '草稿每次更改后自动保存。离开前也可手动保存。'}</p>{!submitted && <button className="button primary navigator-submit" onClick={submit} disabled={controlsBusy || expired}><Check size={16} />{expired ? '正在到时交卷…' : busy ? '正在提交…' : '交卷并查看解析'}</button>}</aside></div>
   </SourceNoticeScope></AttemptReviewProvider>;
 }

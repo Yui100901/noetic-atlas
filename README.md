@@ -57,7 +57,7 @@ Windows 也可双击 `启动学习站.cmd`。默认地址：
 
 也可运行 `npm run release -- all`，目标支持 `all`、`windows`、`web`、`android`、`docker`、`source`、`clean`；`--dry-run` 查看计划，`--docker-command-only` 仅输出 Docker 命令。`all` 构建当前系统支持的版本，Linux/macOS 不构建 Windows 桌面包。`android` 和 `all` 在构建前检查正式签名、JDK 21 与 Android SDK，缺失时停止。构建输出位于 `artifacts/releases/`，包含版本化签名 APK、签名验证报告、清单与 SHA256。
 
-新版发布需同步版本号、完成检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
+当前版本为 **1.5.0**，见[本次更新](./docs/版本说明-1.5.0.md)。新版只需更新package与lock版本，各端共享同一版本来源。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
 
 Android 首次正式发布运行 `npm run android:signing:init` 创建本地签名，之后正式打包自动使用；请独立备份私钥和密码，详见[Android 构建与签名](./docs/发布与部署.md#android-构建与签名)。
 
@@ -71,6 +71,7 @@ Android 首次正式发布运行 `npm run android:signing:init` 创建本地签�
 - [题库内容与来源](./docs/题库内容与来源.md)：各领域数量、覆盖、许可与复现方法。
 - [术语概念卡](./docs/术语概念卡.md)：双语名称、缩写、概念辨析与可迁移英文引用。
 - [开发与维护](./docs/开发与维护.md) · [架构与迁移](./docs/架构与迁移.md) · [API 约定](./API-CONTRACT.md)。
+- [测试隔离与CI](./docs/测试隔离与CI.md)：自动化入口、复用边界与可选浏览器验收。
 - [项目结构](./docs/项目结构.md)：模块边界、稳定入口和新增代码的放置约定。
 - [发布与部署](./docs/发布与部署.md) · [验收记录](./docs/验收记录.md)。
 - [查询性能与数据库访问](./docs/查询性能与数据库访问.md)：性能测量、统一查询层及数据库替换边界。

@@ -1,5 +1,7 @@
+import type { StorageEffect } from '../../server/http/operation';
+
 type Handler = (request: any, reply: LocalReply) => unknown;
-type RouteOptions = { bodyLimit?: number; schema?: Record<string, unknown> };
+type RouteOptions = { bodyLimit?: number; schema?: Record<string, unknown>; config?: { storageEffect?: StorageEffect } };
 class LocalReply {
   statusCode = 200; headers = new Headers(); payload: unknown; sent = false;
   code(status: number) { this.statusCode = status; return this; }
@@ -9,7 +11,7 @@ class LocalReply {
   send(value: unknown) { this.payload = value; this.sent = true; return this; }
 }
 export class LocalApp {
-  private routes: { method: string; path: string; handle: Handler; bodyLimit: number }[] = [];
+  private routes: { method: string; path: string; handle: Handler; bodyLimit: number; storageEffect?: StorageEffect }[] = [];
   constructor(private options: {bodyLimit?:number} = {}) {}
   private hooks: Record<string, Handler[]> = {};
   private errorHandler: (error: unknown, request: any, reply: LocalReply) => unknown = (error, _request, reply) => reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: String(error) } });
@@ -21,9 +23,9 @@ export class LocalApp {
     if(typeof handle!=='function')throw new TypeError('离线路由缺少处理函数');
     const bodyLimit=options.bodyLimit??this.options.bodyLimit??80*1024*1024;
     if(!Number.isSafeInteger(bodyLimit)||bodyLimit<1)throw new TypeError('离线路由bodyLimit无效');
-    const entry={method,url:path,schema:options.schema||{}};
+    const entry={method,url:path,schema:options.schema||{},config:options.config||{}};
     for(const hook of this.hooks.onRoute||[])hook(entry,new LocalReply());
-    this.routes.push({method,path,handle,bodyLimit});
+    this.routes.push({method,path,handle,bodyLimit,storageEffect:options.config?.storageEffect});
   }
   get(path: string, options: RouteOptions | Handler, handler?: Handler) { this.route('GET', path, options, handler); }
   post(path: string, options: RouteOptions | Handler, handler?: Handler) { this.route('POST', path, options, handler); }
@@ -35,19 +37,37 @@ export class LocalApp {
   setNotFoundHandler(handle: Handler) { this.missing = handle; }
   async register(_plugin: unknown, _options?: unknown) { }
   async close() { for (const hook of this.hooks.onClose || []) await hook(undefined, new LocalReply()); }
+  private matchRoute(method: string, pathname: string) {
+    const parts = pathname.split('/');
+    for (const route of this.routes) {
+      if (route.method !== method) continue;
+      const pattern = route.path.split('/'); if (pattern.length !== parts.length) continue;
+      const params: Record<string, string> = {}; let matches = true;
+      for (let index = 0; index < pattern.length; index++) {
+        if (pattern[index]!.startsWith(':')) params[pattern[index]!.slice(1)] = decodeURIComponent(parts[index]!);
+        else if (pattern[index] !== parts[index]) { matches = false; break; }
+      }
+      if (matches) return { route, params };
+    }
+    return undefined;
+  }
+  /** Uses the same matched route as inject, so aliases and query strings
+   * cannot accidentally borrow another operation's read-only declaration. */
+  storageEffect(method: string, url: string): StorageEffect | undefined {
+    try {
+      const parsed = new URL(url, 'https://localhost');
+      if (parsed.origin !== 'https://localhost' || !parsed.pathname.startsWith('/api/')) return undefined;
+      return this.matchRoute(method.toUpperCase(), parsed.pathname)?.route.storageEffect;
+    } catch { return undefined; }
+  }
   async inject(url: string, options: RequestInit = {}): Promise<Response> {
     const parsed = new URL(url, 'https://localhost'); const method = (options.method || 'GET').toUpperCase(); const reply = new LocalReply();
     const request: any = { method, url: parsed.pathname + parsed.search, protocol: 'https', headers: { ...Object.fromEntries(new Headers(options.headers)), host: 'localhost' }, query: Object.fromEntries(parsed.searchParams), params: {}, body: undefined };
     try {
       if (!parsed.pathname.startsWith('/api/') || parsed.origin !== 'https://localhost') throw Object.assign(new Error('离线接口只接受本地 API 路径'), { statusCode: 400, code: 'INVALID_LOCAL_URL' });
       for (const hook of this.hooks.onRequest || []) { await hook(request, reply); if (reply.sent) return this.response(reply); }
-      const route = this.routes.find(route => {
-        if (route.method !== method) return false;
-        const pattern = route.path.split('/'); const parts = parsed.pathname.split('/'); if (pattern.length !== parts.length) return false;
-        const params: Record<string, string> = {};
-        for (let i = 0; i < pattern.length; i++) { if (pattern[i]!.startsWith(':')) params[pattern[i]!.slice(1)] = decodeURIComponent(parts[i]!); else if (pattern[i] !== parts[i]) return false; }
-        request.params = params; return true;
-      });
+      const matched = this.matchRoute(method, parsed.pathname), route = matched?.route;
+      request.params = matched?.params || {};
       if (typeof options.body === 'string') {
         const limit=route?.bodyLimit??this.options.bodyLimit??80*1024*1024;
         if(new TextEncoder().encode(options.body).byteLength>limit)return this.response(reply.code(413).send({error:{code:'BODY_TOO_LARGE',message:'数据超过允许大小'}}));

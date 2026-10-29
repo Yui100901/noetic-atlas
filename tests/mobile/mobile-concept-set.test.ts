@@ -1,16 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import initSqlJs from 'sql.js';
-import { build } from 'vite';
-import { nativeAliases } from '../../mobile/vite-aliases.js';
+import { loadNativeRuntime } from '../helpers/native-runtime.js';
 
 test('offline concept sets retain reverse drafts, distinct FSRS identity and portable SQLite restore', async t => {
-  const folder = resolve('test-results/native-concept-set'); await mkdir(folder, {recursive:true});
-  await build({configFile:false,logLevel:'error',define:{'process.env':'{}'},resolve:{alias:nativeAliases},build:{outDir:folder,emptyOutDir:false,minify:false,lib:{entry:resolve('mobile/runtime.ts'),formats:['es'],fileName:()=> 'runtime.mjs'}}});
-  const {createLocalRuntime} = await import(pathToFileURL(resolve(folder,'runtime.mjs')).href);
+
+
+  const {createLocalRuntime} = await loadNativeRuntime();
   const sql = await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
   let durable:Uint8Array|undefined;
   const backups=new Map<string,Uint8Array>();

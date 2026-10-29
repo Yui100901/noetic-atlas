@@ -2,7 +2,7 @@ import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-marke
 import type { FastifyInstance } from 'fastify';
 import { Store, makeId, now } from '../../core/store.js';
 import { bulkQuestionImportSchema, fail, parse, questionSchema } from '../../core/validation.js';
-import { validateAssetReferences } from '../assets/routes.js';
+import { validateAssetReferences } from '../assets/service.js';
 
 export function assertNewQuestionId(qid?: string) {
   if (qid && ['new', 'review', 'import', 'import-template'].includes(qid)) fail(400, 'QUESTION_ID_RESERVED', `题号 ${qid} 为系统操作保留，请使用其他自定义题号或省略ID自动生成`);

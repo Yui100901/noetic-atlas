@@ -173,3 +173,30 @@ test('a different project root is rejected even if output names match', async t 
   await assert.rejects(cleanupReleaseArtifacts({ root }), /noetic-atlas 项目根目录/);
   assert.equal(await readFile(join(root, 'artifacts/releases/keep.zip'), 'utf8'), 'keep');
 });
+
+
+test('legacy content beside software is hash-archived before software removal', async t => {
+  const { root, put } = await fixture(t);
+  const name = 'noetic-atlas-1.0.0-content.zip';
+  await put('artifacts/releases/' + name, 'complete legacy content');
+  await put('artifacts/releases/runtime.zip', 'rebuildable software');
+  const dry = await cleanupReleaseArtifacts({ root, dryRun: true });
+  assert.equal(dry.archived.length, 1);
+  assert.equal(await readFile(join(root, 'artifacts/releases', name), 'utf8'), 'complete legacy content');
+  const result = await cleanupReleaseArtifacts({ root });
+  assert.equal(result.archived[0].to, 'data/release-archives/legacy-content/' + name);
+  assert.equal(result.removedBytes, Buffer.byteLength('rebuildable software'));
+  assert.equal(await readFile(join(root, result.archived[0].to), 'utf8'), 'complete legacy content');
+  await missing(join(root, 'artifacts/releases'));
+});
+
+test('legacy content archive collision prevents every software deletion', async t => {
+  const { root, put } = await fixture(t);
+  const name = 'noetic-atlas-1.0.0-content.zip';
+  await put('artifacts/releases/' + name, 'new content');
+  await put('data/release-archives/legacy-content/' + name, 'different previous content');
+  await put('artifacts/releases/runtime.zip', 'software');
+  await assert.rejects(cleanupReleaseArtifacts({ root }), /归档冲突/);
+  assert.equal(await readFile(join(root, 'artifacts/releases', name), 'utf8'), 'new content');
+  assert.equal(await readFile(join(root, 'artifacts/releases/runtime.zip'), 'utf8'), 'software');
+});

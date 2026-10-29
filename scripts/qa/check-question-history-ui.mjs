@@ -93,6 +93,7 @@ try {
   const noOverflow = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '390px document overflow');
   const configure = async (changes, expectPruning = true) => {
     await navigate('settings');
+    await page.locator('.settings-retention > summary').click();
     for (const [label, value] of Object.entries(changes)) await page.getByLabel(label, { exact: true }).fill(String(value));
     const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'PUT');
     await page.getByRole('button', { name: '保存系统配置', exact: true }).click(); const response = await saved;

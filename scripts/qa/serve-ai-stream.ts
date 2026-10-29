@@ -7,6 +7,9 @@ import {DEFAULT_AI_SETTINGS} from '../../shared/ai/ai.js';
 
 const staticRoot=resolve('dist/web');
 const requests:Array<{url:string;body:any;accept:string}>=[];
+// The current workspace loads/saves a private draft before it can start AI.
+// Keep those local snapshots independent from the controlled streaming calls.
+const drafts=new Map<string,any>();let draftSequence=0;
 const waiting=new Map<number,{response:ServerResponse;mode:string;run:unknown}>();let sequence=0,closed=0;
 const json=(response:ServerResponse,value:unknown,status=200)=>{response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(value));};
 const event=(response:ServerResponse,value:unknown)=>response.write(`data: ${JSON.stringify(value)}\r\n\r\n`);
@@ -31,12 +34,24 @@ const server=createServer(async(request,response)=>{
     let body:any={};if(request.method!=='GET'){const chunks:Buffer[]=[];for await(const chunk of request)chunks.push(Buffer.from(chunk));const value=Buffer.concat(chunks).toString();if(value)body=JSON.parse(value);}
     if(url.pathname==='/api/bootstrap')return json(response,{settings:DEFAULT_SETTINGS,domains:[{id:'computer',name:'计算机',description:'',sortOrder:0}],categories:[{id:'database',name:'数据库',domainId:'computer',parentId:null,description:'',sortOrder:0}],tags:[],stats:{totalQuestions:1000,generalQuestions:1000,personalQuestions:0,totalPapers:0,totalDocuments:0,favoriteCount:0,dueCount:0,wrongCount:0,typeCounts:{}},ai:{available:true,message:''}});
     if(url.pathname==='/api/exams/sync')return json(response,{attempt:null});
+    if(url.pathname==='/api/daily-push')return json(response,{config:DEFAULT_SETTINGS.dailyPush,today:null,recent:[],recentLimit:7,unreadCount:0,nextDateKey:'2099-01-01'});
+    if(url.pathname==='/api/ai/workspace-drafts'){
+      if(request.method==='GET')return json(response,[...drafts.values()].filter(value=>value.kind===url.searchParams.get('kind')));
+      if(request.method==='POST'){const stamp=new Date().toISOString(),value={id:`stream-draft-${++draftSequence}`,...body,createdAt:stamp,updatedAt:stamp};drafts.set(value.id,value);return json(response,value,201);}
+    }
+    if(url.pathname.startsWith('/api/ai/workspace-drafts/')){
+      const id=decodeURIComponent(url.pathname.split('/').at(-1)!),previous=drafts.get(id);
+      if(!previous)return json(response,{error:{code:'NOT_FOUND',message:'工作台草稿不存在'}},404);
+      if(body.expectedUpdatedAt!==previous.updatedAt)return json(response,{error:{code:'AI_WORKSPACE_DRAFT_VERSION_CONFLICT',message:'工作台草稿已变化'}},409);
+      if(request.method==='DELETE'){drafts.delete(id);return json(response,{ok:true});}
+      if(request.method==='PUT'){const value={...previous,state:body.state,updatedAt:new Date().toISOString()};drafts.set(id,value);return json(response,value);}
+    }
     if(url.pathname==='/api/ai/settings')return json(response,{...DEFAULT_AI_SETTINGS,enabled:true,baseUrl:'http://127.0.0.1',model:'isolated-ui-stream',hasKey:false});
     if(url.pathname==='/api/question-banks')return json(response,[]);
     if(url.pathname==='/api/ai/runs')return json(response,url.searchParams.has('page')?{items:[],total:0,page:1,pageSize:20}:[]);
     if(url.pathname==='/api/ai/paper-plan'||url.pathname==='/api/ai/test'){
       const id=++sequence;requests.push({url:url.pathname,body,accept:String(request.headers.accept||'')});
-      if(body.prompt==='http-error')return json(response,{error:{code:'QA_BAD_REQUEST',message:'请求格式测试',details:[{path:'count',message:'题量无效'}]}},400);
+      if(body.prompt==='http-error')return json(response,{error:{code:'QA_BAD_REQUEST',message:'请求格式测试',details:[{path:'count',code:'too_small',message:'QA_UNTRUSTED_DETAIL_SHOULD_NOT_APPEAR'}]}},400);
       const result=url.pathname==='/api/ai/test'?{ok:true,message:'隔离连接成功'}:run(id);
       if(body.prompt==='json')return json(response,result);
       response.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache'});response.flushHeaders();

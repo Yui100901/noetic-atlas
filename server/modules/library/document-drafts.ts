@@ -5,7 +5,7 @@ import type { DocumentRecord } from '../../../shared/models/types.js';
 import { makeId, nextStamp, type Store } from '../../core/store.js';
 import { documentSchema, fail, id, parse } from '../../core/validation.js';
 import { getSettings } from '../settings/service.js';
-import { normalizeDocument, validateDocument } from './routes.js';
+import { normalizeDocument, validateDocument } from './service.js';
 import { documentDraftRetentionCandidates } from './document-draft-retention.js';
 import { createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema, documentDraftQuerySchema, validateDocumentDraftState } from './document-draft-schema.js';
 export { documentDraftSchema, documentDraftStateSchema, createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema, documentDraftQuerySchema, validateDocumentDraftState } from './document-draft-schema.js';

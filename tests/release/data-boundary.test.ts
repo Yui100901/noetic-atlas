@@ -69,6 +69,7 @@ test('actual source and runtime ZIPs contain only base configuration and no loca
   await mkdir(join(folder, 'tests'));
   await put('scripts/build/android-build.mjs', 'export const sourceBuildTool = true;');
   await put('android/app/build/intermediates/generated.txt', 'Must not be shipped');
+  await put('dist/package.json', '{"name":"noetic-atlas","version":"1.0.0","type":"module"}');
   const result = await packageWebRelease({ root: folder });
   assert.equal(result.artifacts.length, 2);
   for (const artifact of result.artifacts) {
@@ -76,6 +77,7 @@ test('actual source and runtime ZIPs contain only base configuration and no loca
     assert.deepEqual([...entries.keys()].filter(name => name.startsWith('data/')), []);
     assert.deepEqual([...entries.keys()].filter(name => name.startsWith('config/')), ['config/defaults.json']);
     assert.equal(entries.get('LICENSE')!.toString(), 'Publisher-selected license fixture');
+    if (artifact.file.includes('-runtime.zip')) assert.equal(JSON.parse(entries.get('dist/package.json')!.toString()).version, '1.0.0');
     if(artifact.file.includes('-source.zip'))assert.equal(entries.get('scripts/build/android-build.mjs')!.toString(),'export const sourceBuildTool = true;');
     assert.ok(!entries.has('android/app/build/intermediates/generated.txt'));
     const manifest = JSON.parse(entries.get('release-manifest.json')!.toString('utf8'));

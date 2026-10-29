@@ -85,6 +85,11 @@ test('AI explanation creates reviewable run and explicitly appends notes without
   const f = await fixture(t); await f.enable(); f.store.put('study', 'S1', { ...f.store.study('S1'), notes: '我的原始笔记' });
   const run = await f.api('/api/ai/explain', 'POST', { questionId: 'S1' });
   assert.equal(run.kind, 'explain'); assert.ok(run.result.explanationMarkdown.includes('原子性')); assert.equal(run._context, undefined);
+  const contract = f.requests.at(-1).input.outputSchema;
+  assert.equal(contract.type, 'object'); assert.equal(contract.additionalProperties, false);
+  assert.deepEqual(Object.keys(contract.properties), ['explanationMarkdown', 'followUpsMarkdown', 'pitfallsMarkdown']);
+  for (const property of Object.values(contract.properties) as any[]) assert.equal(property.type, 'string');
+  assert.ok(f.requests.at(-1).input.task.includes('按JSON规则转义'));
   assert.equal(f.store.study('S1').notes, '我的原始笔记');
   await f.api(`/api/ai/runs/${run.id}/apply`, 'POST', { confirmed: true, appendNotes: true });
   const notes = f.store.study('S1').notes; assert.ok(notes.startsWith('我的原始笔记')); assert.ok(notes.includes('AI 辅助解析'));

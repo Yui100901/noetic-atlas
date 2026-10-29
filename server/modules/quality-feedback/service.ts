@@ -1,3 +1,4 @@
+import { putCompletedAiRun } from '../ai/run-storage.js';
 import {isRetiredQualityRule,type QualityIssue} from '../../../shared/models/content-quality.js';
 import {feedbackFingerprint} from './fingerprint.js';
 import {ensureFeedbackQualityIssue,syncQualityIssueFromFeedback} from '../content-quality/feedback-links.js';
@@ -150,7 +151,7 @@ export async function reviewQuestionFeedback(store: Store, feedback: QuestionFee
     const comparisons = outcome.comparisons.map(comparison => { const candidate = candidates.find(item => item.candidate.id === comparison.candidateId)!.candidate; return { ...comparison, questionId: candidate.questionId, ...(candidate.partId ? { partId: candidate.partId } : {}) }; });
     const review = { ...outcome, comparisons, runId, reviewedAt, sourceFingerprint: feedback.contentFingerprint, candidateCount: candidates.length };
     const run: AiRun<typeof review> = { id: runId, kind: 'feedback_review', status: 'completed', createdAt: reviewedAt, model: settings.model, result: review, questionIds: [feedback.questionId], feedbackId: feedback.id, warnings: ['AI复查仅提供建议，不改变反馈处理状态或题目发布状态。'], diagnostics };
-    store.database.putRecord('ai_runs', runId, { ...run, _context: { questionVersions: { [feedback.questionId]: version(source.question) }, sourceByItem: { [feedback.questionId]: feedback.questionId } } });
+    putCompletedAiRun(store, { ...run, _context: { questionVersions: { [feedback.questionId]: version(source.question) }, sourceByItem: { [feedback.questionId]: feedback.questionId } } });
     const { lastFailure: _oldFailure, ...previous } = feedback;
     const next = questionFeedbackSchema.parse({ ...previous, review, updatedAt: nextStamp(feedback.updatedAt) });
     store.database.putRecord('question_feedback', next.id, next); syncQualityIssueFromFeedback(store,next); return { feedback: feedbackView(store, requireFeedback(store,next.id)), runId };

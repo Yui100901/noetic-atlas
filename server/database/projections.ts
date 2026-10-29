@@ -2,8 +2,9 @@ import type { DatabaseConnection } from './connection.js';
 import { collectAssetReferences } from '../../shared/assets/asset-references.js';
 import { SearchProjections } from './search-projections.js';
 import { sql } from 'kysely';
+import { assetReferenceSources, assetReferenceContent } from './asset-reference-sources.js';
 
-export const projectionSources=['questions','documents','papers','attempts','study','study_parts','reviews','learning_results','question_history','document_drafts','ai_import_jobs'] as const;
+export const projectionSources = assetReferenceSources;
 export type ProjectionSource=typeof projectionSources[number];
 const questionFields=['id','title','status','collection','type','difficulty','depth','frequency','categoryIds','tagIds'] as const;
 const searchFields=['id','title','stemMarkdown','answerMarkdown','explanationMarkdown'] as const;
@@ -86,7 +87,7 @@ export class RecordProjections {
               if(source==='documents')d.run(q.deleteFrom('document_read_model').where('id','=',id));
               continue;
             }
-            const referenceContent = source === 'ai_import_jobs' ? (record.blocks || []).flatMap((block: any) => block.questions || []) : record;
+            const referenceContent = assetReferenceContent(source, record);
             for(const assetId of collectAssetReferences(referenceContent))refs.push({source_table:source,source_id:id,asset_id:assetId});
             if(source==='questions'){
               const metadata=Object.fromEntries(questionFields.filter(key=>Object.hasOwn(record,key)).map(key=>[key,record[key]]));

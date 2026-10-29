@@ -49,7 +49,10 @@ try{
  const state=()=>api('/qa/workspace-drafts');
  const settle=async(run,label)=>{for(let tick=0;tick<150;tick++){const result=await run();if(result)return result;await delay(100);}assert.fail('Timed out: '+label);};
  const prompt=()=>page.getByLabel('AI组题要求',{exact:true});
- const recover=async(target=page)=>{const picker=target.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});await picker.waitFor();await picker.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await picker.waitFor({state:'hidden'});};
+ const recover=async(target=page)=>{const picker=target.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});await picker.waitFor();
+  // Parent recovery can immediately mount a different, identically named child
+  // picker. Wait for this DOM instance, not a locator that can match its successor.
+  const instance=await picker.elementHandle();assert.ok(instance);await picker.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await instance.waitForElementState('hidden');await instance.dispose();};
  const maybeRecover=async(readyLocator=prompt())=>{const picker=page.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});await settle(async()=>await picker.isVisible()||await readyLocator.isVisible(),'draft choice or ready form');if(await picker.isVisible())await recover();};
  const save=async(scope=page)=>{await scope.getByRole('button',{name:'保存草稿',exact:true}).first().click();await settle(async()=>!await scope.getByRole('button',{name:'保存草稿',exact:true}).first().isDisabled(),'manual save settled');};
  const go=async(path)=>{await page.goto(origin+'/#/'+path);await page.waitForLoadState('networkidle');};
@@ -114,9 +117,9 @@ try{
  await jobRegion.getByRole('button',{name:/^确认选中预览到待审核/}).waitFor();assert.equal(await jobRegion.getByRole('checkbox',{name:'选择知识块 '+lastBlock.label,exact:true}).isChecked(),false);
  await blockCard.getByRole('button',{name:/展开知识块|收起知识块/}).waitFor();if(!await blockJson.isVisible()){const expand=blockCard.getByRole('button',{name:/^展开知识块/});if(await expand.count())await expand.click();await blockCard.getByText('编辑本块完整题目 JSON',{exact:true}).click();}assert.match(await blockJson.inputValue(),/保留手改的教材分块题/);checks.push('已创建任务按权威数据重载，知识块勾选与手改JSON按任务恢复');
  const latestBlockQuestions=JSON.parse(await blockJson.inputValue());latestBlockQuestions[0].title='父草稿切换前最后输入';await blockJson.fill(JSON.stringify(latestBlockQuestions));
- const parentControls=page.locator('[data-draft-kind="documents"]');await parentControls.getByRole('button',{name:'新建草稿',exact:true}).click();await jobRegion.waitFor({state:'hidden'});
+ const parentControls=page.locator('[data-draft-kind="documents"]');await parentControls.getByRole('button',{name:'草稿操作',exact:true}).click();await page.getByRole('menuitem',{name:'新建草稿',exact:true}).click();await jobRegion.waitFor({state:'hidden'});
  assert.ok((await drafts('document-job',jobId)).some(item=>item.id===jobDraft.id&&item.state.edits[firstBlock.id].json.includes('父草稿切换前最后输入')),'parent draft switch must flush child before unmount');
- await parentControls.getByRole('button',{name:'切换草稿',exact:true}).click();await recover();await recover();await jobRegion.waitFor();
+ await parentControls.getByRole('button',{name:'草稿操作',exact:true}).click();await page.getByRole('menuitem',{name:'切换草稿',exact:true}).click();await recover();await recover();await jobRegion.waitFor();
  await blockCard.getByRole('button',{name:/展开知识块|收起知识块/}).waitFor();if(!await blockJson.isVisible()){const expand=blockCard.getByRole('button',{name:/^展开知识块/});if(await expand.count())await expand.click();await blockCard.getByText('编辑本块完整题目 JSON',{exact:true}).click();}assert.match(await blockJson.inputValue(),/父草稿切换前最后输入/);checks.push('父级新建与切换草稿先保存子任务最后输入，重开可恢复同一任务编辑');
  await jobRegion.getByRole('button',{name:/^确认选中预览到待审核/}).click();await settle(async()=>(await api('/api/ai/document-jobs/'+jobId)).importedCount===1,'document edited import');assert.ok((await state()).questions.items.some(question=>question.title==='父草稿切换前最后输入'));checks.push('恢复后的教材编辑可确认导入，已导入分块不可重复新增');
 

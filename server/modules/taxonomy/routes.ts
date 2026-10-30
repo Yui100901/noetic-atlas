@@ -1,3 +1,5 @@
+import {validateGoalReferences} from '../learning-plans/schema.js';
+import {getSettings} from '../settings/service.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { PaperDraft } from '../../../shared/practice/paper-drafts.js';
@@ -26,12 +28,14 @@ export function registerTaxonomyRoutes(app: FastifyInstance, store: Store) {
       if (input.id && input.id !== entityId) fail(400, 'ID_IMMUTABLE', 'ID 不能在编辑时更换');
       const entity = { ...input, id: entityId }; if (table === 'categories') store.validateCategory(entity);
       if (table === 'tags') { entity.domainId = input.domainId === undefined ? previous.domainId ?? null : input.domainId; entity.kind = input.kind || previous.kind || 'custom'; store.validateTag(entity); }
-      return store.transaction(() => { store.put(table, entityId, entity); if (table !== 'domains') store.validateTaxonomyReferences(); return entity; });
+      return store.transaction(() => { store.put(table, entityId, entity); if (table !== 'domains'){store.validateTaxonomyReferences();const daily=getSettings(store).dailyPush;if(daily.enabled&&daily.goals?.length)validateGoalReferences(store,daily.goals);} return entity; });
     });
     app.delete(`/api/${table}/:id`, async request => {
       const entityId = getId(request);
       const referenced = store.all<PaperDraft>('paper_drafts').some(d => (table === 'domains' && d.state.domainId === entityId) || [d.state.filters, d.state.random].some(f => table === 'domains' ? f.domainId === entityId : table === 'categories' ? f.categoryId === entityId : Array.isArray(f.tagIds) && f.tagIds.includes(entityId)));
       if (referenced) fail(409, 'TAXONOMY_IN_DRAFT', '分类或标签仍被组卷草稿引用，请先编辑或删除相关草稿');
+      const daily=getSettings(store).dailyPush;
+      if(daily.enabled&&daily.goals?.some(g=>g.enabled&&(table==='domains'?g.domainId===entityId:table==='categories'?g.categoryIds.includes(entityId):g.tagIds.includes(entityId))))fail(409,'TAXONOMY_IN_LEARNING_GOAL','此领域、分类或标签仍被启用的学习目标引用，请先调整学习计划');
       store.deleteTaxonomy(table, entityId); return { ok: true };
     });
   }

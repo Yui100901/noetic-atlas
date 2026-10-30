@@ -1,0 +1,291 @@
+.learning-plan-page {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.learning-plan-page > .page-header {
+  margin: 0;
+}
+.learning-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.learning-goal-editors {
+  display: grid;
+  gap: 16px;
+}
+.learning-goal-editors > .button {
+  justify-self: start;
+}
+.learning-goal-editor {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.learning-goal-editor > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  cursor: pointer;
+  flex-wrap: wrap;
+  list-style: none;
+}
+.learning-goal-editor > summary > strong {
+  flex: 1;
+  min-width: 120px;
+  overflow-wrap: anywhere;
+}
+.learning-goal-editor > summary > svg {
+  flex: none;
+}
+.learning-goal-editor[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.learning-goal-editor-body {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+.learning-goal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.learning-weekdays {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px;
+}
+.learning-weekdays label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.learning-weekdays input {
+  width: auto;
+}
+.learning-plan-card {
+  display: grid;
+  gap: 16px;
+}
+.learning-plan-card-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.learning-plan-card-heading > svg {
+  color: var(--green);
+  flex: none;
+}
+.learning-plan-card-heading strong {
+  font-size: 17px;
+}
+.learning-plan-card-heading p {
+  margin: 7px 0 0;
+}
+.learning-plan-card-heading .badge {
+  margin-left: 10px;
+}
+.learning-plan-progress {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.learning-plan-progress > progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--green);
+  border: 0;
+  border-radius: 20px;
+}
+.learning-plan-progress > span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.learning-plan-goal-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.learning-plan-goal-links > a {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+.learning-plan-goal-links strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.learning-plan-goal-links span {
+  flex: none;
+  color: var(--muted);
+}
+.learning-plan-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.learning-plan-card > .learning-plan-actions {
+  margin-top: 0;
+}
+.learning-plan-goals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.learning-plan-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  min-width: 0;
+}
+.learning-plan-goal h2 {
+  margin: 8px 0 0;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+.learning-plan-goal p {
+  margin: 0;
+}
+.learning-plan-goal > .learning-plan-actions {
+  margin-top: auto;
+  padding-top: 4px;
+}
+.learning-plan-reason {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.learning-plan-task-section {
+  display: grid;
+  gap: 20px;
+}
+.learning-plan-task-section h2 {
+  margin: 0;
+}
+.learning-plan-task-list {
+  display: grid;
+  gap: 0;
+}
+.learning-plan-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.learning-plan-task:last-child {
+  border-bottom: 0;
+}
+.learning-plan-task > div {
+  min-width: 0;
+}
+.learning-plan-task strong {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.learning-plan-task p {
+  margin: 7px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.learning-plan-task .badge {
+  flex: none;
+}
+.learning-plan-task.completed .badge {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.learning-plan-history > summary,
+.learning-plan-drafts > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.learning-plan-history-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 20px;
+}
+.learning-plan-history-row {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+  flex-wrap: wrap;
+}
+.learning-plan-history-row span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.learning-plan-metrics {
+  margin-bottom: 20px;
+}
+.learning-plan-card .notice {
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .learning-plan-grid,
+  .learning-plan-goals,
+  .learning-plan-goal-links {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .learning-goal-editor-body {
+    padding: 16px;
+  }
+  .learning-plan-task {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .learning-plan-actions > .button {
+    justify-content: center;
+    flex: 1 1 auto;
+  }
+  .learning-plan-grid input,
+  .learning-plan-grid select {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .learning-plan-page {
+    gap: 18px;
+  }
+  .learning-plan-card-heading .badge {
+    margin-left: 6px;
+  }
+}
+
+.learning-plan-progress > progress {
+  appearance: none;
+  overflow: hidden;
+  background: var(--green-soft);
+}
+.learning-plan-progress > progress::-webkit-progress-bar {
+  background: var(--green-soft);
+  border-radius: 20px;
+}
+.learning-plan-progress > progress::-webkit-progress-value {
+  background: var(--green);
+  border-radius: 20px;
+}
+.learning-plan-progress > progress::-moz-progress-bar {
+  background: var(--green);
+  border-radius: 20px;
+}

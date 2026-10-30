@@ -1,4 +1,4 @@
-import {Children,isValidElement,memo,useRef,type ReactNode} from 'react';
+import {Children,isValidElement,memo,useRef,useEffect,type ReactNode} from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {AssetImage,safeEmbeddedImage} from '../media/asset-render';
@@ -6,13 +6,15 @@ import {assetIdFromUrl} from '../../../shared/assets/assets';
 
 // Answer clocks, typing and status updates do not change the Markdown source.
 // Keep its parser and embedded media mounted until the source itself changes.
-const MarkdownRenderer = memo(function MarkdownRenderer({ children }: { children: string }) {
+const MarkdownRenderer = memo(function MarkdownRenderer({ children, sourceRange }: { children: string; sourceRange?:{start:number;end:number} }) {
   const container = useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(sourceRange)container.current?.querySelector('.source-located-block')?.scrollIntoView({block:'center'});},[children,sourceRange?.start,sourceRange?.end]);
+  const locate=()=> (tree:any)=>{tree.children=tree.children.map((node:any)=>node.type==='element'&&node.position?.start?.offset!==undefined&&node.position.start.offset<sourceRange!.end&&node.position.end.offset>sourceRange!.start?{type:'element',tagName:'div',properties:{className:['source-located-block']},children:[node]}:node);};
   const transform = (url: string, key: string) => { if (key === 'src' && (assetIdFromUrl(url) || safeEmbeddedImage(url))) return url; if (/^https?:\/\//i.test(url) || url.startsWith('#')) return url; return ''; };
   const plainText = (nodes: ReactNode): string => Children.toArray(nodes).map(node => typeof node === 'string' || typeof node === 'number' ? String(node) : isValidElement<{ children?: ReactNode }>(node) ? plainText(node.props.children) : '').join('');
   const slug = (nodes: ReactNode) => plainText(nodes).toLowerCase().trim().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s+/g, '-');
   const anchorId = (url: string) => { try { const value = decodeURIComponent(url.slice(1)); return /^[\p{L}\p{N}_.:+-]+$/u.test(value) ? value : ''; } catch { return ''; } };
-  return <div className="markdown" ref={container}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={transform} components={{
+  return <div className="markdown" ref={container}><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={sourceRange?[locate]:[]} skipHtml urlTransform={transform} components={{
     a: ({ href, children }) => {
       if (!href) return <span>{children}</span>;
       const localAnchor = href.startsWith('#') && !href.startsWith('#/');

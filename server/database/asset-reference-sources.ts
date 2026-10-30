@@ -5,6 +5,7 @@ import type { RecordTable } from './schema.js';
 export const assetReferenceSources = [
   'questions',
   'documents',
+  'document_versions',
   'papers',
   'attempts',
   'study',

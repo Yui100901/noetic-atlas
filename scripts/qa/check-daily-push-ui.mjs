@@ -56,7 +56,7 @@ try{
 
   const recommendation=()=>page.getByRole('status',{name:'每日推荐',exact:true});
   const noStandaloneEntry=async()=>{
-    assert.equal(await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'每日推题',exact:true}).count(),0);
+    assert.equal(await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'每日推题与学习计划',exact:true}).count(),0);
     assert.equal(await page.locator('.daily-push-topbar-link,.daily-push-banner').count(),0);
   };
   await go('papers');await recommendation().getByRole('link',{name:'开启每日推荐',exact:true}).waitFor();
@@ -69,7 +69,7 @@ try{
   await dashboardDaily().click();await page.waitForURL(/#\/settings\?tab=daily/);
   checks.push('知识总览今日学习建议在未开启时提供每日推荐配置入口');
 
-  await go('settings?tab=daily');await page.getByRole('heading',{name:'每日推题',exact:true}).waitFor();
+  await go('settings?tab=daily');await page.getByRole('heading',{name:'每日推题与学习计划',exact:true}).waitFor();
   assert.equal(await page.getByLabel('复习题目标分值',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('新题目标分值',{exact:true}).inputValue(),'20');
   await page.getByLabel('开启每日推题',{exact:true}).check();await page.getByRole('button',{name:'保存推题配置',exact:true}).click();
   assert.equal((await api('/api/settings')).dailyPush.enabled,false,'missing scope must not save');

@@ -1,3 +1,5 @@
+import {DocumentPicker,type SelectedDocument} from '../library/document-picker';
+import {extractLibrarySource} from './ai-library-source';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { FileInput, FolderOpen, RefreshCw, Save, Square } from 'lucide-react';
@@ -24,6 +26,8 @@ export function AiDocumentWorkspace() {
   const input = useRef<HTMLInputElement>(null), extraction = useRef<AbortController | null>(null);
   const [local, setLocal] = useState<DocumentFilesResult | null>(null), [extractProgress, setExtractProgress] = useState<DocumentExtractProgress | null>(null);
   const [sourceName, setSourceName] = useState(''), [sourceUrl, setSourceUrl] = useState(''), [requirements, setRequirements] = useState('');
+  const [saveSources,setSaveSources]=useState(false);
+  const libraryOpened=useRef(false);
   const [first, setFirst] = useState(''), [last, setLast] = useState(''), [perBlock, setPerBlock] = useState(10), [maximum, setMaximum] = useState(200);
   const [mode, setMode] = useState<'generate' | 'extract'>('generate'), [types, setTypes] = useState<string[]>([]), [difficulty, setDifficulty] = useState('');
   const [categoryIds, setCategoryIds] = useState<string[]>([]), [tagIds, setTagIds] = useState<string[]>([]);
@@ -32,9 +36,9 @@ export function AiDocumentWorkspace() {
   const opened = useRef(''), explicitOpened = useRef(false), loadEpoch = useRef(0);
   const jobs = useResource<Paged<AiDocumentJobSummary>>(`/api/ai/document-jobs?page=${page}&pageSize=${pageSize}`);
   const domains = Array.from(new Set(categoryIds.map(id => bootstrap.categories.find(category => category.id === id)?.domainId).filter(Boolean))) as string[];
-  const draft = useAiWorkspaceDraft({ kind: 'documents', compact: true, state: { local, sourceName, sourceUrl, requirements, first, last, perBlock, maximum, mode, types, difficulty, categoryIds, tagIds, jobId: jobId || null, page, pageSize }, busy,
-    hasContent: !!local || !!jobId || !!sourceName || !!sourceUrl || !!requirements || !!first || !!last || perBlock !== 10 || maximum !== 200 || mode !== 'generate' || types.length > 0 || !!difficulty || categoryIds.length > 0 || tagIds.length > 0 || page !== 1 || pageSize !== 10,
-    restore: value => { loadEpoch.current++; opened.current = ''; setBusy(false); setLocal(documentFilesDraft(value.local)); setSourceName(draftString(value.sourceName)); setSourceUrl(draftString(value.sourceUrl)); setRequirements(draftString(value.requirements)); setFirst(draftString(value.first)); setLast(draftString(value.last)); setPerBlock(draftNumber(value.perBlock, 10)); setMaximum(draftNumber(value.maximum, 200)); setMode(value.mode === 'extract' ? 'extract' : 'generate'); setTypes(draftStrings(value.types)); setDifficulty(draftString(value.difficulty)); setCategoryIds(draftStrings(value.categoryIds)); setTagIds(draftStrings(value.tagIds)); setPage(draftNumber(value.page, 1)); setPageSize(draftNumber(value.pageSize, 10)); setJob(null); setJobId(draftString(value.jobId)); setError(''); }
+  const draft = useAiWorkspaceDraft({ kind: 'documents', compact: true, state: { saveSources, local, sourceName, sourceUrl, requirements, first, last, perBlock, maximum, mode, types, difficulty, categoryIds, tagIds, jobId: jobId || null, page, pageSize }, busy,
+    hasContent: saveSources || !!local || !!jobId || !!sourceName || !!sourceUrl || !!requirements || !!first || !!last || perBlock !== 10 || maximum !== 200 || mode !== 'generate' || types.length > 0 || !!difficulty || categoryIds.length > 0 || tagIds.length > 0 || page !== 1 || pageSize !== 10,
+    restore: value => { setSaveSources(value.saveSources===true); loadEpoch.current++; opened.current = ''; setBusy(false); setLocal(documentFilesDraft(value.local)); setSourceName(draftString(value.sourceName)); setSourceUrl(draftString(value.sourceUrl)); setRequirements(draftString(value.requirements)); setFirst(draftString(value.first)); setLast(draftString(value.last)); setPerBlock(draftNumber(value.perBlock, 10)); setMaximum(draftNumber(value.maximum, 200)); setMode(value.mode === 'extract' ? 'extract' : 'generate'); setTypes(draftStrings(value.types)); setDifficulty(draftString(value.difficulty)); setCategoryIds(draftStrings(value.categoryIds)); setTagIds(draftStrings(value.tagIds)); setPage(draftNumber(value.page, 1)); setPageSize(draftNumber(value.pageSize, 10)); setJob(null); setJobId(draftString(value.jobId)); setError(''); }
   });
   const open = async (id: string) => { const epoch = ++loadEpoch.current; setError(''); setBusy(true); try { const value = await request<AiDocumentJob>(`/api/ai/document-jobs/${idPath(id)}`); if (epoch === loadEpoch.current) { setJob(value); setJobId(value.id); } } catch (reason) { if (epoch === loadEpoch.current) setError(aiFailureMessage(reason)); } finally { if (epoch === loadEpoch.current) setBusy(false); } };
   const switchWork = (action: () => void) => { if (session) void session.transition(action); else void draft.saveNow().then(action).catch(reason => setError(aiFailureMessage(reason))); };
@@ -61,13 +65,21 @@ export function AiDocumentWorkspace() {
     } catch (reason) { if (!controller.signal.aborted) setError(aiFailureMessage(reason)); }
     finally { if (extraction.current === controller) { setBusy(false); setExtractProgress(null); extraction.current = null; } }
   };
+  const fromLibrary=async(document:SelectedDocument)=>{
+    const controller=new AbortController();extraction.current?.abort();extraction.current=controller;
+    setBusy(true);setError('');setExtractProgress(null);
+    try{const value=await extractLibrarySource(document,{...(first?{firstPage:Number(first)}:{}),...(last?{lastPage:Number(last)}:{}),signal:controller.signal,onProgress:setExtractProgress});
+      if(!controller.signal.aborted){setLocal(value);setSourceName(document.title);setSaveSources(false);setCategoryIds(document.categoryIds);setTagIds(document.tagIds);setMaximum(Math.min(AI_DOCUMENT_LIMITS.maxQuestionsPerJob,Math.max(200,value.sections.length*perBlock)));}
+    }catch(reason){if(!controller.signal.aborted)setError(aiFailureMessage(reason));}finally{if(extraction.current===controller){setBusy(false);setExtractProgress(null);extraction.current=null;}}
+  };
+  useEffect(()=>{if(!draft.ready||libraryOpened.current)return;const id=new URLSearchParams(window.location.hash.split('?')[1]||'').get('document');if(!id)return;libraryOpened.current=true;switchWork(()=>{setBusy(true);void request<SelectedDocument>(`/api/documents/${idPath(id)}`).then(fromLibrary).catch(reason=>{setError(aiFailureMessage(reason));setBusy(false);});});},[draft.ready]);
   const create = async () => {
     if (!local || !sourceName.trim()) return;
-    if (!confirm('创建可恢复的教材任务后，提取的正文会保存到本机数据库，供分块、失败重试和再次打开使用。现在不会发送模型或新增题目，是否继续？')) return;
+    if (!confirm('创建可恢复的教材任务后，提取的正文会保存到本机数据库，供分块、失败重试和再次打开使用。若勾选保存提取文字，同时会创建资料库摘录。现在不会发送模型或新增题目，是否继续？')) return;
     setBusy(true); setError('');
     try {
       await draft.runBusy(async () => {
-        const value = await send<AiDocumentJob>('/api/ai/document-jobs', 'POST', { confirmed: true, sourceName: sourceName.trim(), ...(sourceUrl.trim() ? { sourceUrl: sourceUrl.trim() } : {}), sections: local.sections, mode, requirements, questionTypes: types, ...(difficulty ? { difficulty: Number(difficulty) } : {}), categoryIds, tagIds, questionsPerBlock: perBlock, maxQuestions: maximum });
+        const value = await send<AiDocumentJob>('/api/ai/document-jobs', 'POST', { confirmed: true, sourceName: sourceName.trim(), ...(sourceUrl.trim() ? { sourceUrl: sourceUrl.trim() } : {}), sections: local.sections, saveSources, mode, requirements, questionTypes: types, ...(difficulty ? { difficulty: Number(difficulty) } : {}), categoryIds, tagIds, questionsPerBlock: perBlock, maxQuestions: maximum });
         // Persist the consumed source and new task pointer together before
         // allowing another navigation; the original task is never recreated.
         flushSync(() => { setJob(value); setJobId(value.id); setLocal(null); });
@@ -81,6 +93,7 @@ export function AiDocumentWorkspace() {
     <section className="card ai-tools form-stack ai-import-source">
       <div className="list-toolbar"><div><h2>1. 读取多份资料或整本教材</h2><p className="muted">先提取分块，再选择知识块出题；成功批次可恢复。</p></div><button className="button" disabled={busy} onClick={() => input.current?.click()}><FileInput size={16} />选择多个 PDF / 文本文件</button></div>
       <input ref={input} type="file" multiple className="sr-only" aria-label="AI分批原始文件" accept=".pdf,.txt,.md,.markdown,.json,.csv" disabled={busy} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ''; void extract(files); }} />
+      <DocumentPicker disabled={busy} label="从资料库选择教材并关联原文" onSelect={document=>switchWork(()=>void fromLibrary(document))}/>
       <AiServiceNotice />
       <div className="form-grid"><Field label="PDF起始页（可选）" hint="文件中的页码，从1开始；留空从首页。"><input type="number" min="1" value={first} disabled={busy} onChange={event => setFirst(event.target.value)} /></Field><Field label="PDF结束页（可选）" hint="留空到末页；范围用于本次选择的每份PDF。"><input type="number" min="1" value={last} disabled={busy} onChange={event => setLast(event.target.value)} /></Field></div>
       <p className="muted">每次最多20份文件，单文件30MiB，PDF最多2000页；提取正文总计不超过400万字符／12MB／600块。不含OCR，扫描图、复杂公式和多栏内容需先识别或校对。</p>
@@ -89,6 +102,8 @@ export function AiDocumentWorkspace() {
         <div className="notice info">已读取{local.files}份资料{local.pages ? `、${local.pages}页PDF` : ''}，共{local.characters.toLocaleString()}字符，整理为{local.sections.length}个初始块。尚未请求模型。</div>
         {local.warnings.map((warning, index) => <p className="notice" key={index}>{warning}</p>)}
         <AiDocumentSourcePreview sections={local.sections} />
+        {local.sections.every(section=>section.sourceCitation)?<p className="notice info">已关联资料库固定版本，出题后可返回原文核对。</p>:<label className="check-row"><input type="checkbox" checked={saveSources} disabled={busy} onChange={event=>setSaveSources(event.target.checked)}/>将提取文字保存至资料库并关联原文</label>}
+        {!local.sections.every(section=>section.sourceCitation)&&<p className="muted">保存的是本次提取文字；如需保留原PDF并按文件页阅读，请先上传至资料库，再从资料库选择教材。</p>}
         <Field label="教材任务名称"><input value={sourceName} maxLength={300} disabled={busy} onChange={event => setSourceName(event.target.value)} /></Field>
         <Field label="教材出处链接（可选）" hint="仅作为出处保存，不自动下载。"><input type="url" value={sourceUrl} maxLength={3000} disabled={busy} onChange={event => setSourceUrl(event.target.value)} /></Field>
         <div className="form-grid"><Field label="分批处理方式"><select value={mode} disabled={busy} onChange={event => setMode(event.target.value as 'generate' | 'extract')}><option value="generate">教材知识出题</option><option value="extract">整理已有题目</option></select></Field><Field label="每块最多题量"><input type="number" min="1" max="50" value={perBlock} disabled={busy} onChange={event => setPerBlock(Number(event.target.value))} /></Field><Field label="整个任务最多题量"><input type="number" min="1" max={AI_DOCUMENT_LIMITS.maxQuestionsPerJob} value={maximum} disabled={busy} onChange={event => setMaximum(Number(event.target.value))} /></Field><Field label="分批题目难度"><select value={difficulty} disabled={busy} onChange={event => setDifficulty(event.target.value)}><option value="">按材料判断</option>{[1, 2, 3, 4].map(value => <option key={value} value={value}>D{value}</option>)}</select></Field></div>

@@ -227,3 +227,41 @@ test('explicit cancellation stops the current provider, preserves earlier comple
   const run = f.store.database.getRecord<any>('ai_runs', stopped.blocks[1].planFailure!.auditId!);
   assert.equal(run.status, 'cancelled'); assert.ok(!Object.hasOwn(run, 'result'));
 });
+
+
+test('explicit textbook archiving links generated and edited imports to actual versioned source and outlives job deletion',async t=>{
+ const f=await fixture(t);
+ const job=await f.create({saveSources:true,sections:[{sourceName:'第一册',label:'第一章',text:'变量名称引用值。'}],maxQuestions:2});
+ assert.equal(f.store.all('documents').length,1);assert.equal(f.store.all('document_versions').length,1);
+ const citation=job.blocks[0].sourceCitation;assert.ok(citation.documentId);assert.equal(citation.startOffset,0);
+ await f.api(path(job,'plan'),{blockIds:ids(job)});
+ const generated=await f.api(path(job,'generate'),{blockIds:ids(job)});assert.deepEqual(generated.blocks[0].questions[0].documentLinks,[citation]);
+ const edited={...generated.blocks[0].questions[0],documentLinks:[{...citation,documentId:'untrusted-id'}]};
+ const imported=await f.api(path(job,'import'),{confirmed:true,blockIds:ids(job),questions:[{blockId:job.blocks[0].id,questions:[edited]}]});
+ assert.deepEqual(imported.items[0].documentLinks,[citation]);assert.equal(imported.items[0].status,'pending');
+ await f.api(path(job),undefined,200,'DELETE');assert.equal(f.store.all('document_versions').length,1);assert.equal(f.store.all('documents').length,1);
+});
+
+test('legacy textbook task keeps source private until explicit backfill, with version conflict and idempotence',async t=>{
+ const f=await fixture(t);const job=await f.create({sections:[{label:'A',text:'变量名称引用值。'}],maxQuestions:2});
+ assert.equal(f.store.all('documents').length,0);
+ await f.api(path(job,'plan'),{blockIds:ids(job)});await f.api(path(job,'generate'),{blockIds:ids(job)});
+ const imported=await f.api(path(job,'import'),{confirmed:true,blockIds:ids(job)}),latest=imported.job;
+ await f.api(path(job,'link-sources'),{confirmed:true,expectedUpdatedAt:job.updatedAt},409);assert.equal(f.store.all('documents').length,0);
+ const linked=await f.api(path(job,'link-sources'),{confirmed:true,expectedUpdatedAt:latest.updatedAt});assert.equal(linked.linked,1);assert.equal(f.store.all('documents').length,1);
+ const question=f.store.require('questions',imported.items[0].id);assert.equal(question.documentLinks.length,1);
+ const repeated=await f.api(path(job,'link-sources'),{confirmed:true,expectedUpdatedAt:linked.job.updatedAt});assert.equal(repeated.linked,0);assert.equal(f.store.all('documents').length,1);
+ const changed=await f.create({sections:[{label:'B',text:'变量引用值。'}],maxQuestions:2});await f.api(path(changed,'plan'),{blockIds:ids(changed)});await f.api(path(changed,'generate'),{blockIds:ids(changed)});const other=await f.api(path(changed,'import'),{confirmed:true,blockIds:ids(changed)});const prior=f.store.require('questions',other.items[0].id);f.store.put('questions',prior.id,{...prior,stemMarkdown:'已被替换为另一个主题的题目'});const skipped=await f.api(path(changed,'link-sources'),{confirmed:true,expectedUpdatedAt:other.job.updatedAt});assert.equal(skipped.linked,0);assert.equal(skipped.skipped,1);assert.equal(f.store.require('questions',prior.id).documentLinks,undefined);
+});
+
+test('linked Markdown source rejects forged material, preserves split offsets, and rolls back failed archive creation',async t=>{
+ const f=await fixture(t);const {createDocument}=await import('../../server/modules/library/service.js');const {documentContentVersion}=await import('../../server/modules/library/sources.js');
+ const text='变量绑定🙂。'.repeat(3000),document=createDocument(f.store,{id:'source',title:'原文',bodyMarkdown:text});
+ const sourceCitation={documentId:document.id,versionId:documentContentVersion(document),title:document.title,relation:'summarized',label:'全部',startOffset:0,endOffset:text.length,excerpt:text.slice(0,20)};
+ await f.api('/api/ai/document-jobs',{confirmed:true,sourceName:'伪造',sections:[{text:'伪造的材料',sourceCitation}],maxQuestions:2,questionsPerBlock:2},400);
+ assert.equal(f.store.all('document_versions').length,0);
+ const job=await f.create({sections:[{text,sourceCitation}],maxQuestions:2});let offset=0;
+ for(const block of documentJob(f.store,job.id).blocks){assert.equal(block.sourceCitation!.startOffset,offset);offset+=block.text.length;assert.equal(block.sourceCitation!.endOffset,offset);assert.equal(text.slice(block.sourceCitation!.startOffset,block.sourceCitation!.endOffset),block.text);}
+ const before=f.store.all('documents').length;
+ await f.api('/api/ai/document-jobs',{confirmed:true,saveSources:true,sourceName:'bad',sections:[{text:'   '}],maxQuestions:2,questionsPerBlock:2},400);assert.equal(f.store.all('documents').length,before);
+});

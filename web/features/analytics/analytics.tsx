@@ -1,3 +1,4 @@
+import {LearningPlanMetrics} from '../daily-push/learning-plan-metrics';
 import {analyticsMonday,periodRange,moveAnalyticsPeriod,readAnalyticsLocation,validAnalyticsDay,type AnalyticsMode} from './range-navigation';
 import { useEffect, useState } from 'react';
 import { ArrowRight, CalendarDays, ChartNoAxesCombined, CheckCheck, ChevronLeft, ChevronRight, Clock3, Download, Info, RefreshCw, Target } from 'lucide-react';
@@ -74,6 +75,7 @@ function AnalysisBody({ report, today, comparison }: { report: AnalyticsReport; 
   return <>
     {!!report.quality.warnings.length && <div className="analytics-notice" role="note"><Info size={17} /><p>{report.quality.warnings.join(' ')}</p></div>}
     <OverviewMetrics summary={report.summary} comparison={comparison} />
+    <LearningPlanMetrics value={report.learningPlans}/>
     {!report.summary.sessions && !report.summary.reviewEvents && !report.adaptive?.feedbackEvents && <div className="card" style={{ marginBottom: 18 }}><Empty title="这段时间还没有学习记录" description="完成一次练习或记录一次复习后，这里会逐步形成你的学习画像。" actions={<a className="button primary" href="#/papers">去题集练习<ArrowRight size={16} /></a>} /></div>}
     {report.adaptive && <AdaptiveReviewMetrics adaptive={report.adaptive} comparison={comparison} />}
     <div className="analytics-layout"><DailyTrend key={`${report.range.from}:${report.range.to}`} report={report} today={today} /><ResultDistribution summary={report.summary} /></div>

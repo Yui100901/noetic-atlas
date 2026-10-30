@@ -1,3 +1,6 @@
+import {documentVersionSchema,documentSourceParamsSchema,relatedQuestionsQuerySchema} from '../modules/library/source-schema.js';
+import {aiDocumentLinkSourcesSchema} from '../modules/ai/document-schema.js';
+import {learningDaySchema,learningTaskResultSchema,planStartSchema} from '../modules/learning-plans/schema.js';
 import { createFocusSchema,focusActionSchema,focusSummarySchema } from '../modules/focus-review/schema.js';
 import packageInfo from '../../package.json' with { type: 'json' };
 import * as quality from '../modules/content-quality/schema.js';
@@ -56,7 +59,12 @@ const paged = (item: JsonSchema): JsonSchema => ({ anyOf: [{type:'array',items:i
 const dailyProgressOutput:JsonSchema={type:'object',required:['status','totalQuestions','answeredQuestions','answeredPoints','totalPoints','percent','omittedQuestions','pendingGradingCount','resumeAttemptId','resultAttemptId','submittedAt','historyAvailable','detailsAvailable'],properties:{status:{enum:['not_started','in_progress','submitted','completed','unavailable']},...Object.fromEntries(['totalQuestions','answeredQuestions','omittedQuestions','pendingGradingCount'].map(key=>[key,{type:'integer',minimum:0}])),...Object.fromEntries(['answeredPoints','totalPoints','percent'].map(key=>[key,{type:'number',minimum:0}])),resumeAttemptId:{type:['string','null']},resultAttemptId:{type:['string','null']},submittedAt:{type:['string','null']},historyAvailable:{type:'boolean'},detailsAvailable:{type:'boolean'}},description:'已答题目的满分覆盖，非实际得分；提交、漏答及主观待判分别表示。'};
 const dailyRecordOutput=toJson(dailyPushRecordSchema);
 const dailyViewOutput:JsonSchema={...dailyRecordOutput,required:[...(dailyRecordOutput.required||[]),'paperAvailable','progress'],properties:{...dailyRecordOutput.properties,paperAvailable:{type:'boolean'},progress:dailyProgressOutput}};
-const dailyOverviewOutput:JsonSchema={type:'object',required:['config','today','recent','recentLimit','unreadCount','nextDateKey'],properties:{config:toJson(dailyPushSettingsSchema),today:{anyOf:[dailyViewOutput,{type:'null'}]},recent:{type:'array',items:dailyViewOutput},recentLimit:{type:'integer'},unreadCount:{type:'integer'},nextDateKey:{type:'string'}}};
+const planProgressOutput:JsonSchema={type:'object',required:['total','completed','answered','reviewed','completedPoints','totalPoints','percent'],properties:Object.fromEntries(['total','completed','answered','reviewed','completedPoints','totalPoints','percent'].map(key=>[key,{type:'number',minimum:0}]))};
+const learningDayOutput=toJson(learningDaySchema);
+const planViewProperties:Record<string,JsonSchema>={progress:planProgressOutput,goalProgress:{type:'object',additionalProperties:planProgressOutput},focusDrafts:{type:'array',items:{type:'object',properties:{id:{type:'string'},title:{type:'string'},rated:{type:'integer'},total:{type:'integer'},updatedAt:{type:'string',format:'date-time'},goalId:{type:'string'}}}},practiceDrafts:{type:'array',items:{type:'object',properties:{id:{type:'string'},title:{type:'string'},updatedAt:{type:'string'},goalId:{type:'string'}}}},paperAvailability:{type:'object',additionalProperties:{type:'boolean'}}};
+const learningPlanSummaryOutput:JsonSchema={...learningDayOutput,required:[...(learningDayOutput.required||[]).filter((key:string)=>key!=='tasks'),...Object.keys(planViewProperties)],properties:{...Object.fromEntries(Object.entries(learningDayOutput.properties||{}).filter(([key])=>key!=='tasks')),...planViewProperties}};
+const learningPlanDetailOutput:JsonSchema={...learningDayOutput,required:[...(learningDayOutput.required||[]),...Object.keys(planViewProperties),'taskProgress'],properties:{...learningDayOutput.properties,...planViewProperties,taskProgress:{type:'object',additionalProperties:toJson(learningTaskResultSchema)}}};
+const dailyOverviewOutput:JsonSchema={type:'object',required:['config','today','recent','recentLimit','unreadCount','nextDateKey'],properties:{plan:{anyOf:[learningPlanSummaryOutput,{type:'null'}]},config:toJson(dailyPushSettingsSchema),today:{anyOf:[dailyViewOutput,{type:'null'}]},recent:{type:'array',items:dailyViewOutput},recentLimit:{type:'integer'},unreadCount:{type:'integer'},nextDateKey:{type:'string'}}};
 const questionStatisticsOutput:JsonSchema={type:'object',required:['answered','correct','partial','incorrect','ungraded','lastAnsweredAt','unknown'],properties:{...Object.fromEntries(['answered','correct','partial','incorrect','ungraded','unknown'].map(key=>[key,{type:'integer',minimum:0}])),lastAnsweredAt:{type:['string','null'],format:'date-time'}}};
 const qualityIssueOutput=toJson(quality.qualityIssueSchema);
 const qualityIssueViewOutput:JsonSchema={...qualityIssueOutput,required:[...(qualityIssueOutput.required||[]),'sourceAvailable','sourceChanged','relatedChanged'],properties:{...qualityIssueOutput.properties,sourceAvailable:{type:'boolean'},sourceChanged:{type:'boolean'},relatedChanged:{type:'boolean'}}};
@@ -114,6 +122,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/ai/document-jobs/:id/plan': aiDocumentProcessSchema,
   '/api/ai/document-jobs/:id/generate': aiDocumentProcessSchema,
   '/api/ai/document-jobs/:id/import': aiDocumentImportSchema,
+  '/api/ai/document-jobs/:id/link-sources':aiDocumentLinkSourcesSchema,
   '/api/question-feedback': questionFeedbackInputSchema,
   '/api/question-feedback/summaries': questionFeedbackSummariesSchema,
   '/api/question-feedback/:id/resolve': questionFeedbackResolveSchema,
@@ -127,8 +136,9 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
   '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),documentDrafts:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
 };
-const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
+const summaries: Record<string,string> = {'learning-plans':'学习计划','focus-sessions':'专注复习',questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
+  if(url==='/api/learning-plans/:id/start')return toJson(planStartSchema);
   if(url==='/api/focus-sessions'&&method==='POST')return toJson(createFocusSchema);
   if(url==='/api/focus-sessions/:id/current')return toJson(focusActionSchema);
   if(url==='/api/focus-sessions/:id/timing')return toJson(practiceTimingInputSchema);
@@ -185,6 +195,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/learning/reset-preview')schema.querystring=toJson(z.object({}).strict());
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
+  if(url==='/api/documents/:id/questions')schema.querystring=toJson(relatedQuestionsQuerySchema);
+  if(url==='/api/documents/:id/versions/:versionId')schema.params=toJson(documentSourceParamsSchema);
   if(url==='/api/documents'||url==='/api/documents/page')schema.querystring=toJson(documentListQuerySchema);
   if(url==='/api/questions')schema.querystring=toJson(questionQuerySchema);
   if(['/api/domains','/api/categories','/api/tags'].includes(url))schema.querystring=toJson(taxonomyQuerySchema);
@@ -249,6 +261,10 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/settings/import')success=toJson(configurationImportResultSchema);
   if(url==='/api/health')success={type:'object',properties:{ok:{const:true}}};
   if(url==='/api/vocabulary')success={type:'object',required:['word','matches'],properties:{word:{type:'string'},matches:{type:'array',items:{type:'object',required:['id','title','status'],properties:{id:{type:'string'},title:{type:'string'},status:{enum:['published','pending','draft','archived']}}}}}};
+  if(url==='/api/documents/:id'&&method==='GET')success=toJson(validation.documentSchema.extend({contentVersion:validation.documentVersionIdSchema}));
+  if(url==='/api/documents/:id/versions/:versionId')success=toJson(documentVersionSchema.extend({currentVersionId:validation.documentVersionIdSchema.nullable(),currentTitle:z.string().nullable(),archived:z.boolean()}));
+  if(url==='/api/documents/:id/questions')success=learningPage(toJson(z.object({id:validation.id,title:z.string(),type:validation.types,status:z.string(),documentLinks:z.array(validation.documentCitationSchema)})));
+  if(url==='/api/ai/document-jobs/:id/link-sources')success={type:'object',required:['job','linked'],properties:{job:aiDocumentJobOutput,linked:{type:'integer',minimum:0},skipped:{type:'integer',minimum:0}}};
   if(url==='/api/documents/kinds')success={type:'array',items:{type:'string'}};
   if(url==='/api/study')success={type:'object',properties:{items:{type:'array',items:object},reviews:{type:'array',items:object}}};
   if(url==='/api/exams/active'||url==='/api/exams/sync')success={type:'object',properties:{attempt:{anyOf:[attemptOutput,{type:'null'}]}}};
@@ -268,6 +284,9 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(method==='DELETE')success=object;
   schema.response={...(schema.response as Record<string,unknown>),200:success};
   if(url==='/api/focus-sessions'&&method==='GET'){schema.querystring=toJson(z.object({page:paginationFields.page,pageSize:paginationFields.pageSize,paperId:id.optional(),status:z.enum(['in_progress','submitted']).optional()}).strict());success=paged(toJson(focusSummarySchema));}
+  if(url==='/api/learning-plans'&&method==='GET'){schema.querystring=toJson(z.object({...paginationFields}).strict());success=paged(learningPlanSummaryOutput);}
+  if(url==='/api/learning-plans/:id'&&method==='GET')success=learningPlanDetailOutput;
+  if(url==='/api/learning-plans/:id/start'&&method==='POST')success={type:'object',required:['id','kind','resumed'],properties:{id:{type:'string'},kind:{enum:['focus','practice']},resumed:{type:'boolean'}}};
   const body=bodyFor(method,url); if(body)schema.body=body;
   if(method==='POST')schema.response={...(schema.response as Record<string,unknown>),201:success};
   if(streamingAiRoute(method,url)) {

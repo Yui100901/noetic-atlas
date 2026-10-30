@@ -36,6 +36,19 @@ function checkLeaf(q: { type: string; options: {key:string}[]; correctAnswers: s
 export const questionPartSchema = z.object({ id: id.refine(v => !v.includes('::'), '子题ID不能含::'), ...answerFields, type: leafTypes, weight: z.number().finite().positive().max(1000).default(1) }).strict().superRefine(checkLeaf);
 export const collection = z.enum(['general', 'personal']);
 const stamp = z.string().datetime({ offset: true });
+export const documentVersionIdSchema = z.string().regex(/^[a-f0-9]{64}$/);
+export const documentCitationSchema = z.object({
+  documentId: id.nullable(), versionId: documentVersionIdSchema.nullable(), title: name,
+  relation: z.enum(['extracted','summarized','reference']), label: z.string().trim().max(300).default(''),
+  pageStart: z.number().int().min(1).max(100000).optional(), pageEnd: z.number().int().min(1).max(100000).optional(),
+  startOffset: z.number().int().min(0).max(50 * 1024 * 1024).optional(), endOffset: z.number().int().min(1).max(50 * 1024 * 1024).optional(),
+  excerpt: z.string().max(2000).default(''),
+}).strict().superRefine((value, context) => {
+  if (Boolean(value.documentId) !== Boolean(value.versionId)) context.addIssue({code:'custom',message:'资料ID与版本必须同时填写或同时为空'});
+  if (value.pageEnd !== undefined && (value.pageStart === undefined || value.pageEnd < value.pageStart)) context.addIssue({code:'custom',message:'原文页码范围无效'});
+  if ((value.startOffset === undefined) !== (value.endOffset === undefined) || value.endOffset !== undefined && value.endOffset <= value.startOffset!) context.addIssue({code:'custom',message:'原文段落范围无效'});
+  if (value.pageStart !== undefined && value.startOffset !== undefined) context.addIssue({code:'custom',message:'页码与段落定位不能同时填写'});
+});
 export const domainSchema = z.object({ id: id.optional(), name, description: text.default(''), sortOrder: z.number().int().default(0) });
 export const categorySchema = domainSchema.extend({ domainId: id, parentId: id.nullable().default(null) });
 export const tagSchema = z.object({ id: id.optional(), name, color: z.string().max(30).default('#5264db'), description: text.default(''), domainId: id.nullable().optional(), kind: z.enum(['topic', 'method', 'custom']).optional() });
@@ -61,6 +74,7 @@ export const questionSchema = z.object({
   frequencyScope: text.default(''), frequencyBasis: text.default('经验估计，非统计频率'), collection: collection.default('general'), status: z.enum(['published', 'pending', 'draft', 'archived']).default('published'),
   categoryIds: ids.default([]), tagIds: ids.default([]), sourceRefs: z.array(z.object({ label: z.string().max(500), url: z.string().max(3000).refine(v => /^(https?:\/\/|#\/)/i.test(v), '仅支持 HTTP(S) 来源或站内链接') })).max(100).default([]),
   sourceDocument: z.string().max(2000).nullable().default(null), sourceAnchor: z.string().max(300).nullable().default(null),
+  documentLinks: z.array(documentCitationSchema).max(30).optional(),
   createdAt: stamp.optional(), updatedAt: stamp.optional(),
 }).superRefine((q, ctx) => {
   checkLeaf(q, ctx);

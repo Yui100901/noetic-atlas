@@ -110,7 +110,11 @@ export function FocusReviewPage({ id }: { id: string }) {
     }
   };
   useSaveBeforeNavigation({ pending: () => dirty() || saving.current || busy, save: leave });
-  const back = view?.paperId ? `#/papers/${idPath(view.paperId)}?tab=review` : '#/learning/due';
+  const back = view?.learningDayId
+    ? `#/daily-plan/${idPath(view.learningDayId)}`
+    : view?.paperId
+      ? `#/papers/${idPath(view.paperId)}?tab=review`
+      : '#/learning/due';
   const act = async (action: 'reveal' | 'rate' | 'skip', rating?: ReviewRating) => {
     if (acting.current || busy || !latest.current?.current) return;
     acting.current = true;
@@ -201,7 +205,7 @@ export function FocusReviewPage({ id }: { id: string }) {
       <article className="focus-page">
         <a className="back-link" href={back}>
           <ArrowLeft size={15} />
-          返回{view.paperId ? '题集复习' : '待复习'}
+          返回{view.learningDayId ? '每日计划' : view.paperId ? '题集复习' : '待复习'}
         </a>
         <PageHeader eyebrow="专注复习总结" title="本次复习已结束" description={view.title} />
         {view.reset && <p className="notice info">学习进度已重置，本会话仅作为历史保留。</p>}

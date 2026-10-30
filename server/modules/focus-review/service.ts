@@ -1,3 +1,4 @@
+import { recordPlanEvidence } from '../learning-plans/progress.js';
 import { createHash, randomInt } from 'node:crypto';
 import type { z } from 'zod';
 import type { Question, AttemptAnswer, StudyState } from '../../../shared/models/types.js';
@@ -50,6 +51,8 @@ const fingerprint = ({ createdAt: _created, updatedAt: _updated, ...question }: 
 export const focusSummary = (session: FocusSession): FocusSummary => ({
   id: session.id,
   paperId: session.paperId,
+  ...(session.learningDayId ? { learningDayId: session.learningDayId } : {}),
+  ...(session.learningGoalId ? { learningGoalId: session.learningGoalId } : {}),
   title: session.title,
   status: session.status,
   scope: session.scope,
@@ -75,6 +78,7 @@ export function saveFocus(store: Store, session: FocusSession) {
   if (session.status === 'submitted')
     for (const row of focusRetentionCandidates(store, getSettings(store), {
       paperId: session.paperId,
+      learningDayId: session.learningDayId || null,
       status: 'submitted',
       preserveId: session.id,
     }))
@@ -136,16 +140,71 @@ export function focusView(session: FocusSession): FocusView {
     ),
   };
 }
-export function createFocus(store: Store, input: z.infer<typeof createFocusSchema>): FocusSession {
+export interface FocusIdentity {
+  questionId: string;
+  partId?: string;
+  direction: ReviewDirection;
+  paperId?: string;
+  paperTitle?: string;
+  paperVersion?: number;
+}
+export function createFocusItems(
+  store: Store,
+  identities: FocusIdentity[],
+  stamp = now(),
+): FocusItem[] {
+  return identities.map((identity) => {
+    const original = store.require<Question>('questions', identity.questionId);
+    const { study: _study, partStudies: _parts, feedbackSummary: _feedback, ...clean } = original;
+    const directed =
+      identity.direction === 'meaning_to_word'
+        ? original.concept
+          ? reverseConceptQuestion(clean)
+          : reverseVocabularyQuestion(clean)
+        : clean;
+    const leaf =
+      flattenQuestions([directed]).find((q) => q.partId === identity.partId) ||
+      fail(409, 'FOCUS_SOURCE_CHANGED', '复习题目已变化，请重新开始');
+    return {
+      ...identity,
+      key: reviewCardId(identity),
+      sourceUpdatedAt: original.updatedAt || original.createdAt || stamp,
+      sourceFingerprint: fingerprint(original),
+      startedElapsedSeconds: 0,
+      question: leaf,
+      phase: 'recall',
+      mode: 'mental',
+    };
+  });
+}
+export function createFocus(
+  store: Store,
+  input: z.infer<typeof createFocusSchema>,
+  context?: {
+    learningDayId: string;
+    paperId?: string;
+    learningGoalId?: string;
+    title: string;
+    identities: Array<{
+      questionId: string;
+      partId?: string;
+      direction: ReviewDirection;
+      paperId?: string;
+      paperTitle?: string;
+      paperVersion?: number;
+    }>;
+  },
+): FocusSession {
   const settings = getSettings(store),
     stamp = now(),
     paper = input.paperId ? store.require<StoredPaper>('papers', input.paperId) : undefined;
   if (paper?.archived) fail(409, 'FOCUS_PAPER_ARCHIVED', '恢复题集后再开始专注复习');
-  if (!paper && input.scope === 'all')
+  if (!paper && !context && input.scope === 'all')
     fail(400, 'FOCUS_SCOPE_REQUIRED', '全部题目复习需要指定题集');
   const members = paper ? new Set(paper.questionIds) : null;
   const selected: Array<{ questionId: string; partId?: string; direction: ReviewDirection }> = [];
-  if (input.scope === 'due' && settings.reviewScheduling.strategy === 'fixed') {
+  if (context) selected.push(...context.identities.slice(0, input.count));
+  else if (input.scope === 'due' && settings.reviewScheduling.strategy === 'fixed') {
     const metadata = store.questionMetadata({
       status: 'published',
       due: 'true',
@@ -234,33 +293,17 @@ export function createFocus(store: Store, input: z.infer<typeof createFocusSchem
         ? '当前范围没有到期复习任务，可选择题集全部题目。'
         : '当前题集没有符合方向的已发布题目',
     );
-  const items: FocusItem[] = selected.map((identity) => {
-    const original = store.require<Question>('questions', identity.questionId);
-    const { study: _study, partStudies: _parts, feedbackSummary: _feedback, ...clean } = original;
-    const directed =
-      identity.direction === 'meaning_to_word'
-        ? original.concept
-          ? reverseConceptQuestion(clean)
-          : reverseVocabularyQuestion(clean)
-        : clean;
-    const leaf =
-      flattenQuestions([directed]).find((q) => q.partId === identity.partId) ||
-      fail(409, 'FOCUS_SOURCE_CHANGED', '复习题目已变化，请重新开始');
-    return {
-      ...identity,
-      key: reviewCardId(identity),
-      sourceUpdatedAt: original.updatedAt || original.createdAt || stamp,
-      sourceFingerprint: fingerprint(original),
-      startedElapsedSeconds: 0,
-      question: leaf,
-      phase: 'recall',
-      mode: 'mental',
-    };
-  });
+  const items = createFocusItems(store, selected, stamp);
   const session: FocusSession = {
     id: makeId('focus'),
-    paperId: paper?.id || null,
-    title: paper?.title || '待复习',
+    paperId: paper?.id || context?.paperId || null,
+    title: context?.title || paper?.title || '待复习',
+    ...(context
+      ? {
+          learningDayId: context.learningDayId,
+          ...(context.learningGoalId ? { learningGoalId: context.learningGoalId } : {}),
+        }
+      : {}),
     paperVersion: paper?.version || 1,
     scope: input.scope,
     strategy: settings.reviewScheduling.strategy,
@@ -279,6 +322,7 @@ export function createFocus(store: Store, input: z.infer<typeof createFocusSchem
     saveFocus(store, session);
     for (const row of focusRetentionCandidates(store, settings, {
       paperId: session.paperId,
+      learningDayId: session.learningDayId || null,
       status: 'in_progress',
       preserveId: session.id,
     }))
@@ -305,10 +349,12 @@ function actualAttempt(store: Store, session: FocusSession, item: FocusItem): St
   const attempt: StoredAttempt = {
     id: makeId('attempt'),
     focusSessionId: session.id,
-    source: session.paperId ? 'paper' : 'quick',
-    paperId: session.paperId || QUICK_PAPER_ID,
-    paperTitle: `专注复习 · ${session.title}`.slice(0, 300),
-    paperVersion: session.paperVersion,
+    ...(session.learningDayId ? { learningDayId: session.learningDayId } : {}),
+    ...(session.learningGoalId ? { learningGoalId: session.learningGoalId } : {}),
+    source: item.paperId || session.paperId ? 'paper' : 'quick',
+    paperId: item.paperId || session.paperId || QUICK_PAPER_ID,
+    paperTitle: `专注复习 · ${item.paperTitle || session.title}`.slice(0, 300),
+    paperVersion: item.paperVersion || session.paperVersion,
     status: 'in_progress',
     practiceMode: 'practice',
     practiceTiming: initialPracticeTiming({ elapsedSeconds }),
@@ -397,13 +443,18 @@ export function actFocus(
       }
       item.verdict = input.verdict ?? null;
       if (session.strategy === 'fsrs')
-        item.dueAt = recordManualReview(store, {
-          questionId: item.questionId,
-          partId: item.partId,
-          direction: item.direction,
-          rating: input.rating!,
-          requestId: `${session.id}-${input.index}`,
-        }).dueAt;
+        item.dueAt = recordManualReview(
+          store,
+          {
+            questionId: item.questionId,
+            partId: item.partId,
+            direction: item.direction,
+            rating: input.rating!,
+            requestId: `${session.id}-${input.index}`,
+          },
+          undefined,
+          { learningDayId: session.learningDayId },
+        ).dueAt;
       else {
         const mastery = ({ again: 0, hard: 1, good: 2, easy: 3 } as const)[input.rating!],
           stamp = now();
@@ -426,6 +477,17 @@ export function actFocus(
           source: 'focus',
           rating: input.rating,
         });
+        recordPlanEvidence(store, [
+          {
+            dayId: session.learningDayId,
+            questionId: item.questionId,
+            partId: item.partId,
+            direction: item.direction,
+            kind: 'review',
+            at: stamp,
+            sourceId: id,
+          },
+        ]);
         item.dueAt = state.nextReviewAt;
       }
       item.rating = input.rating;

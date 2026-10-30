@@ -31,6 +31,7 @@ export function registerFocusRoutes(app: FastifyInstance, store: Store) {
     let query = db.query
       .selectFrom('focus_sessions')
       .where(x.field('data', 'paperId'), input.paperId ? '=' : 'is', input.paperId || null);
+    if (!input.paperId) query = query.where(x.field('data', 'learningDayId'), 'is', null);
     if (input.status) query = query.where(x.field('data', 'status'), '=', input.status);
     const total = Number(
       db.one(query.select((eb) => eb.fn.countAll<number>().as('count')))?.count || 0,

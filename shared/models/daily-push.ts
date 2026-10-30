@@ -1,6 +1,8 @@
+import type { LearningGoal,LearningDayOverview } from './learning-plan.js';
 import type { QuestionType } from './types.js';
 
 export interface DailyPushSettings {
+  goals?:LearningGoal[]; allocationMode?:'weights'|'fixed';
   enabled: boolean;
   domainId: string | null;
   categoryIds: string[];
@@ -35,6 +37,6 @@ export interface DailyPushRecord {
   reallocatedPoints?: number;
 }
 export interface DailyPushView extends DailyPushRecord { paperAvailable: boolean; progress: DailyPushProgress }
-export interface DailyPushOverview { config: DailyPushSettings; today: DailyPushView | null; unreadCount: number; recent: DailyPushView[]; recentLimit: number; nextDateKey: string }
+export interface DailyPushOverview { plan?:LearningDayOverview|null; config: DailyPushSettings; today: DailyPushView | null; unreadCount: number; recent: DailyPushView[]; recentLimit: number; nextDateKey: string }
 export interface DailyPushCheckResult { generated: boolean; record: DailyPushRecord | null }
 export interface DailyPushCheckResponse extends DailyPushCheckResult { overview: DailyPushOverview }

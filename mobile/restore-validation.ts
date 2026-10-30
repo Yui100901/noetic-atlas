@@ -1,3 +1,4 @@
+import {validateDocumentCitations} from '../server/modules/library/sources';
 import {qualityScanSchema,qualityIssueSchema} from '../server/modules/content-quality/schema';
 import type { SqlJsStatic } from 'sql.js';
 import { buildApp } from '../server/index';
@@ -40,6 +41,7 @@ function validatePrivateRecords(store: Store) {
   }
   for (const value of store.database.records('ai_import_jobs')) {
     const job = validateStoredAiDocumentJob(value);
+    for(const block of job.blocks)if(block.sourceCitation)validateDocumentCitations(store,{documentLinks:[block.sourceCitation]});
     // Source text is untrusted material, not managed asset markup. Only saved
     // candidate questions participate in the application's asset references.
     validateAssetReferences(store, job.blocks.flatMap(block => block.questions));

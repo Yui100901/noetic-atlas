@@ -1,3 +1,6 @@
+import type { LearningDay } from '../../../shared/models/learning-plan.js';
+import { generateLearningDay } from '../learning-plans/service.js';
+import { learningDayView } from '../learning-plans/progress.js';
 import type { DailyPushCheckResult, DailyPushOverview, DailyPushRecord, DailyPushView } from '../../../shared/models/daily-push.js';
 import type { QuestionType } from '../../../shared/models/types.js';
 import { makeId, type Store } from '../../core/store.js';
@@ -20,17 +23,22 @@ export function dailyPushOverview(store: Store, at = new Date()): DailyPushOverv
   const view = (record: DailyPushRecord): DailyPushView => ({ ...record, paperAvailable: !!record.paperId && available.has(record.paperId), progress: progress.get(record.id)! });
   const recent = records.map(view);
   const unreadCount = Number(db.one(db.query.selectFrom('daily_pushes').select(eb => eb.fn.countAll<number>().as('total')).where(field('data', 'readAt'), 'is', null))?.total || 0);
-  return { config, today: today ? view(today) : null, recent, recentLimit: 30, unreadCount, nextDateKey: nextDateKey(config, at, !!today) };
+  const plan=store.get<LearningDay>('learning_days',`plan-${dateKey}`);
+  const planView=plan?learningDayView(store,plan):null;
+  const brief=planView?(({tasks:_tasks,taskProgress:_progress,...value})=>value)(planView):null;
+  return {plan:brief, config, today: today ? view(today) : null, recent, recentLimit: 30, unreadCount:unreadCount+(plan&&!plan.readAt?1:0), nextDateKey: nextDateKey(config, at, !!today||!!plan) };
 }
 
 /** The first write claims the unique date before reading selection state. SQLite
  * and other transactional drivers serialize competing processes on this row. */
 export function checkDailyPush(store: Store, at = new Date()): DailyPushCheckResult {
   const initial = getSettings(store), { dateKey } = dailyCalendar(at, initial.dailyPush.timeZone), id = `daily-${dateKey}`;
+  if(initial.dailyPush.goals?.length||store.get('learning_days',`plan-${dateKey}`)){const result=generateLearningDay(store,at);return{generated:result.generated,record:null};}
   if (!isDailyPushDue(initial.dailyPush, at)) return { generated: false, record: store.get<DailyPushRecord>('daily_pushes', id) || null };
   validateDailyPushConfiguration(store, initial.dailyPush);
   const current = store.get<DailyPushRecord>('daily_pushes', id); if (current) return { generated: false, record: current };
   return store.transaction(() => {
+    if(getSettings(store).dailyPush.goals?.length||store.get('learning_days',`plan-${dateKey}`))return{generated:false,record:null};
     const config = initial.dailyPush;
     const claim: DailyPushRecord = { id, dateKey, generatedAt: at.toISOString(), paperId: null, title: `${dateKey} 每日推荐`, domainId: config.domainId!, categoryIds: [...config.categoryIds], targetReviewPoints: config.reviewPoints, baseNewPoints: config.newPoints, targetNewPoints: config.newPoints, targetTotalPoints: Math.round((config.reviewPoints + config.newPoints) * 100) / 100, transferredPoints: 0, reviewPoints: 0, newPoints: 0, totalPoints: 0, reviewCount: 0, newCount: 0, questionIds: [], reviewQuestionIds: [], newQuestionIds: [], pointsByType: { ...initial.pointsByType }, shortfall: Math.round((config.reviewPoints + config.newPoints) * 100) / 100, reason: '生成中', readAt: null };
     const db = store.database;

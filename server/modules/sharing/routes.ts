@@ -30,12 +30,12 @@ function shareFilters(raw:Record<string,unknown>={}) {
 const shareQuestion = questionSchema.safeExtend({ id });
 const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), mode: z.enum(['manual','random']), practiceKind: z.enum(['standard','vocabulary','concept']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000), questionCount: z.number().int().min(0).max(50000), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).max(50000), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
 const packageSchema = z.object({ format: z.literal('learning-share'), schemaVersion: z.literal(1), exportedAt: z.string().datetime({offset:true}), title: z.string().min(1).max(300), domains: z.array(domainSchema.extend({id})).max(10000), categories: z.array(categorySchema.extend({id})).max(50000), tags: z.array(tagSchema.extend({id})).max(50000), assets: z.array(assetRecordSchema).max(10000), questions: z.array(shareQuestion).max(50000), papers: z.array(paperSchema).max(100), questionBanks: z.array(questionBankSchema.safeExtend({id})).max(100).default([]) }).strict();
-const cleanQuestion = (question: Question): Question => { const { study: _study, ...record } = question; return { ...record, sourceDocument: null, sourceAnchor: null }; };
+const cleanQuestion = (question: Question): Question => { const { study: _study, ...record } = question; return { ...record, sourceDocument: null, sourceAnchor: null, ...(record.documentLinks?{documentLinks:record.documentLinks.map(link=>({...link,documentId:null,versionId:null}))}:{}) }; };
 function canonical(value: unknown): string { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([a],[b]) => a.localeCompare(b)).map(([key,entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(',')}}`; return JSON.stringify(value); }
 function fingerprint(store: Store) { return createHash('sha256').update(canonical(['domains','categories','tags','assets','questions','papers','question_banks'].map(table => store.all(table as Table)))).digest('hex'); }
 function semantic(value: any, table: Table) {
   const { id: _id, createdAt: _created, updatedAt: _updated, study: _study, ...record } = value;
-  if (table === 'questions') { delete record.status; record.sourceDocument = null; record.sourceAnchor = null; }
+  if (table === 'questions') { delete record.status; record.sourceDocument = null; record.sourceAnchor = null; if(record.documentLinks)record.documentLinks=record.documentLinks.map((link:any)=>({...link,documentId:null,versionId:null})); }
   if (table === 'papers') {
     record.practiceKind ||= 'standard';
     // Archive/review/version transitions belong to the recipient. Reimporting
@@ -258,7 +258,7 @@ export function planShareImport(store: Store, raw: unknown) {
     if(record.table==='questions') merged.validateRefs(record.value);
     if(record.table==='questions'||record.table==='papers') validateAssetReferences(merged,record.value,getSettings(store));
   }
-  const preview:SharePreview = {title:data.title,counts,questions:data.questions.map(question=>({id:ref('questions',question.id),title:question.title,status:pendingQuestions.has(ref('questions',question.id))?'pending':'reused'})),warnings:['分享包不含学习记录、笔记、作答、系统配置或AI凭据。','新增题目统一进入待审核；复用已存在且内容相同的题目时保留本地审核状态。',...(data.papers.length ? ['含待审核题目的题集先归档，审核题目后从“恢复并调整”保存，即可练习；重复导入保留本地归档状态、题集快照与分值。'] : []),...(detachedQuestionLinks?['未随本包附带的关联题详情链接已改为题号搜索，避免误指本地同ID题目；可从来源资料继续核对。']:[])],fingerprint:fingerprint(store)};
+  const preview:SharePreview = {title:data.title,counts,questions:data.questions.map(question=>({id:ref('questions',question.id),title:question.title,status:pendingQuestions.has(ref('questions',question.id))?'pending':'reused'})),warnings:['分享包不含学习记录、笔记、作答、系统配置或AI凭据。',...(data.questions.some(question=>question.documentLinks?.length)?['原文引用保留书名、定位说明与摘录，分享包不附整本教材；本机可在题目编辑中重新关联，完整备份迁移保留原文版本。']:[]),'新增题目统一进入待审核；复用已存在且内容相同的题目时保留本地审核状态。',...(data.papers.length ? ['含待审核题目的题集先归档，审核题目后从“恢复并调整”保存，即可练习；重复导入保留本地归档状态、题集快照与分值。'] : []),...(detachedQuestionLinks?['未随本包附带的关联题详情链接已改为题号搜索，避免误指本地同ID题目；可从来源资料继续核对。']:[])],fingerprint:fingerprint(store)};
   return {records,preview};
 }
 export function importShare(store:Store,raw:unknown,expectedFingerprint?:string) {

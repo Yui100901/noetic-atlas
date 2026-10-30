@@ -1,3 +1,6 @@
+import { prepareJobSources } from './document-sources.js';
+import { aiDocumentLinkSourcesSchema } from './document-schema.js';
+import { validateDocumentCitations } from '../library/sources.js';
 import { putCompletedAiRun } from './run-storage.js';
 import type { AiDocumentJob, AiDocumentJobSummary, AiDocumentFailure } from '../../../shared/ai/ai-document.js';
 import { AI_DOCUMENT_LIMITS } from '../../../shared/ai/ai-document.js';
@@ -47,17 +50,22 @@ function split(text: string): string[] {
   return result;
 }
 export function createDocumentJob(store: Store, body: unknown): AiDocumentJob {
+  return store.transaction(()=>{
   const input = parse(aiDocumentCreateSchema, body); store.validateRefs(input);
   const text = input.sections.map(section => section.text).join('');
   if (text.length > AI_DOCUMENT_LIMITS.maxSourceCharacters || byteLength(text) > AI_DOCUMENT_LIMITS.maxSourceBytes) fail(413, 'AI_DOCUMENT_TOO_LARGE', '任务资料超过400万字符或12MB，请拆分为多个任务');
-  const blocks: StoredAiDocumentJob['blocks'] = input.sections.flatMap((section, index) => split(section.text).map((part, partIndex) => {
+  const sections=prepareJobSources(store,input);
+  const blocks: StoredAiDocumentJob['blocks'] = sections.flatMap((section, index) => {let consumed=0;return split(section.text).map((part, partIndex) => {
     const label = section.label || (section.pageStart ? `第${section.pageStart}${section.pageEnd && section.pageEnd !== section.pageStart ? `—${section.pageEnd}` : ''}页` : `资料块${index + 1}`);
-    return { id: makeId('block'), sourceName: section.sourceName || input.sourceName, label: (partIndex ? `${label} · ${partIndex + 1}` : label).slice(0, 300), ...(section.pageStart ? { pageStart: section.pageStart } : {}), ...(section.pageEnd ? { pageEnd: section.pageEnd } : {}), characters: part.length, text: part, title: '', summary: '', topics: [], planStatus: 'pending' as const, generationStatus: 'pending' as const, planAttempts: 0, generationAttempts: 0, questions: [], importedQuestionIds: [] };
-  }));
+    const local=section.text.indexOf(part,consumed);consumed=local+part.length;
+    const sourceCitation=section.sourceCitation ? {...section.sourceCitation,...(section.sourceCitation.startOffset!==undefined?{startOffset:section.sourceCitation.startOffset+local,endOffset:section.sourceCitation.startOffset+local+part.length,excerpt:part.slice(0,500)}:{})} : undefined;
+    return { ...(sourceCitation?{sourceCitation}:{}), id: makeId('block'), sourceName: section.sourceName || input.sourceName, label: (partIndex ? `${label} · ${partIndex + 1}` : label).slice(0, 300), ...(section.pageStart ? { pageStart: section.pageStart } : {}), ...(section.pageEnd ? { pageEnd: section.pageEnd } : {}), characters: part.length, text: part, title: '', summary: '', topics: [], planStatus: 'pending' as const, generationStatus: 'pending' as const, planAttempts: 0, generationAttempts: 0, questions: [], importedQuestionIds: [] };
+  });});
   if (!blocks.length) fail(400, 'AI_DOCUMENT_EMPTY', '未找到可分析的正文，请先检查本机提取结果');
   if (blocks.length > AI_DOCUMENT_LIMITS.maxBlocks) fail(413, 'AI_DOCUMENT_TOO_MANY_BLOCKS', `资料拆分后超过${AI_DOCUMENT_LIMITS.maxBlocks}块，请缩小范围`);
   const date = now(), job: StoredAiDocumentJob = { id: makeId('document-job'), sourceName: input.sourceName, ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}), createdAt: date, updatedAt: date, status: 'pending', ...aiDocumentCounts(blocks), mode: input.mode, requirements: input.requirements, questionTypes: input.questionTypes, ...(input.difficulty ? { difficulty: input.difficulty } : {}), categoryIds: input.categoryIds, tagIds: input.tagIds, questionsPerBlock: input.questionsPerBlock, maxQuestions: input.maxQuestions, blocks };
   store.database.putRecord('ai_import_jobs', job.id, job); return documentView(job);
+  });
 }
 function enter(store: Store, id: string) {
   const jobs = active.get(store) || new Set<string>(); active.set(store, jobs);
@@ -126,7 +134,7 @@ export async function processDocumentJob(store: Store, id: string, stage: 'plan'
             return finalized;
           }, context, { jobId: job.id, batchId: block.id, onComplete: value => { diagnostics = value; } });
           assertAiActive(context);
-          block.questions = result.questions.map(question => parse(questionSchema, { ...question, sourceDocument: block.sourceName, sourceAnchor: sourceAnchor(block) }));
+          block.questions = result.questions.map(question => parse(questionSchema, { ...question, sourceDocument: block.sourceName, sourceAnchor: sourceAnchor(block), documentLinks:block.sourceCitation?[block.sourceCitation]:undefined }));
           block.questions.forEach(question => known.add(questionKey(question))); block.generationStatus = 'completed';
           block.generationRunId = completed(store, 'document_generate', job, block, { ...result, questions: block.questions }, settings.model, diagnostics);
         }
@@ -149,13 +157,13 @@ export function importDocumentJob(store: Store, id: string, body: unknown) {
       if (selected.some(block => block.importedQuestionIds.length)) fail(409, 'AI_DOCUMENT_ALREADY_IMPORTED', '选中的资料块已导入，不能重复确认');
       const edits = new Map(input.questions?.map(item => [item.blockId, item.questions]));
       if (edits.size !== (input.questions?.length || 0) || [...edits.keys()].some(blockId => !input.blockIds.includes(blockId))) fail(400, 'AI_DOCUMENT_EDIT_SCOPE', '编辑预览含重复或未选择的资料块');
-      const items: Question[] = [];
+      const items: Question[] = [];const sourceCache=new Map();
       for (const block of selected) {
         const candidates = edits.get(block.id) || block.questions;
         if (candidates.length > block.questions.length) fail(400, 'AI_DOCUMENT_EDIT_LIMIT', '编辑预览不能增加本批题量，请另行创建新题');
         const created = candidates.map(question => {
-          const candidate = parse(questionSchema, { ...question, id: undefined, status: 'pending', categoryIds: job.categoryIds, tagIds: job.tagIds, sourceDocument: block.sourceName, sourceAnchor: sourceAnchor(block), createdAt: undefined, updatedAt: undefined });
-          store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store));
+          const candidate = parse(questionSchema, { ...question, id: undefined, status: 'pending', categoryIds: job.categoryIds, tagIds: job.tagIds, sourceDocument: block.sourceName, sourceAnchor: sourceAnchor(block), documentLinks:block.sourceCitation?[block.sourceCitation]:undefined, createdAt: undefined, updatedAt: undefined });
+          store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store,candidate,true,sourceCache);
           const record = { ...candidate, id: makeId('q'), status: 'pending' as const, createdAt: now(), updatedAt: now() };
           store.insert('questions', record.id, record); return record;
         });
@@ -168,4 +176,31 @@ export function importDocumentJob(store: Store, id: string, body: unknown) {
 export function deleteDocumentJob(store: Store, id: string) {
   const leave = enter(store, id);
   try { return store.transaction(()=>{documentJob(store, id);const db=store.database;db.deleteRecord('ai_import_jobs',id);db.run(db.query.deleteFrom('ai_workspace_drafts').where(db.expressions.field('data','kind'),'=','document-job').where(db.expressions.field('data','contextId'),'=',id));return { ok: true };}); } finally { leave(); }
+}
+
+/** Upgrade a saved legacy job only after the user explicitly publishes its
+ * private extracted text into the library. Missing/deleted questions are skipped. */
+export function linkDocumentJobSources(store:Store,id:string,body:unknown){
+  const input=parse(aiDocumentLinkSourcesSchema,body),leave=enter(store,id);
+  try{return store.transaction(()=>{
+    const job=documentJob(store,id);
+    if(job.updatedAt!==input.expectedUpdatedAt)fail(409,'AI_DOCUMENT_VERSION_CONFLICT','教材任务已更新，请刷新后重新关联');
+    const unlinked=job.blocks.filter(block=>!block.sourceCitation);
+    if(!unlinked.length)return {job:documentView(job),linked:0,skipped:0};
+    const sections=prepareJobSources(store,{...job,saveSources:true,sections:unlinked.map(block=>({text:block.text,label:block.label,sourceName:block.sourceName}))});
+    let linked=0,skipped=0;const sourceCache=new Map();
+    for(const [index,block] of unlinked.entries()){
+      block.sourceCitation=sections[index]!.sourceCitation!;
+      block.questions=block.questions.map(question=>({...question,documentLinks:[block.sourceCitation!]}));
+      for(const [questionIndex,questionId] of block.importedQuestionIds.entries()){
+        const question=store.get<Question>('questions',questionId),original=block.questions[questionIndex];
+        if(!question||!original||questionKey(question)!==questionKey(original)){skipped++;continue;}
+        const links=question.documentLinks||[];
+        const next={...question,documentLinks:[...links,block.sourceCitation],updatedAt:nextStamp(question.updatedAt)};
+        if(next.documentLinks.length>30)fail(409,'QUESTION_SOURCE_LIMIT','部分题目的原文引用已达到30条，请先整理后再关联');
+        validateDocumentCitations(store,next,true,sourceCache);store.put('questions',question.id,next);linked++;
+      }
+    }
+    save(store,job);return {job:documentView(job),linked,skipped};
+  });}finally{leave();}
 }

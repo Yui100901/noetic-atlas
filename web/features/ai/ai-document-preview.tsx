@@ -1,3 +1,4 @@
+import {documentSourceHref} from '../library/source-navigation';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { AiDocumentBlock, AiDocumentFailure } from '../../../shared/ai/ai-document';
 import { typeLabels, type QuestionInput } from '../../../shared/models/types';
@@ -29,6 +30,7 @@ export function AiDocumentBlockCard({ block, checked, disabled, expanded, onTogg
     <div className="ai-document-block-heading"><label className="check-row"><input type="checkbox" aria-label={`选择知识块 ${block.label}`} checked={checked} disabled={disabled} onChange={event => onCheck(event.target.checked)} /><strong>{block.title || block.label}</strong></label><button className="button" type="button" aria-expanded={expanded} aria-label={`${expanded ? '收起' : '展开'}知识块 ${block.label}`} onClick={onToggle}>{expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}{expanded ? '收起' : '查看内容／预览'}</button></div>
     <p className="muted ai-document-source">{block.label} · {block.characters.toLocaleString()}字符</p>
     <div className="ai-document-statuses"><span className={`badge ai-run-status-${block.planStatus}`}>总结：{phaseLabels[block.planStatus]}</span><span className={`badge ai-run-status-${block.generationStatus}`}>出题：{phaseLabels[block.generationStatus]}</span><span className="muted">尝试{block.planAttempts}/{block.generationAttempts}次</span>{block.importedQuestionIds.length > 0 && <span className="badge ai-run-status-completed">已导入{block.importedQuestionIds.length}题</span>}</div>
+    {block.sourceCitation&&<a className="button" href={documentSourceHref(block.sourceCitation,'#/documents')} target="_blank" rel="noopener noreferrer">核对本块原文</a>}
     {block.summary && <p className="ai-document-summary">{block.summary}</p>}
     {block.topics.length > 0 && <div className="tags">{block.topics.map((topic, index) => <span className="tag" key={index}>{topic}</span>)}</div>}
     <Failure value={block.planFailure} /><Failure value={block.generationFailure} />

@@ -30,7 +30,10 @@ import { questionFeedbackSchema } from '../quality-feedback/schema.js';
 import { practiceTimingStateSchema } from '../practice/practice-timing.js';
 import { aiWorkspaceDraftSchema } from '../ai/workspace-draft-schema.js';
 
+import { learningDaySchema,learningTaskResultSchema,validatePlanResult,validateLearningDayMerge } from '../learning-plans/schema.js';
 import { focusSessionSchema } from '../focus-review/schema.js';
+import { documentVersionSchema } from '../library/source-schema.js';
+import { validateStoredDocumentVersion,validateDocumentCitations } from '../library/sources.js';
 import { validateFocusSession } from '../focus-review/service.js';
 
 const datetime = z.string().datetime({ offset: true });
@@ -43,6 +46,7 @@ const paperSchema = z.object({
 const attemptSchema = z.object({
   id, paperId: id, paperTitle: z.string().max(300), paperVersion: z.number().int().min(1), source: z.enum(['paper','quick']).default('paper'), updatedAt: datetime.optional(), referenceViewedAt: datetime.nullable().optional(), status: z.enum(['in_progress', 'submitted']), questions: z.array(snapshotQuestion).min(1).max(500), answers: answersSchema,
   objectiveScore: moneySchema, objectiveMax: moneySchema, subjectiveScore: moneySchema, subjectiveMax: moneySchema, startedAt: datetime, submittedAt: datetime.nullable(), scoring: storedScoringSchema.optional(),
+  learningDayId:id.optional(),learningGoalId:id.optional(),
   practiceKind: z.enum(['standard','vocabulary','concept']).optional(), vocabularyDirection: z.enum(['word_to_meaning','meaning_to_word']).optional(),
   focusSessionId: id.optional(),
   practiceMode: z.enum(['practice','exam']).optional(), durationMinutes: z.number().int().min(1).max(1440).nullable().optional(), deadlineAt: datetime.nullable().optional(), elapsedSeconds: z.number().int().nonnegative().optional(), autoSubmitted: z.boolean().optional(), practiceTiming: practiceTimingStateSchema.optional(),
@@ -55,6 +59,8 @@ const envelopeSchema = z.object({
   domains: z.array(domainSchema.extend({ id })), categories: z.array(categorySchema.extend({ id })), tags: z.array(tagSchema.extend({ id })), questions: z.array(questionSchema), documents: z.array(documentSchema.extend({ _archived: z.boolean().optional() })), papers: z.array(paperSchema),
   study: z.array(studySchema).default([]), studyParts: z.array(partStudySchema).default([]), learningResults: z.array(learningResultSchema).default([]), reviews: z.array(reviewSchema).default([]), attempts: z.array(attemptSchema).default([]),
   focusSessions: z.array(focusSessionSchema).default([]),
+  documentVersions: z.array(documentVersionSchema).default([]),
+  learningDays:z.array(learningDaySchema).default([]),learningTaskResults:z.array(learningTaskResultSchema).default([]),
   questionBanks: z.array(questionBankSchema.safeExtend({ id })).default([]),
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
@@ -66,7 +72,7 @@ const envelopeSchema = z.object({
   questionFeedback: z.array(questionFeedbackSchema).default([]),
   qualityScans: z.array(qualityScanSchema).default([]), qualityIssues: z.array(qualityIssueSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'focus_sessions' ? 'focusSessions' : table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
+const dataKey = (table: Table) => table === 'document_versions' ? 'documentVersions' : table==='learning_days'?'learningDays':table==='learning_task_results'?'learningTaskResults': table === 'focus_sessions' ? 'focusSessions' : table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -95,7 +101,7 @@ export function importData(store: Store, raw: unknown) {
         store.insert(table, entityId, table === 'reviews' ? { ...value, id: entityId } : value); counts.added++;
       }
     }
-    for (const asset of data.assets) validateAssetRecord(asset);
+    for (const asset of data.assets) {validateAssetRecord(asset);const existing=store.get<any>('assets',asset.id);if(existing&&existing.dataBase64!==asset.dataBase64&&data.documentVersions.some(version=>version.assetId===asset.id))fail(409,'DOCUMENT_SOURCE_ASSET_CONFLICT','资料原文附件ID与本机不同文件冲突，请在独立数据库恢复此备份，未合并任何数据');}
     insert('assets', data.assets);
     // An untouched installation may restore its original preferences. A merge
     // into an already configured installation retains the local preferences.
@@ -108,8 +114,14 @@ export function importData(store: Store, raw: unknown) {
     // only after the full set exists; any failure rolls back every table.
     insert('categories', data.categories);
     for (const c of store.all<Category>('categories')) store.validateCategory(c);
+    const newQuestionIds=new Set(data.questions.filter(question=>!store.get('questions',question.id!)).map(question=>question.id));
     insert('questions', data.questions.map(raw => { const q=normalizeQuestionBlankStems(raw); return ({ ...q, createdAt: q.createdAt || now(), updatedAt: q.updatedAt || now() }); }));
     insert('documents', data.documents.map(d => ({ ...d, updatedAt: d.updatedAt || now() })));
+    insert('document_versions',data.documentVersions.map(version=>validateStoredDocumentVersion(store,version)));
+    const sourceCache=new Map();
+    for(const question of data.questions) if(newQuestionIds.has(question.id)) validateDocumentCitations(store,question,true,sourceCache);
+    for(const paper of data.papers)for(const question of paper.snapshot||[])validateDocumentCitations(store,question,true,sourceCache);
+    for(const attempt of data.attempts)for(const question of attempt.questions)validateDocumentCitations(store,question,true,sourceCache);
     store.normalizeLegacyTags(); store.validateTaxonomyReferences();
     validateDailyPushConfiguration(store, getSettings(store).dailyPush);
     const papers: StoredPaper[] = [];
@@ -178,6 +190,8 @@ export function importData(store: Store, raw: unknown) {
     }
     insert('attempts', data.attempts);
     insert('focus_sessions', data.focusSessions.map(validateFocusSession));
+    insert('learning_days',data.learningDays.map(day=>validateLearningDayMerge(store,day as any)));
+    insert('learning_task_results',data.learningTaskResults.map(result=>validatePlanResult(store.require('learning_days',result.dayId),result)));
     const importedAttempts = new Map(data.attempts.map(value => [value.id, value as StoredAttempt]));
     insert('learning_results', data.learningResults.map(value => validateLearningResult(store, value, importedAttempts.get(value.id))));
     migrateLearningResults(store);

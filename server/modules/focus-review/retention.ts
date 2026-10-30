@@ -4,7 +4,11 @@ import type { Store } from '../../core/store.js';
 /** Retention inspects indexed metadata, never deserializes question snapshots. */
 export function focusSessionSignatures(
   store: Store,
-  scope?: { paperId: string | null; status: 'in_progress' | 'submitted' },
+  scope?: {
+    learningDayId?: string | null;
+    paperId: string | null;
+    status: 'in_progress' | 'submitted';
+  },
 ) {
   const db = store.database,
     x = db.expressions;
@@ -13,6 +17,7 @@ export function focusSessionSignatures(
     .select('id')
     .select([
       x.field<string | null>('data', 'paperId').as('paperId'),
+      x.field<string | null>('data', 'learningDayId').as('learningDayId'),
       x.field<'in_progress' | 'submitted'>('data', 'status').as('status'),
       x.field<string>('data', 'updatedAt').as('updatedAt'),
       x.field<number>('data', 'revision').as('revision'),
@@ -21,18 +26,33 @@ export function focusSessionSignatures(
     query = query
       .where(x.field('data', 'paperId'), scope.paperId ? '=' : 'is', scope.paperId)
       .where(x.field('data', 'status'), '=', scope.status);
+  if (scope && !scope.paperId && scope.learningDayId !== undefined)
+    query = query.where(
+      x.field('data', 'learningDayId'),
+      scope.learningDayId ? '=' : 'is',
+      scope.learningDayId,
+    );
   return db.all(query.orderBy('id'));
 }
 
 export function focusRetentionCandidates(
   store: Store,
   settings: SystemSettings,
-  scope?: { paperId: string | null; status: 'in_progress' | 'submitted'; preserveId?: string },
+  scope?: {
+    learningDayId?: string | null;
+    paperId: string | null;
+    status: 'in_progress' | 'submitted';
+    preserveId?: string;
+  },
 ) {
   const groups = new Map<string, ReturnType<typeof focusSessionSignatures>>();
   for (const row of focusSessionSignatures(store, scope)) {
     if (scope && (row.paperId !== scope.paperId || row.status !== scope.status)) continue;
-    const key = JSON.stringify([row.paperId, row.status]),
+    const key = JSON.stringify([
+        row.paperId,
+        row.paperId ? null : row.learningDayId || null,
+        row.status,
+      ]),
       group = groups.get(key) || [];
     group.push(row);
     groups.set(key, group);

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { recordPlanEvidence } from '../learning-plans/progress.js';
 import { z } from 'zod';
 import { Store, makeId, now } from '../../core/store.js';
 import { parse, id, studySchema, reviewSchema, fail } from '../../core/validation.js';
@@ -47,6 +48,6 @@ export function registerStudyRoutes(app: FastifyInstance, store: Store) {
     }
     const mastery = input.mastery ?? ({ again: 0, hard: 1, good: 2, easy: 3 } as const)[input.rating!];
     const state = { ...store.study(qid, partId), mastery, lastReviewedAt: now(), nextReviewAt: new Date(Date.now() + settings.reviewIntervalsDays[mastery]! * 86400000).toISOString() };
-    store.transaction(() => { store.putStudy(state); const rid = makeId('review'); store.put('reviews', rid, { id: rid, questionId: qid, ...(partId === undefined ? {} : { partId }), mastery, reviewedAt: now(), source: 'manual' }); }); return state;
+    store.transaction(() => { store.putStudy(state); const rid = makeId('review'); store.put('reviews', rid, { id: rid, questionId: qid, ...(partId === undefined ? {} : { partId }), mastery, reviewedAt: now(), source: 'manual' });recordPlanEvidence(store,[{questionId:qid,partId,direction:'standard',kind:'review',at:state.lastReviewedAt,sourceId:rid}]); }); return state;
   });
 }

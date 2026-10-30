@@ -1,4 +1,5 @@
 import type { Store } from '../../core/store.js';
+import { recordPlanEvidence } from '../learning-plans/progress.js';
 import { fail, parse, id as identifier } from '../../core/validation.js';
 import { now, nextStamp } from '../../core/store.js';
 import { createHash } from 'node:crypto';
@@ -133,6 +134,7 @@ export function syncAttemptReviewEvents(store: Store, attempt: StoredAttempt, ra
   // Focus sessions record one explicit recall event, independent of answer grading.
   if (attempt.focusSessionId) return;
   if (settings.strategy !== 'fsrs' || attempt.status !== 'submitted' || store.get<any>('learning_results', attempt.id)?.reset) return;
+  const planEvidence:Parameters<typeof recordPlanEvidence>[1]=[];
   const selected = affectedLeafIds ? new Set(affectedLeafIds) : null;
   const headers = sourceHeaders(store, attempt.questions.map(question => question.sourceQuestionId || question.id));
   for (const question of attempt.questions) {
@@ -159,7 +161,9 @@ export function syncAttemptReviewEvents(store: Store, attempt: StoredAttempt, ra
     const event: ReviewEvent = { ...identity, id, cardId: base.id, source: 'attempt', attemptId: attempt.id, leafId: question.id, rating, ratingSource,
       occurredAt: attempt.submittedAt!, recordedAt: previous?.recordedAt || stamp, updatedAt: stamp, parameters: previous?.parameters || structuredClone(settings), algorithm: 'FSRS-6', libraryVersion: '5.4.2', before: base.memory, after: base.memory };
     store.put('review_events', id, event); writeCard(store, { ...base, manualDueAt: null }, eventsFor(store, base.id));
+    planEvidence.push({dayId:attempt.learningDayId,...identity,kind:'review',at:event.occurredAt,sourceId:id});
   }
+  recordPlanEvidence(store,planEvidence);
 }
 
 export function attemptReviewOverview(store: Store, attempt: StoredAttempt): AttemptReviewOverview {
@@ -175,7 +179,7 @@ export function attemptReviewOverview(store: Store, attempt: StoredAttempt): Att
   }) };
 }
 
-export function recordManualReview(store: Store, input: { questionId: string; partId?: string; direction?: ReviewDirection; rating: ReviewRating; requestId: string }, at = new Date()): ReviewCardView {
+export function recordManualReview(store: Store, input: { questionId: string; partId?: string; direction?: ReviewDirection; rating: ReviewRating; requestId: string }, at = new Date(), context:{learningDayId?:string}={}): ReviewCardView {
   if (getSettings(store).reviewScheduling.strategy !== 'fsrs') fail(409, 'REVIEW_FIXED_MODE', '请先在系统配置开启自适应复习');
   const identity = sourceIdentity(store, input.questionId, input.partId, input.direction), id = manualId(input.requestId), previous = store.get<ReviewEvent>('review_events', id);
   if (previous) {
@@ -188,6 +192,7 @@ export function recordManualReview(store: Store, input: { questionId: string; pa
       parameters: structuredClone(getSettings(store).reviewScheduling), algorithm: 'FSRS-6', libraryVersion: '5.4.2', before: card.memory, after: card.memory };
     store.put('review_events', id, event); writeCard(store, { ...card, manualDueAt: null }, eventsFor(store, card.id), stamp);
     const study = store.study(identity.questionId, identity.partId), reviewId = 'review-' + createHash('sha256').update(id).digest('hex').slice(0, 32);
+    recordPlanEvidence(store,[{dayId:context.learningDayId,...identity,kind:'review',at:stamp,sourceId:id}]);
     store.put('reviews', reviewId, { id: reviewId, questionId: identity.questionId, ...(identity.partId ? { partId: identity.partId } : {}), mastery: study.mastery ?? 2, reviewedAt: stamp, source: 'manual', rating: input.rating, schedulerEventId: id });
   });
   return reviewCardView(store, identity, at);

@@ -1,3 +1,4 @@
+import {QuestionCitations} from '../library/question-citations';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { BookOpen, Bookmark, ChevronDown, Star } from 'lucide-react';
 import type { Question, StudyState } from '../../../shared/models/types';
@@ -100,7 +101,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
           {contentSource === 'snapshot' && !sameContent && !question.groupStemMarkdown && <p className="muted">原题内容已修改，此处继续展示题集保存时的内容。学习记录仍与原题共用。</p>}
         </>}
     {!studyOnly && (!reverse || answerOpen) && <><p className="muted">{contentSource === 'current' ? '当前展示原题内容；学习记录同步到对应原题或小题。' : '题集保留保存时的内容；AI 解析可在知识题库中针对当前原题使用。'}</p>
-    <section className="card sources-card"><details><summary>资料来源与常见度依据</summary><p>{question.frequency ? `F${question.frequency} 常见度：` : '常见度未标注：'}{question.frequencyBasis || '经验估计，非统计频率'}{question.frequencyScope && <><br />适用范围：{question.frequencyScope}</>}</p>{question.sourceRefs.length ? <ul>{question.sourceRefs.map((sourceRef, index) => <li key={index}>{/^https?:\/\//i.test(sourceRef.url) ? <a href={sourceRef.url} target="_blank" rel="noopener noreferrer">{sourceRef.label || sourceRef.url}</a> : <span>{sourceRef.label || sourceRef.url}</span>}</li>)}</ul> : <p className="muted">尚未添加参考资料。</p>}</details></section></>}
+    <QuestionCitations question={question.documentLinks===undefined&&sameContent&&source.data?.documentLinks?{...question,documentLinks:source.data.documentLinks}:question}/><section className="card sources-card"><details><summary>资料来源与常见度依据</summary><p>{question.frequency ? `F${question.frequency} 常见度：` : '常见度未标注：'}{question.frequencyBasis || '经验估计，非统计频率'}{question.frequencyScope && <><br />适用范围：{question.frequencyScope}</>}</p>{question.sourceRefs.length ? <ul>{question.sourceRefs.map((sourceRef, index) => <li key={index}>{/^https?:\/\//i.test(sourceRef.url) ? <a href={sourceRef.url} target="_blank" rel="noopener noreferrer">{sourceRef.label || sourceRef.url}</a> : <span>{sourceRef.label || sourceRef.url}</span>}</li>)}</ul> : <p className="muted">尚未添加参考资料。</p>}</details></section></>}
       </div>
       <aside className="question-viewer-aside">
         <section className="card question-viewer-study">

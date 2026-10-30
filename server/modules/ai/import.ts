@@ -37,6 +37,7 @@ export function finalizeImport(input: AiImportInput, result: z.infer<typeof impo
   const name = input.sourceName || '用户提交资料';
   return { ...result, source: { mode: input.mode, name, ...(input.sourceUrl ? { url: input.sourceUrl } : {}), ...(input.requirements ? { requirements: input.requirements } : {}) },
     questions: result.questions.map(question => ({ ...question, id: undefined, status: 'pending', categoryIds: input.categoryIds, tagIds: input.tagIds, createdAt: undefined, updatedAt: undefined,
+      documentLinks: undefined,
       sourceDocument: input.mode === 'generate' ? name : question.sourceDocument || name,
       ...(input.mode === 'generate' ? { sourceRefs: input.sourceUrl ? [{ label: name, url: input.sourceUrl }] : [] } : input.sourceUrl ? { sourceRefs: [{ label: name, url: input.sourceUrl }, ...(question.sourceRefs || []).filter(ref => ref.url !== input.sourceUrl)].slice(0, 100) } : {}),
     })),

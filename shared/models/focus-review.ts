@@ -10,6 +10,9 @@ export interface FocusQuestion extends Question {
   partIndex?: number;
 }
 export interface FocusItem {
+  paperId?: string;
+  paperTitle?: string;
+  paperVersion?: number;
   key: string;
   questionId: string;
   partId?: string;
@@ -27,6 +30,8 @@ export interface FocusItem {
   verdict?: 'correct' | 'partial' | 'incorrect' | null;
 }
 export interface FocusSession {
+  learningDayId?: string;
+  learningGoalId?: string;
   id: string;
   paperId: string | null;
   title: string;
@@ -47,6 +52,8 @@ export interface FocusSession {
   summary?: FocusSummary;
 }
 export interface FocusSummary {
+  learningDayId?: string;
+  learningGoalId?: string;
   id: string;
   paperId: string | null;
   title: string;

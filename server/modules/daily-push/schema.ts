@@ -1,3 +1,4 @@
+import { learningGoalSchema,validateGoalReferences } from '../learning-plans/schema.js';
 import { z } from 'zod';
 import { DEFAULT_DAILY_PUSH, type DailyPushSettings } from '../../../shared/models/daily-push.js';
 import { id, leafId, types, typePointsSchema, fail } from '../../core/validation.js';
@@ -6,19 +7,21 @@ import type { Category } from '../../../shared/models/types.js';
 
 const points = z.number().finite().min(0).max(10000).refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6, '分值最多两位小数');
 export const dailyPushSettingsSchema = z.object({
+  goals:z.array(learningGoalSchema).max(30).refine(goals=>new Set(goals.map(g=>g.id)).size===goals.length,'学习目标ID不可重复').optional(),allocationMode:z.enum(['weights','fixed']).optional(),
   enabled: z.boolean().default(false), domainId: id.nullable().default(null), categoryIds: z.array(id).max(100).refine(ids => new Set(ids).size === ids.length, '分类不可重复').default([]),
   reviewPoints: points.default(30), newPoints: points.default(20),
   scheduleTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, '触发时间须为HH:mm').default('00:00'),
   timeZone: z.string().min(1).max(100).refine(value => { try { new Intl.DateTimeFormat('en', { timeZone: value }).format(); return true; } catch { return false; } }, '时区无效').default('Asia/Shanghai'),
 }).strict().superRefine((value, context) => {
-  if (value.enabled && (value.reviewPoints + value.newPoints < 50 || value.reviewPoints + value.newPoints > 10000)) context.addIssue({ code: 'custom', path: ['reviewPoints'], message: '复习与新题目标总分须为50至10000分' });
-  if (value.enabled && (!value.domainId || !value.categoryIds.length)) context.addIssue({ code: 'custom', path: ['categoryIds'], message: '开启每日推题前请选择领域和至少一个分类' });
+  if (value.enabled && !(value.goals?.length&&value.allocationMode==='fixed') && (value.reviewPoints + value.newPoints < 50 || value.reviewPoints + value.newPoints > 10000)) context.addIssue({ code: 'custom', path: ['reviewPoints'], message: '复习与新题目标总分须为50至10000分' });
+  if (value.enabled && !value.goals?.length && (!value.domainId || !value.categoryIds.length)) context.addIssue({ code: 'custom', path: ['categoryIds'], message: '开启每日推题前请选择领域和至少一个分类' });
 }).default(() => structuredClone(DEFAULT_DAILY_PUSH));
 
 export function validateDailyPushConfiguration(store: Store, value: DailyPushSettings): void {
   // Disabled configurations may retain choices for later use or portable import.
   // Their references become mandatory again before the feature is enabled.
   if (!value.enabled) return;
+  if(value.goals?.length){validateGoalReferences(store,value.goals);if(value.allocationMode==='fixed'&&[1,2,3,4,5,6,7].some(day=>value.goals!.filter(g=>g.enabled&&g.weekdays.includes(day)).reduce((n,g)=>n+g.reviewPoints+g.newPoints,0)>10000))fail(400,'PLAN_BUDGET_LIMIT','同一天启用目标的固定分值合计不能超过10000');if(value.allocationMode==='fixed'&&value.goals.some(g=>g.enabled&&g.reviewPoints+g.newPoints<=0))fail(400,'PLAN_EMPTY_BUDGET','固定分配中每个启用目标的合计须大于0');return;}
   if (!value.domainId || !store.get('domains', value.domainId) || !value.categoryIds.length) fail(400, 'DAILY_PUSH_SCOPE_REQUIRED', '每日推题领域不存在或尚未选择分类，请先建立或重新选择学习范围');
   for (const id of value.categoryIds) {
     const category = store.get<Category>('categories', id);

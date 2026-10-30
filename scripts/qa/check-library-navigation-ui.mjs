@@ -15,7 +15,7 @@ try{
  await page.goto(origin+'/#/questions?'+filters);await page.getByText('找到 58 道题目',{exact:true}).waitFor();
  const libraryUrl=page.url(),first=page.locator('.question-title').first(),firstTitle=await first.textContent();
  await first.click();await page.getByRole('link',{name:'返回题库',exact:true}).waitFor();
- assert.ok(page.url().includes('returnTo='));const questionBody=page.locator('.question-body');assert.ok((await questionBody.textContent()).includes('＿＿＿＿＿＿'));assert.equal(await questionBody.locator('code').filter({hasText:'{{answer}}'}).first().textContent(),'{{answer}}');
+ assert.ok(page.url().includes('returnTo='));const questionBody=page.locator('.question-body');await questionBody.getByText(/＿＿＿＿＿＿/).first().waitFor();assert.ok((await questionBody.textContent()).includes('＿＿＿＿＿＿'));assert.equal(await questionBody.locator('code').filter({hasText:'{{answer}}'}).first().textContent(),'{{answer}}');
  checks.push('筛选后的填空题显示横线，同时保留行内模板代码');
  await page.getByRole('link',{name:'返回题库',exact:true}).click();await page.getByText('找到 58 道题目',{exact:true}).waitFor();assert.equal(page.url(),libraryUrl);assert.equal(await page.locator('.question-title').first().textContent(),firstTitle);checks.push('题目返回保留领域、分类、标签、题型、D/L/F、关键词、页码和每页数量');
  await page.locator('.question-title').first().click();await page.getByRole('link',{name:'返回题库',exact:true}).waitFor();await page.goBack();await page.getByText('找到 58 道题目',{exact:true}).waitFor();assert.equal(page.url(),libraryUrl);checks.push('浏览器后退同样恢复原筛选和分页');

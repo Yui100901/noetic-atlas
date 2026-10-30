@@ -1,3 +1,4 @@
+import {contentReturn} from '../../shared/lib/content-navigation';
 import { PAGE_SIZES } from '../../../shared/utils/pagination';
 import { emptyFilters, normalizeQuestionFilters, type Filters } from '../../shared/lib/learning-filters';
 
@@ -34,6 +35,7 @@ export function libraryLocation(filters: Filters, page = 1, pageSize = 20): stri
   return '#/questions' + (params.size ? '?' + params : '');
 }
 export function safeLibraryReturn(value: string | null | undefined): string {
+  if(value&&/^#\/documents\/[^/?]+(?:\/source)?(?:\?|$)/.test(value))return contentReturn(value,'#/questions');
   if (!value || value.length > 20000 || value.split('?')[0] !== '#/questions') return '#/questions';
   const state = readLibraryLocation(value); return libraryLocation(state.filters,state.page,state.pageSize);
 }

@@ -25,7 +25,8 @@ function plan(store: Store) {
   const cards = db.all(db.query.selectFrom('review_cards').select(['id', 'data']).orderBy('id'));
   const events = db.all(db.query.selectFrom('review_events').select(['id', 'data']).orderBy('id'));
   const focusSessions=focusSessionSignatures(store);
-  const fingerprint = createHash('sha256').update(JSON.stringify({ focusSessions:focusSessions.map(s=>({id:s.id,revision:s.revision,status:s.status,updatedAt:s.updatedAt})), states: states.sort((a, b) => a.questionId.localeCompare(b.questionId)), partStates: partStates.sort((a, b) => JSON.stringify([a.questionId, a.partId]).localeCompare(JSON.stringify([b.questionId, b.partId]))), reviews, results, attempts, questionHistory, cards, events })).digest('hex');
+  const planProgress=db.all(db.query.selectFrom('learning_task_results').select(['id','data']).orderBy('id'));
+  const fingerprint = createHash('sha256').update(JSON.stringify({ planProgress, focusSessions:focusSessions.map(s=>({id:s.id,revision:s.revision,status:s.status,updatedAt:s.updatedAt})), states: states.sort((a, b) => a.questionId.localeCompare(b.questionId)), partStates: partStates.sort((a, b) => JSON.stringify([a.questionId, a.partId]).localeCompare(JSON.stringify([b.questionId, b.partId]))), reviews, results, attempts, questionHistory, cards, events })).digest('hex');
   const preview = { fingerprint, counts: { states: states.length, partStates: partStates.length, reviews: reviews.length, results: results.filter(row => !row.reset).length, reviewCards: cards.length, reviewEvents: events.length }, retained: { attempts: attempts.filter(row => row.status === 'submitted').length, drafts: attempts.filter(row => row.status === 'in_progress').length } };
   return { states, partStates, attempts, questionHistory, preview, focusSessions };
 }
@@ -45,6 +46,7 @@ export function resetLearningProgress(store: Store, fingerprint: string) {
       session.reset=true;session.revision++;freezePracticeTiming(session);saveFocus(store,session);
     }
     for (const state of [...current.states, ...current.partStates]) store.putStudy({ ...state, mastery: null, lastReviewedAt: null, nextReviewAt: null, wrongCount: 0 });
+    store.database.run(store.database.query.deleteFrom('learning_task_results'));
     store.database.run(store.database.query.deleteFrom('reviews'));
     store.database.run(store.database.query.deleteFrom('review_cards'));
     store.database.run(store.database.query.deleteFrom('review_events'));

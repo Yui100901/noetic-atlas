@@ -1,3 +1,4 @@
+import type {LearningPlanAnalytics} from '../../shared/models/learning-plan.js';
 import { z } from 'zod';
 import type { AnalyticsMetrics, AnalyticsReport, WeeklyReport } from '../../shared/models/analytics.js';
 
@@ -28,7 +29,10 @@ const adaptiveAnalytics = z.object({
 
 /** Documentation schemas are checked against the shared response contract.
  * They describe responses without installing a second runtime serializer. */
+const planNumber=z.number().nonnegative();
+const learningPlanAnalytics=z.object({days:count,scheduledDays:count,restDays:count,completedDays:count,targetPoints:planNumber,plannedPoints:planNumber,completedPoints:planNumber,goals:z.array(z.object({id:z.string(),name:z.string(),domainId:z.string(),days:count,targetPoints:planNumber,plannedPoints:planNumber,completedPoints:planNumber,completed:count,total:count}))}) satisfies z.ZodType<LearningPlanAnalytics>;
 export const analyticsReportOutputSchema = z.object({
+  learningPlans:learningPlanAnalytics.optional(),
   range: z.object({ from: day, to: day, timeZone: z.string(), asOf: z.string(), partial: z.boolean() }),
   summary: analyticsMetrics,
   adaptive: adaptiveAnalytics.optional(),

@@ -6,6 +6,8 @@ import { directionSchema, ratingSchema } from '../review-scheduler/schema.js';
 const stamp = z.string().datetime({ offset: true });
 const focusQuestion = snapshotQuestionSchema;
 export const focusSummarySchema = z.object({
+  learningDayId: id.optional(),
+  learningGoalId: id.optional(),
   id,
   paperId: id.nullable(),
   title: z.string(),
@@ -30,6 +32,8 @@ export const focusSummarySchema = z.object({
 export const focusSessionSchema = z
   .object({
     id,
+    learningDayId: id.optional(),
+    learningGoalId: id.optional(),
     paperId: id.nullable(),
     title: z.string().min(1).max(300),
     paperVersion: z.number().int().min(1),
@@ -43,6 +47,9 @@ export const focusSessionSchema = z
       .array(
         z
           .object({
+            paperId: id.optional(),
+            paperTitle: z.string().max(300).optional(),
+            paperVersion: z.number().int().positive().optional(),
             key: z.string().min(1).max(1600),
             questionId: id,
             partId: id.optional(),

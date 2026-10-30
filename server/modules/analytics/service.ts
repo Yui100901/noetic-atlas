@@ -1,3 +1,4 @@
+import {learningPlanAnalytics} from '../learning-plans/progress.js';
 import type {AnalyticsBreakdown,AnalyticsMetrics,AnalyticsReport,WeeklyReport} from '../../../shared/models/analytics.js';
 import {typeLabels,type QuestionType} from '../../../shared/models/types.js';
 import type {Store} from '../../core/store.js';
@@ -111,7 +112,7 @@ function report(store:Store,range:{from:string;to:string;timeZone:string},now:Da
   if(summary.answers&&summary.reviewEvents===0&&!adaptive.feedbackEvents)recommendations.push({id:'review',title:'留一次复习时间',description:'本时段有作答但没有记录复习动作，可从到期题目中挑选少量回顾。',href:'#/questions?due=true'});
   if(summary.answers&&summary.activeDays<Math.min(3,Math.max(1,daysBetween(range.from,range.to)+1)))recommendations.push({id:'rhythm',title:'把练习分散到几天',description:`本时段记录到${summary.activeDays}个活跃日。可安排短时练习与回顾，逐步形成自己的节奏。`,href:'#/papers'});
   if(!recommendations.length)recommendations.push({id:'steady',title:'继续保持当前节奏',description:'结合错题原因与到期复习安排下一步；作答次数和耗时只描述活动量，不直接代表掌握程度。',href:'#/papers'});
-  return {range:{...range,asOf:new Date(Math.min(now.getTime(),until-1)).toISOString(),partial:range.to>=today},summary,adaptive,daily:[...daily].map(([date,acc])=>({date,metrics:acc.finish()})),domains:domainRows,types,recommendations,quality};
+  return {learningPlans:learningPlanAnalytics(store,range.from,range.to),range:{...range,asOf:new Date(Math.min(now.getTime(),until-1)).toISOString(),partial:range.to>=today},summary,adaptive,daily:[...daily].map(([date,acc])=>({date,metrics:acc.finish()})),domains:domainRows,types,recommendations,quality};
 }
 
 export function learningAnalytics(store:Store,query:{from?:string;to?:string;timeZone?:string}={},now=new Date()):AnalyticsReport {

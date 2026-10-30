@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { Store, makeId, now } from '../../core/store.js';
 import { bulkQuestionImportSchema, fail, parse, questionSchema } from '../../core/validation.js';
 import { validateAssetReferences } from '../assets/service.js';
+import { validateDocumentCitations } from '../library/sources.js';
 
 export function assertNewQuestionId(qid?: string) {
   if (qid && ['new', 'review', 'import', 'import-template'].includes(qid)) fail(400, 'QUESTION_ID_RESERVED', `题号 ${qid} 为系统操作保留，请使用其他自定义题号或省略ID自动生成`);
@@ -43,7 +44,8 @@ export function registerQuestionBankRoutes(app: FastifyInstance, store: Store) {
       // The envelope checks explicitly supplied IDs. Check generated IDs too
       // before writing so every successful response is a complete atomic batch.
       if (new Set(entries.map(q => q.id)).size !== entries.length) fail(409, 'ID_EXISTS', '生成的题号冲突，请重试');
-      for (const q of entries) store.insert('questions', q.id, q);
+      const sourceCache=new Map();
+      for (const q of entries) { validateDocumentCitations(store,q,true,sourceCache); store.insert('questions', q.id, q); }
       return { added: entries.length, items: entries.map(q => store.question(q.id)) };
     });
     return reply.code(201).send(result);

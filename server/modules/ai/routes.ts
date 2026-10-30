@@ -1,3 +1,4 @@
+import {validateDocumentCitations} from '../library/sources.js';
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseConnection } from '../../database/connection.js';
 import { z } from 'zod';
@@ -303,7 +304,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const original = (run.result as AiImportResult).questions;
     const questions = input.questions || (input.indexes ? input.indexes.map(index => original[index] || fail(400, 'AI_INVALID_CANDIDATE', '所选题目序号不存在')) : original);
     return store.transaction(() => {
-      const created = questions.map(q => { const candidate = parse(questionSchema, { ...q, id: undefined, status: 'pending', categoryIds: input.categoryIds ?? q.categoryIds, tagIds: input.tagIds ?? q.tagIds }); store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); const record = { ...candidate, id: makeId('q'), status: 'pending' as const, createdAt: now(), updatedAt: now() }; store.insert('questions', record.id, record); return record; });
+      const created = questions.map(q => { const candidate = parse(questionSchema, { ...q, id: undefined, status: 'pending', categoryIds: input.categoryIds ?? q.categoryIds, tagIds: input.tagIds ?? q.tagIds }); store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store,candidate,true); const record = { ...candidate, id: makeId('q'), status: 'pending' as const, createdAt: now(), updatedAt: now() }; store.insert('questions', record.id, record); return record; });
       run.importedQuestionIds = created.map(q => q.id); run.appliedAt = now(); putRun(store, run); return { ok: true, added: created.length, count: created.length, items: created, run: publicRun(run) };
     });
   });
@@ -329,7 +330,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const item = (run.result as AiReviewResult).items.find(i => i.questionId === input.questionId); if (!item?.suggestedChanges) fail(400, 'AI_NO_CORRECTION', '本题没有可应用的结构化修订');
     return store.transaction(() => {
       requireSameQuestions(store, run._context, [input.questionId]); const old = store.require<Question>('questions', input.questionId); if (old.status !== 'pending') fail(409, 'AI_QUESTION_NOT_PENDING', '只能修改待审核题目');
-      const candidate = parse(questionSchema, { ...item!.suggestedChanges, id: old.id, categoryIds: old.categoryIds, tagIds: old.tagIds, status: 'pending', createdAt: old.createdAt, updatedAt: nextStamp(old.updatedAt) }); store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); store.put('questions', old.id, candidate);
+      const candidate = parse(questionSchema, { ...item!.suggestedChanges, documentLinks:old.documentLinks, id: old.id, categoryIds: old.categoryIds, tagIds: old.tagIds, status: 'pending', createdAt: old.createdAt, updatedAt: nextStamp(old.updatedAt) }); store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store,candidate,true); store.put('questions', old.id, candidate);
       run._context.questionVersions[old.id] = candidate.updatedAt!; run.correctedQuestionIds = [...new Set([...(run.correctedQuestionIds || []), old.id])]; run.appliedAt = now(); putRun(store, run); return { question: store.question(old.id), run: publicRun(run) };
     });
   });

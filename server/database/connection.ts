@@ -31,6 +31,11 @@ export class DatabaseConnection {
     this.run(this.query.insertInto('metadata').values({key:'schema_version',value:'1'}).onConflict(c=>c.column('key').doNothing()));
     for (const [name,table,fields] of [
       ['focus_sessions_paper_status_updated_idx','focus_sessions',['paperId','status','updatedAt']],
+      ['learning_days_date_idx','learning_days',['dateKey']],
+      ['learning_task_results_day_idx','learning_task_results',['dayId']],
+      ['focus_sessions_learning_day_idx','focus_sessions',['learningDayId']],
+      ['attempts_learning_day_idx','attempts',['learningDayId']],
+
       ['papers_archived_updated_idx','papers',['archived','updatedAt']],
       ['papers_updated_idx','papers',['updatedAt']],
       ['attempts_exam_status_started_idx','attempts',['practiceMode','status','startedAt']],
@@ -46,6 +51,7 @@ export class DatabaseConnection {
       ['question_history_question_part_date_idx','question_history',['questionId','partId','submittedAt']],
       ['question_history_attempt_idx','question_history',['attemptId']],
       ['documents_archived_updated_idx','documents',['_archived','updatedAt']],
+      ['document_versions_document_idx','document_versions',['documentId','versionId']],
       ['document_drafts_context_updated_idx','document_drafts',['documentId','updatedAt']],
       ['ai_workspace_drafts_context_updated_idx','ai_workspace_drafts',['kind','contextId','updatedAt']],
       ['questions_type_title_idx','questions',['type','title']],

@@ -315,3 +315,32 @@ FSRS完整备份另含`reviewCards、reviewEvents`及`reviewScheduling`配置。
 - `POST /api/focus-sessions/:id/finish`：提交revision结束会话，暂停计时并保留总结；未评级任务保留原排期。
 
 原题内容指纹变化会阻止核对和评级，允许跳过。切换复习算法后应新开会话。JSON迁移包含focusSessions并校验快照、进度和计时，SQLite与Android完整恢复包含同一数据表。学习进度重置会结束进行中的会话；会话清理不删除独立作答统计与复习事件。
+
+
+## 多领域学习计划
+
+长期目标保存于settings.dailyPush.goals，allocationMode为weights或fixed；单领域字段继续保留，未配置目标时使用原单领域规则。目标引用领域、分类、标签，启用时校验引用与预算；按星期筛选参与目标。
+
+- `GET /api/daily-push`：多目标安排位于plan，返回进度与目标摘要，不返回tasks或taskProgress；today继续表示已有单领域推荐。
+- `POST /api/daily-push/check`：复用定时检查入口。多目标生成后generated为true、record为null，通过overview.plan读取结果。按配置时区和日期生成一次，锁内复核配置与既有单领域／多目标记录。
+- `GET /api/learning-plans?page=1&pageSize=10`：分页历史摘要，含动态进度。
+- `GET /api/learning-plans/:id`：完整任务元数据、目标进度、独立任务结果、草稿及来源题集可用状态；不返回参考答案或题干快照，不写入学习状态。
+- `POST /api/learning-plans/:id/start`：可传goalId、mode（focus／practice）、resume（默认true）；返回id、kind及resumed。恢复草稿或启动尚未完成的具体任务。普通练习按方向／内容类型分批，专注复习保留小题与方向身份、共用材料和每项目标题集来源。
+- `POST /api/learning-plans/:id/read`：幂等标记已查看。
+
+learning_days保存生成时的目标与任务快照，learning_task_results以每日计划＋任务ID保存独立完成记录，任务按原题＋小题＋方向去重。新题的实际非空回答或有效评级可完成任务；复习任务需要评级。作答与评级分别记录，分值只累计一次。事件处理与原作答／评级同事务，清理卷面和会话保留进度，重置学习进度清空进度。显式计划来源支持跨日补做，普通入口事件只覆盖其发生日期的任务。
+
+完整JSON迁移增加learningDays、learningTaskResults；检查任务引用、时间、分值和完成条件，不同的同日计划拒绝混合进度。SQLite及Android完整恢复包括同一表。已生成记录不随目标配置更新重写。统计返回learningPlans，区分学习日与休息日，按计划日期汇总预算、安排量和完成量。
+
+
+## 题目与资料原文关联
+
+`Question.documentLinks`为可选数组，最多30项。每项包含`documentId`、`versionId`、`title`、`relation`（extracted/summarized/reference）、`label`、可选`pageStart/pageEnd`或`startOffset/endOffset`（互斥）和可选`excerpt`（最多2000字符）。段落范围为已保存Markdown原始字符串的UTF-16起止偏移，左闭右开。版本为内容摘要，正文或PDF附件身份变化产生不同版本；资料改名不改变定位。`documentId/versionId`必须同时有效或同时为null；后者用于未附原文的分享引用。新建、编辑、批量新增和待审核JSON修订共用字段验证及原文校验，并在事务内保留必要版本。
+
+- `GET /api/documents/:id`增加只读`contentVersion`。
+- `GET /api/documents/:id/versions/:versionId`读取不可变正文／PDF附件及当前版本信息，可读取已归档资料的保存版本；不存在时返回`DOCUMENT_SOURCE_UNAVAILABLE`。
+- `GET /api/documents/:id/questions?page=1&pageSize=20&versionId=...&pageNumber=...&search=...`返回分页题目元数据和相关引用，不返回题干、答案、学习状态或整本教材。版本与页码必须匹配同一条引用。省略版本显示该资料全部版本，省略页码不限页。
+- `POST /api/ai/document-jobs`的每个section可带`sourceCitation`；必须与本机存在的版本和所选范围匹配。可选`saveSources:true`明确授权将未关联提取文字存入资料库。默认false，保持任务正文私有。来源由本机生成及校验，模型输出和导入编辑不能替换任务来源身份。
+- `POST /api/ai/document-jobs/:id/link-sources`接收`{confirmed:true,expectedUpdatedAt}`，返回`{job,linked,skipped}`，为旧任务发布教材摘录并关联已有导入题。任务繁忙、版本变化或引用超额整批回滚。
+
+完整迁移增加`documentVersions`数组；每个版本包含`id/documentId/versionId/title/format/bodyMarkdown/assetId/fileName/createdAt`。导入校验摘要、身份、位置与附件，失败回滚。PDF源附件与本机相同ID不同内容冲突时拒绝合并，避免错误定位。SQLite完整恢复采用同一验证。普通分享仅保留可移植引用上下文，清除本机资料ID和版本ID，不默认发布教材正文。原文版本参与附件引用保护。

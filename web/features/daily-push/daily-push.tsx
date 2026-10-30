@@ -1,3 +1,4 @@
+import { LearningPlanCard,planHref } from './learning-plan-card';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, CalendarDays, RefreshCw, Settings2 } from 'lucide-react';
 import type { DailyPushCheckResponse, DailyPushOverview, DailyPushRecord, DailyPushView } from '../../../shared/models/daily-push';
@@ -17,7 +18,7 @@ const examActive = () => document.body.classList.contains('exam-active');
 /** Only ask for a mutation when this local calendar day is due and missing.
  * The service remains authoritative and protects against duplicate requests. */
 function due(overview: DailyPushOverview): boolean {
-  if (!overview.config.enabled || overview.today || examActive()) return false;
+  if (!overview.config.enabled || overview.today || overview.plan || examActive()) return false;
   try {
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: overview.config.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
     const hour = parts.find(part => part.type === 'hour')?.value || '00', minute = parts.find(part => part.type === 'minute')?.value || '00';
@@ -55,8 +56,8 @@ export function DailyPushProvider({ children }: { children: ReactNode }) {
     // The settings effect below performs the initial refresh as well.
     const timer = setInterval(trigger, 30_000);
     const exam = (event: Event) => { if (!(event as CustomEvent).detail) trigger(); };
-    window.addEventListener('focus', trigger); document.addEventListener('visibilitychange', trigger); window.addEventListener('noetic-atlas-exam-state', exam);
-    return () => { mounted.current = false; clearInterval(timer); window.removeEventListener('focus', trigger); document.removeEventListener('visibilitychange', trigger); window.removeEventListener('noetic-atlas-exam-state', exam); };
+    window.addEventListener('hashchange',trigger);window.addEventListener('focus', trigger); document.addEventListener('visibilitychange', trigger); window.addEventListener('noetic-atlas-exam-state', exam);
+    return () => { mounted.current = false; clearInterval(timer); window.removeEventListener('hashchange',trigger);window.removeEventListener('focus', trigger); document.removeEventListener('visibilitychange', trigger); window.removeEventListener('noetic-atlas-exam-state', exam); };
   }, [refresh]);
   useEffect(() => {
     // StrictMode disposes its probe effect before the next microtask. Settings
@@ -114,6 +115,7 @@ export function DailyPushQuickLink() {
   useEffect(() => { void refresh(false); }, [refresh]);
   const today = overview?.today;
   const action = today ? progressAction(today) : null;
+  if(overview?.plan)return <a className="button feature-entry daily-push-quick-link" href={planHref(overview.plan.id)}><CalendarDays size={16}/>今日学习计划 · {overview.plan.progress.completed}/{overview.plan.progress.total}项<ArrowRight size={15}/></a>;
   const disabled = !!overview && !overview.config.enabled;
   const target = action?.target || (disabled ? '#/settings?tab=daily' : '#/papers');
   const label = action?.label || (disabled ? '开启每日推荐' : '查看每日推荐');
@@ -139,9 +141,10 @@ export function DailyPushCard() {
   const unavailable = today && !today.paperAvailable
     ? today.paperId ? '今日题集已归档或删除，往期推荐可在题集库查找。' : today.reason || '所选范围暂无可练习题目，请调整领域或分类。'
     : null;
+  if(overview?.plan)return <LearningPlanCard plan={overview.plan} onRefresh={()=>void refresh(false)}/>;
   return <section className={`card daily-push-card ${today && !today.readAt ? 'unread' : ''} ${today?.shortfall ? 'has-shortfall' : ''}`} role="status" aria-label="每日推荐">
     <span className="daily-push-card-icon"><CalendarDays size={21} /></span>
-    <div className="daily-push-card-copy"><div><strong>每日推荐</strong>{today && <span className="daily-push-card-date">{today.dateKey}</span>}{today && !today.readAt && <span className="badge">新推送</span>}</div><p>{description}</p>{today?.progress && <DailyProgressDisplay progress={today.progress} />}{unavailable && <p className="daily-push-card-hint">{unavailable}</p>}{error && <p className="daily-push-card-error" role="alert">{error}</p>}</div>
+    <div className="daily-push-card-copy"><div><strong>每日推荐</strong>{today && <span className="daily-push-card-date">{today.dateKey}</span>}{today && !today.readAt && <span className="badge">新推送</span>}</div><p>{description}</p>{today?.progress && <DailyProgressDisplay progress={today.progress} />}{overview?.config.goals?.length&&today?<p className="daily-push-card-hint">今天沿用已生成的推荐，多目标安排从后续日期生效。</p>:null}{unavailable && <p className="daily-push-card-hint">{unavailable}</p>}{error && <p className="daily-push-card-error" role="alert">{error}</p>}</div>
     <div className="daily-push-card-actions">{action && attemptAction && <a className="button primary" href={action.target} onClick={read}>{action.label}<ArrowRight size={15} /></a>}{today?.progress?.resumeAttemptId && action?.target !== href('attempts', today.progress.resumeAttemptId) && <a className="button" href={href('attempts', today.progress.resumeAttemptId)} onClick={read}>继续今日推荐</a>}{today?.paperId && today.paperAvailable
       ? <a className={`button ${!attemptAction ? 'primary' : ''}`} href={href('papers', today.paperId)} onClick={read}>打开今日题集<ArrowRight size={15} /></a>
       : !action && overview && !overview.config.enabled && <a className="button primary" href="#/settings?tab=daily">开启每日推荐<ArrowRight size={15} /></a>}

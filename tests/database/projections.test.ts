@@ -1,3 +1,4 @@
+import {READ_PROJECTION_VERSION} from '../../server/database/projection-version.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -114,7 +115,7 @@ test('obsolete projection version invalidates stale derived content and rebuilds
     database.run(database.query.updateTable('metadata').set({ value: 'obsolete-test-version' }).where('key', '=', 'read_projection_version'));
     database.projections.initialize(); assert.ok(pending(database).length > 0); database.projections.refreshAll();
     assert.deepEqual(derived(database), expected); assert.deepEqual(canonical(database), originals);
-    assert.equal(database.one(database.query.selectFrom('metadata').select('value').where('key', '=', 'read_projection_version'))?.value, '6');
+    assert.equal(database.one(database.query.selectFrom('metadata').select('value').where('key', '=', 'read_projection_version'))?.value, READ_PROJECTION_VERSION);
   } finally { database.close(); }
 });
 

@@ -1,3 +1,4 @@
+import type {DocumentCitation} from '../../../shared/models/document-citations';
 import type { AiDocumentBlock } from '../../../shared/ai/ai-document';
 import type { DocumentFilesResult } from './ai-document-files';
 import type { AiDocumentPreviewEdit } from './ai-document-preview';
@@ -12,7 +13,7 @@ export const draftNumber = (value: unknown, fallback: number) => typeof value ==
 export const draftStrings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 export function documentFilesDraft(value: unknown): DocumentFilesResult | null {
   if (!record(value) || !Array.isArray(value.sections) || !value.sections.length || value.sections.some(section => !record(section) || typeof section.text !== 'string')) return null;
-  return { sections: value.sections.map(section => ({ text: section.text as string, ...(typeof section.label === 'string' ? { label: section.label } : {}), ...(typeof section.sourceName === 'string' ? { sourceName: section.sourceName } : {}), ...(typeof section.pageStart === 'number' ? { pageStart: section.pageStart } : {}), ...(typeof section.pageEnd === 'number' ? { pageEnd: section.pageEnd } : {}) })), sourceName: draftString(value.sourceName), characters: draftNumber(value.characters, 0), bytes: draftNumber(value.bytes, 0), files: draftNumber(value.files, 0), pages: draftNumber(value.pages, 0), warnings: draftStrings(value.warnings) };
+  return { sections: value.sections.map(section => ({ text: section.text as string, ...(record(section.sourceCitation)?{sourceCitation:section.sourceCitation as unknown as DocumentCitation}:{}), ...(typeof section.label === 'string' ? { label: section.label } : {}), ...(typeof section.sourceName === 'string' ? { sourceName: section.sourceName } : {}), ...(typeof section.pageStart === 'number' ? { pageStart: section.pageStart } : {}), ...(typeof section.pageEnd === 'number' ? { pageEnd: section.pageEnd } : {}) })), sourceName: draftString(value.sourceName), characters: draftNumber(value.characters, 0), bytes: draftNumber(value.bytes, 0), files: draftNumber(value.files, 0), pages: draftNumber(value.pages, 0), warnings: draftStrings(value.warnings) };
 }
 export function documentPreviewDraft(value: unknown): Record<string, DocumentPreviewDraftEdit> {
   if (!record(value)) return {};

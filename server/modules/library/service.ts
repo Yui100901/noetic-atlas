@@ -5,6 +5,7 @@ import { documentSchema, fail, parse } from '../../core/validation.js';
 import { validateAssetReferences } from '../assets/service.js';
 import { getSettings } from '../settings/service.js';
 import { documentListQuerySchema, documentSelection, orderedDocuments } from './list.js';
+import { captureDocumentVersion } from './sources.js';
 
 import type { z } from 'zod';
 
@@ -138,7 +139,10 @@ export function updateDocument(store: Store, documentId: string, body: unknown) 
     updatedAt: nextStamp(previous.updatedAt),
   } as DocumentRecord);
   validateDocument(store, document);
-  store.put('documents', documentId, document);
+  store.transaction(() => {
+    captureDocumentVersion(store, previous);
+    store.put('documents', documentId, document);
+  });
   return document;
 }
 

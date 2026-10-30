@@ -12,6 +12,7 @@ import { validateAssetReferences } from '../assets/service.js';
 import { getSettings } from '../settings/service.js';
 import { getId } from '../../http/request.js';
 import { questionQuerySchema } from './query-schema.js';
+import { validateDocumentCitations } from '../library/sources.js';
 
 export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/questions', async request => {
@@ -22,14 +23,14 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   app.post('/api/questions', async (request, reply) => {
     const input = normalizeQuestionBlankStems(parse(questionSchema, request.body)); assertNewQuestionId(input.id); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
     const q = { ...input, status: input.status === 'draft' ? 'draft' : 'pending', id: input.id || makeId('q'), createdAt: now(), updatedAt: now() } as Question;
-    store.insert('questions', q.id, q); return reply.code(201).send(store.question(q.id));
+    store.transaction(()=>{validateDocumentCitations(store,q,true);store.insert('questions', q.id, q);}); return reply.code(201).send(store.question(q.id));
   });
   app.put('/api/questions/:id', async request => {
     const qid = getId(request); const previous = store.require<Question>('questions', qid); const input = normalizeQuestionBlankStems(parse(questionSchema, request.body));
     if (input.id && input.id !== qid) fail(400, 'ID_IMMUTABLE', '题号不能在编辑时更换'); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
     if (input.updatedAt && input.updatedAt !== previous.updatedAt) fail(409, 'QUESTION_VERSION_CONFLICT', '题目已被修改，请刷新后再编辑');
     if (input.status === 'published' && previous.status !== 'published') fail(409, 'REVIEW_REQUIRED', '未发布题目必须先送审，再通过用户确认审核');
-    const q = { ...input, id: qid, createdAt: previous.createdAt || now(), updatedAt: nextStamp(previous.updatedAt) }; store.put('questions', qid, q); return store.question(qid);
+    const q = { ...input, id: qid, createdAt: previous.createdAt || now(), updatedAt: nextStamp(previous.updatedAt) }; store.transaction(()=>{validateDocumentCitations(store,q,true);store.put('questions', qid, q);}); return store.question(qid);
   });
   app.post('/api/questions/review', async request => {
     const input = parse(questionReviewSchema, request.body);
@@ -64,7 +65,7 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
         store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
         return { ...input, id: q.id, status: 'pending' as const, createdAt: q.createdAt || now(), updatedAt: nextStamp(q.updatedAt) };
       });
-      for (const q of entries) store.put('questions', q.id, q);
+      for (const q of entries) {validateDocumentCitations(store,q,true);store.put('questions', q.id, q);}
       return { ok: true, updated: entries.length, items: entries.map(q => store.question(q.id)) };
     });
   });

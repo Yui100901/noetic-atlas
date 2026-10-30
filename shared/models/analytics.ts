@@ -24,6 +24,7 @@ export interface AdaptiveAnalytics extends AdaptiveRecallMetrics {
   dueProcessing: { completedDueCycles: number; pendingDue: number | null; rate: number | null; reason: string };
 }
 export interface AnalyticsReport {
+  learningPlans?:import('./learning-plan.js').LearningPlanAnalytics;
   range: { from: string; to: string; timeZone: string; asOf: string; partial: boolean };
   summary: AnalyticsMetrics;
   adaptive?: AdaptiveAnalytics;

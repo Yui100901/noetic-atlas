@@ -1,18 +1,20 @@
 import { z } from 'zod';
 import { AI_DOCUMENT_LIMITS } from '../../../shared/ai/ai-document.js';
-import { id, types, questionSchema, fail } from '../../core/validation.js';
+import { id, types, questionSchema, fail, documentCitationSchema } from '../../core/validation.js';
 import { aiImportResultOutputSchema } from './schema.js';
 
 const ids = z.array(id).min(1).max(AI_DOCUMENT_LIMITS.maxBlocks).refine(values => new Set(values).size === values.length, '分块不能重复');
 const url = z.string().trim().url().max(3000).refine(value => { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password; }, '来源链接须为无账号密码的HTTP(S)地址');
 const page = z.number().int().min(1).max(100_000);
-const section = z.object({ text: z.string().max(AI_DOCUMENT_LIMITS.maxSourceCharacters), label: z.string().trim().max(300).optional(), sourceName: z.string().trim().max(300).optional(), pageStart: page.optional(), pageEnd: page.optional() }).strict().refine(value => value.pageEnd === undefined || value.pageStart !== undefined && value.pageEnd >= value.pageStart, '页码范围无效');
+const section = z.object({ text: z.string().max(AI_DOCUMENT_LIMITS.maxSourceCharacters), label: z.string().trim().max(300).optional(), sourceName: z.string().trim().max(300).optional(), pageStart: page.optional(), pageEnd: page.optional(), sourceCitation: documentCitationSchema.optional() }).strict().refine(value => value.pageEnd === undefined || value.pageStart !== undefined && value.pageEnd >= value.pageStart, '页码范围无效');
 export const aiDocumentCreateSchema = z.object({
   confirmed: z.literal(true), sourceName: z.string().trim().min(1).max(300), sourceUrl: url.optional(), sections: z.array(section).min(1).max(AI_DOCUMENT_LIMITS.maxBlocks),
+  saveSources: z.boolean().default(false),
   mode: z.enum(['extract', 'generate']).default('generate'), requirements: z.string().trim().max(5000).default(''), questionTypes: z.array(types).max(7).refine(values => new Set(values).size === values.length, '题型不能重复').default([]), difficulty: z.number().int().min(1).max(4).optional(),
   categoryIds: z.array(id).max(100).default([]), tagIds: z.array(id).max(100).default([]), questionsPerBlock: z.number().int().min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock).default(10), maxQuestions: z.number().int().min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerJob).default(200),
 }).strict().refine(value => value.maxQuestions >= value.questionsPerBlock, '任务总题量预算不能小于每块题量');
 export const aiDocumentProcessSchema = z.object({ blockIds: ids.max(AI_DOCUMENT_LIMITS.maxBlocksPerRequest), retryFailed: z.boolean().default(false), questionsPerBlock: z.number().int().min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock).optional() }).strict();
+export const aiDocumentLinkSourcesSchema=z.object({confirmed:z.literal(true),expectedUpdatedAt:z.string().datetime({offset:true})}).strict();
 export const aiDocumentImportSchema = z.object({ confirmed: z.literal(true), blockIds: ids, questions: z.array(z.object({ blockId: id, questions: z.array(questionSchema).min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock) }).strict()).max(AI_DOCUMENT_LIMITS.maxBlocks).optional() }).strict();
 export const aiDocumentSummarySchema = z.object({ title: z.string().trim().min(1).max(300), summary: z.string().trim().min(1).max(5000), topics: z.array(z.string().trim().min(1).max(300)).min(1).max(30) }).strict();
 export const aiDocumentPlanResultSchema = aiDocumentSummarySchema.extend({ sourceName: z.string().min(1).max(300), label: z.string().max(300) });
@@ -23,6 +25,7 @@ const block = z.object({
   id, sourceName: z.string().min(1).max(300), label: z.string().max(300), pageStart: page.optional(), pageEnd: page.optional(), characters: z.number().int().min(1).max(AI_DOCUMENT_LIMITS.blockCharacters), text: z.string().min(1).max(AI_DOCUMENT_LIMITS.blockCharacters),
   title: z.string().max(300), summary: z.string().max(5000), topics: z.array(z.string().max(300)).max(30), planStatus: blockState, generationStatus: blockState, planAttempts: z.number().int().min(0), generationAttempts: z.number().int().min(0), planFailure: aiDocumentFailureSchema.optional(), generationFailure: aiDocumentFailureSchema.optional(),
   questions: z.array(questionSchema).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock), importedQuestionIds: z.array(id).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock), planRunId: id.optional(), generationRunId: id.optional(), generationQuestionLimit: z.number().int().min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock).optional(),
+  sourceCitation: documentCitationSchema.optional(),
 }).strict();
 export const storedAiDocumentJobSchema = z.object({
   id, sourceName: z.string().min(1).max(300), sourceUrl: url.optional(), createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }), status: z.enum(['pending', 'running', 'ready', 'partial', 'failed', 'completed']),

@@ -3,6 +3,17 @@ import { sql, type RawBuilder, type Expression, type SqlBool } from 'kysely';
 /** SQLite/WASM-specific JSON, Unicode and row-order semantics live only here.
  * A new database adapter implements this expression contract for its dialect. */
 export class SqliteExpressions {
+  /** All constraints belong to the same citation, never separate array entries. */
+  documentCitationMatch(ref:string,documentId:string,versionId?:string,page?:number):RawBuilder<SqlBool>{
+    return sql<SqlBool>`exists(select 1 from json_each(${sql.ref(ref)},'$.documentLinks') as citation where json_extract(citation.value,'$.documentId')=${documentId} ${versionId?sql`and json_extract(citation.value,'$.versionId')=${versionId}`:sql``} ${page?sql`and json_extract(citation.value,'$.pageStart')<=${page} and coalesce(json_extract(citation.value,'$.pageEnd'),json_extract(citation.value,'$.pageStart'))>=${page}`:sql``})`;
+  }
+  /** Immutable plan headers for reporting: omit scope filters, titles and bodies. */
+  learningPlanTaskHeaders(ref:string):RawBuilder<string>{
+    return sql<string>`(select coalesce(json_group_array(json_object('id',json_extract(plan_task.value,'$.id'),'goalId',json_extract(plan_task.value,'$.goalId'),'points',json_extract(plan_task.value,'$.points'))),'[]') from json_each(${sql.ref(ref)},'$.tasks') as plan_task)`;
+  }
+  learningPlanGoalHeaders(ref:string):RawBuilder<string>{
+    return sql<string>`(select coalesce(json_group_array(json_object('goal',json_object('id',json_extract(plan_goal.value,'$.goal.id'),'name',json_extract(plan_goal.value,'$.goal.name'),'domainId',json_extract(plan_goal.value,'$.goal.domainId')),'targetReviewPoints',json_extract(plan_goal.value,'$.targetReviewPoints'),'targetNewPoints',json_extract(plan_goal.value,'$.targetNewPoints'))),'[]') from json_each(${sql.ref(ref)},'$.goals') as plan_goal)`;
+  }
   private path(key: string) {
     // Paths and refs come from code, never HTTP input. Reject accidental unsafe use.
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error('Invalid database field');

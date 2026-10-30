@@ -12,6 +12,7 @@ export interface DocumentCitation {
   excerpt: string;
 }
 export interface DocumentVersion {
+  mathEnabled?: boolean;
   id: string;
   documentId: string;
   versionId: string;

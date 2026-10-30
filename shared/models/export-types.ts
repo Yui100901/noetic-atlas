@@ -3,6 +3,7 @@ import type { PaperScoring, QuestionType, Option, SourceRef, BlankSpec } from '.
 export type ExportMode = 'blank' | 'answers' | 'completed';
 export const exportModeLabels: Record<ExportMode, string> = { blank: '空白卷', answers: '附答案卷', completed: '完成卷' };
 export interface ExportQuestion {
+  mathEnabled?:boolean; groupMathEnabled?:boolean; answerMathEnabled?:boolean;
   id: string; number: number; title: string; type: QuestionType; stemMarkdown: string;
   options: Option[]; difficulty: number; depth: number; frequency: number; points: number | null;
   blanks?: Array<Omit<BlankSpec, 'answers'> & { answers?: string[] }>; sourceQuestionId?: string; groupId?: string; groupTitle?: string; groupStemMarkdown?: string; partId?: string; partIndex?: number;
@@ -11,6 +12,7 @@ export interface ExportQuestion {
   grading?: 'correct' | 'incorrect' | 'pending' | 'graded' | 'unscored';
 }
 export interface ExportDocument {
+  mathEnabled?:boolean;
   version: 1; mode: ExportMode; title: string; description: string; filename: string;
   paperId: string; paperVersion: number; attemptId?: string; generatedAt: string;
   snapshotCreatedAt: string; submittedAt?: string | null; scoring: PaperScoring;

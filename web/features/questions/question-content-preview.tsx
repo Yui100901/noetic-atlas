@@ -1,3 +1,4 @@
+import { MathScope } from '../../shared/math/math-context';
 import { typeLabels, type QuestionType } from '../../../shared/models/types';
 import {
   QuestionContent,
@@ -40,8 +41,19 @@ export function QuestionContentPreview({ question }: { question: unknown }) {
       answers.length > 0 ||
       blanks.some((blank) => values(blank.answers).length > 0);
     return (
-      <>
-        <QuestionContent questionType={type}>{text(item.stemMarkdown)}</QuestionContent>
+      <MathScope
+        enabled={
+          typeof item.mathEnabled === 'boolean' ? item.mathEnabled : root.mathEnabled === true
+        }
+      >
+        <QuestionContent
+          mathEnabled={
+            typeof item.mathEnabled === 'boolean' ? item.mathEnabled : root.mathEnabled === true
+          }
+          questionType={type}
+        >
+          {text(item.stemMarkdown)}
+        </QuestionContent>
         {records(item.options).map((option, index) => (
           <div className="part-reading-option" key={index}>
             <strong>{text(option.key)}.</strong>
@@ -88,22 +100,33 @@ export function QuestionContentPreview({ question }: { question: unknown }) {
           </section>
         )}
         {type === 'group' && text(item.answerMarkdown) && (
-          <>
+          <MathScope
+            enabled={
+              typeof item.mathEnabled === 'boolean' ? item.mathEnabled : root.mathEnabled === true
+            }
+          >
             <h4>公共答案说明</h4>
             <QuestionContent>{text(item.answerMarkdown)}</QuestionContent>
-          </>
+          </MathScope>
         )}
         {text(item.explanationMarkdown) && (
-          <>
+          <MathScope
+            enabled={
+              typeof item.mathEnabled === 'boolean' ? item.mathEnabled : root.mathEnabled === true
+            }
+          >
             <h4>解析与追问</h4>
             <QuestionContent>{text(item.explanationMarkdown)}</QuestionContent>
-          </>
+          </MathScope>
         )}
-      </>
+      </MathScope>
     );
   };
   return (
-    <SourceNoticeScope contents={questionNoticeContents(notices)}>
+    <SourceNoticeScope
+      mathEnabled={root.mathEnabled === true}
+      contents={questionNoticeContents(notices)}
+    >
       <div className="question-content-preview">
         {content(root)}
         {text(root.type) === 'group' &&

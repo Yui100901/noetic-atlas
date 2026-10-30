@@ -136,7 +136,23 @@ export async function prepareNativeRuntimeBundle({
     );
     // A previous incomplete cache entry is never a usable bundle.
     await rm(withinCache(cacheRoot, destination), { recursive: true, force: true });
-    await rename(temporary, destination);
+    // Windows may briefly lock a freshly emitted bundle while inspecting it.
+    // Retry only transient lock errors; the exclusive builder lock still owns
+    // both checked cache paths and readers still see an atomic publication.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(temporary, destination);
+        break;
+      } catch (error) {
+        if (
+          process.platform !== 'win32' ||
+          !['EPERM', 'EBUSY', 'EACCES'].includes(error.code) ||
+          attempt >= 15
+        )
+          throw error;
+        await delay(200);
+      }
+    }
     return join(destination, 'runtime.mjs');
   } finally {
     await rm(withinCache(cacheRoot, temporary), { recursive: true, force: true });

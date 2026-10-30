@@ -9,6 +9,7 @@ export const documentVersionSchema = z
     versionId: documentVersionIdSchema,
     title: z.string().trim().min(1).max(300),
     format: z.enum(['markdown', 'pdf']),
+    mathEnabled: z.boolean().optional(),
     bodyMarkdown: z.string().max(50 * 1024 * 1024),
     assetId: id.nullable(),
     fileName: z.string().max(300).nullable(),

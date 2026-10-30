@@ -139,6 +139,7 @@ export const focusActionSchema = z
     revision: z.number().int().positive(),
     action: z.enum(['save', 'reveal', 'rate', 'skip']),
     mode: z.enum(['mental', 'written']).optional(),
+    mathEnabled: z.boolean().optional(),
     answer: z.union([z.string().max(100000), z.array(z.string().max(1000)).max(30)]).optional(),
     rating: ratingSchema.optional(),
     verdict: z.enum(['correct', 'partial', 'incorrect']).nullable().optional(),

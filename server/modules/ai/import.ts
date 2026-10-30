@@ -1,3 +1,5 @@
+import {prepareAiQuestionMath} from '../../../shared/ai/math.js';
+import {inspectMathMarkdown} from '../../../shared/math/engine.js';
 import type { z } from 'zod';
 import type { AiImportResult } from '../../../shared/ai/ai.js';
 import { fail } from '../../core/validation.js';
@@ -33,6 +35,10 @@ export function finalizeImport(input: AiImportInput, result: z.infer<typeof impo
     }
     const keys = result.questions.map(question => `${question.type}:${question.stemMarkdown.normalize('NFKC').trim().toLocaleLowerCase()}`);
     if (new Set(keys).size !== keys.length) fail(502, 'AI_IMPORT_DUPLICATE', '模型生成了重复题目，未保存预览，请减少题量或调整要求');
+  }
+  result.questions=result.questions.map(prepareAiQuestionMath);
+  for(const [index,question] of result.questions.entries())for(const value of [question,...question.parts||[]])if(value.mathEnabled??question.mathEnabled)for(const field of [value.stemMarkdown,value.answerMarkdown,value.explanationMarkdown,...value.options.map(option=>option.text)]){
+    const issue=inspectMathMarkdown(field)[0];if(issue)fail(502,'AI_IMPORT_INVALID_FORMULA',`模型第${index+1}题公式无法排版：${issue.message}；请调整资料或要求后重试。`);
   }
   const name = input.sourceName || '用户提交资料';
   return { ...result, source: { mode: input.mode, name, ...(input.sourceUrl ? { url: input.sourceUrl } : {}), ...(input.requirements ? { requirements: input.requirements } : {}) },

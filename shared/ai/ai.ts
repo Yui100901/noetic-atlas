@@ -44,6 +44,7 @@ export interface AiFailure {
   jsonLocation?: { offset?: number; line?: number; column?: number }; validationIssues?: AiValidationIssue[];
 }
 export interface AiRunBase {
+  mathEnabled?:boolean;
   id: string; kind: AiRunKind; createdAt: string; model: string; warnings: string[];
   questionIds: string[]; attemptId?: string; appliedAt?: string; jobId?: string; batchId?: string; feedbackId?: string; diagnostics?: AiDiagnostics;
   appliedScores?: string[]; appendedNotes?: string[]; importedQuestionIds?: string[]; correctedQuestionIds?: string[]; createdPaperId?: string;

@@ -1,41 +1,147 @@
-import {Children,isValidElement,memo,useRef,useEffect,type ReactNode} from 'react';
+import { Suspense, Children, isValidElement, memo, useRef, useEffect, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {AssetImage,safeEmbeddedImage} from '../media/asset-render';
-import {assetIdFromUrl} from '../../../shared/assets/assets';
+import remarkMath from 'remark-math';
+import { lazyPage } from '../lib/lazy-page';
+import { rehypeFormula } from '../math/rehype-formula';
+import { AssetImage, safeEmbeddedImage } from '../media/asset-render';
+import { assetIdFromUrl } from '../../../shared/assets/assets';
+
+const LazyFormula = lazyPage(() =>
+  import('../math/formula').then((module) => ({ default: module.Formula })),
+);
+const Formula = ({ source, display = false }: { source: string; display?: boolean }) => (
+  <Suspense fallback={<code>{source}</code>}>
+    <LazyFormula source={source} display={display} />
+  </Suspense>
+);
 
 // Answer clocks, typing and status updates do not change the Markdown source.
 // Keep its parser and embedded media mounted until the source itself changes.
-const MarkdownRenderer = memo(function MarkdownRenderer({ children, sourceRange }: { children: string; sourceRange?:{start:number;end:number} }) {
+const MarkdownRenderer = memo(function MarkdownRenderer({
+  children,
+  mathEnabled = false,
+  sourceRange,
+}: {
+  children: string;
+  mathEnabled?: boolean;
+  sourceRange?: { start: number; end: number };
+}) {
   const container = useRef<HTMLDivElement>(null);
-  useEffect(()=>{if(sourceRange)container.current?.querySelector('.source-located-block')?.scrollIntoView({block:'center'});},[children,sourceRange?.start,sourceRange?.end]);
-  const locate=()=> (tree:any)=>{tree.children=tree.children.map((node:any)=>node.type==='element'&&node.position?.start?.offset!==undefined&&node.position.start.offset<sourceRange!.end&&node.position.end.offset>sourceRange!.start?{type:'element',tagName:'div',properties:{className:['source-located-block']},children:[node]}:node);};
-  const transform = (url: string, key: string) => { if (key === 'src' && (assetIdFromUrl(url) || safeEmbeddedImage(url))) return url; if (/^https?:\/\//i.test(url) || url.startsWith('#')) return url; return ''; };
-  const plainText = (nodes: ReactNode): string => Children.toArray(nodes).map(node => typeof node === 'string' || typeof node === 'number' ? String(node) : isValidElement<{ children?: ReactNode }>(node) ? plainText(node.props.children) : '').join('');
-  const slug = (nodes: ReactNode) => plainText(nodes).toLowerCase().trim().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s+/g, '-');
-  const anchorId = (url: string) => { try { const value = decodeURIComponent(url.slice(1)); return /^[\p{L}\p{N}_.:+-]+$/u.test(value) ? value : ''; } catch { return ''; } };
-  return <div className="markdown" ref={container}><ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={sourceRange?[locate]:[]} skipHtml urlTransform={transform} components={{
-    a: ({ href, children }) => {
-      if (!href) return <span>{children}</span>;
-      const localAnchor = href.startsWith('#') && !href.startsWith('#/');
-      const id = localAnchor ? anchorId(href) : '';
-      if (localAnchor && !plainText(children).trim()) return id ? <span id={id} className="document-anchor" /> : null;
-      return <a href={href} {...(href.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})} onClick={event => {
-        if (!localAnchor) return;
-        event.preventDefault();
-        if (!id) return;
-        const target = container.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`) || document.getElementById(id);
-        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }}>{children}</a>;
-    },
-    h1: ({ children }) => <h1 id={slug(children)}>{children}</h1>,
-    h2: ({ children }) => <h2 id={slug(children)}>{children}</h2>,
-    h3: ({ children }) => <h3 id={slug(children)}>{children}</h3>,
-    h4: ({ children }) => <h4 id={slug(children)}>{children}</h4>,
-    h5: ({ children }) => <h5 id={slug(children)}>{children}</h5>,
-    h6: ({ children }) => <h6 id={slug(children)}>{children}</h6>,
-    img: ({ alt, src }) => <AssetImage src={src} alt={alt} />, table: ({ children }) => <div className="table-scroll"><table>{children}</table></div>
-  }}>{children}</ReactMarkdown></div>;
+  useEffect(() => {
+    if (sourceRange)
+      container.current
+        ?.querySelector('.source-located-block')
+        ?.scrollIntoView({ block: 'center' });
+  }, [children, sourceRange?.start, sourceRange?.end]);
+  const locate = () => (tree: any) => {
+    tree.children = tree.children.map((node: any) =>
+      node.type === 'element' &&
+      node.position?.start?.offset !== undefined &&
+      node.position.start.offset < sourceRange!.end &&
+      node.position.end.offset > sourceRange!.start
+        ? {
+            type: 'element',
+            tagName: 'div',
+            properties: { className: ['source-located-block'] },
+            children: [node],
+          }
+        : node,
+    );
+  };
+  const transform = (url: string, key: string) => {
+    if (key === 'src' && (assetIdFromUrl(url) || safeEmbeddedImage(url))) return url;
+    if (/^https?:\/\//i.test(url) || url.startsWith('#')) return url;
+    return '';
+  };
+  const plainText = (nodes: ReactNode): string =>
+    Children.toArray(nodes)
+      .map((node) =>
+        typeof node === 'string' || typeof node === 'number'
+          ? String(node)
+          : isValidElement<{ children?: ReactNode }>(node)
+            ? plainText(node.props.children)
+            : '',
+      )
+      .join('');
+  const slug = (nodes: ReactNode) =>
+    plainText(nodes)
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+      .replace(/\s+/g, '-');
+  const anchorId = (url: string) => {
+    try {
+      const value = decodeURIComponent(url.slice(1));
+      return /^[\p{L}\p{N}_.:+-]+$/u.test(value) ? value : '';
+    } catch {
+      return '';
+    }
+  };
+  return (
+    <div className="markdown" ref={container}>
+      <ReactMarkdown
+        remarkPlugins={mathEnabled ? [remarkGfm, remarkMath] : [remarkGfm]}
+        rehypePlugins={[...(mathEnabled ? [rehypeFormula] : []), ...(sourceRange ? [locate] : [])]}
+        skipHtml
+        urlTransform={transform}
+        components={{
+          span: ({ node, children, ...props }) =>
+            typeof node?.properties?.['data-tex'] === 'string' ? (
+              <Formula source={node.properties['data-tex']} display={false} />
+            ) : (
+              <span {...props}>{children}</span>
+            ),
+          div: ({ node, children, ...props }) =>
+            typeof node?.properties?.['data-tex'] === 'string' ? (
+              <Formula source={node.properties['data-tex']} display />
+            ) : (
+              <div {...props}>{children}</div>
+            ),
+          a: ({ href, children }) => {
+            if (!href) return <span>{children}</span>;
+            const localAnchor = href.startsWith('#') && !href.startsWith('#/');
+            const id = localAnchor ? anchorId(href) : '';
+            if (localAnchor && !plainText(children).trim())
+              return id ? <span id={id} className="document-anchor" /> : null;
+            return (
+              <a
+                href={href}
+                {...(href.startsWith('http')
+                  ? { target: '_blank', rel: 'noopener noreferrer' }
+                  : {})}
+                onClick={(event) => {
+                  if (!localAnchor) return;
+                  event.preventDefault();
+                  if (!id) return;
+                  const target =
+                    container.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`) ||
+                    document.getElementById(id);
+                  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                {children}
+              </a>
+            );
+          },
+          h1: ({ children }) => <h1 id={slug(children)}>{children}</h1>,
+          h2: ({ children }) => <h2 id={slug(children)}>{children}</h2>,
+          h3: ({ children }) => <h3 id={slug(children)}>{children}</h3>,
+          h4: ({ children }) => <h4 id={slug(children)}>{children}</h4>,
+          h5: ({ children }) => <h5 id={slug(children)}>{children}</h5>,
+          h6: ({ children }) => <h6 id={slug(children)}>{children}</h6>,
+          img: ({ alt, src }) => <AssetImage src={src} alt={alt} />,
+          table: ({ children }) => (
+            <div className="table-scroll">
+              <table>{children}</table>
+            </div>
+          ),
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
 });
 
 export default MarkdownRenderer;

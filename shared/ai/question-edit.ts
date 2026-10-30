@@ -1,6 +1,6 @@
 import type {QuestionInput} from '../models/types.js';
 
-export const AI_QUESTION_EDIT_FIELDS = ['title','stemMarkdown','answerMarkdown','explanationMarkdown','options','correctAnswers','blanks','categoryIds','tagIds'] as const;
+export const AI_QUESTION_EDIT_FIELDS = ['mathEnabled','title','stemMarkdown','answerMarkdown','explanationMarkdown','options','correctAnswers','blanks','categoryIds','tagIds'] as const;
 export type AiQuestionEditField=typeof AI_QUESTION_EDIT_FIELDS[number];
 export type AiQuestionEditChanges=Partial<Pick<QuestionInput,AiQuestionEditField>>;
 export interface AiQuestionEditSuggestion {

@@ -2,6 +2,14 @@
 export type MarkdownAction = 'heading' | 'bold' | 'italic' | 'strike' | 'quote' | 'code' | 'code-block' | 'link' | 'unordered-list' | 'ordered-list' | 'task-list' | 'table' | 'rule';
 export interface MarkdownEdit { value: string; selectionStart: number; selectionEnd: number }
 
+export function insertFormulaMarkdown(value:string,start:number,end:number,source:string,display:boolean):MarkdownEdit{
+  const [from,to]=range(value,start,end),before=value.slice(0,from),after=value.slice(to);
+  const beforeGap=display&&before&&!before.endsWith('\n\n')?(before.endsWith('\n')?'\n':'\n\n'):'';
+  const afterGap=display&&after&&!after.startsWith('\n\n')?(after.startsWith('\n')?'\n':'\n\n'):'';
+  const text=display?`${beforeGap}$$\n${source}\n$$${afterGap}`:`$${source}$`;
+  return insertMarkdownText(value,from,to,text);
+}
+
 function range(value: string, start: number, end: number) {
   const clamp = (point: number) => Number.isFinite(point) ? Math.max(0, Math.min(value.length, Math.trunc(point))) : 0;
   return [Math.min(clamp(start), clamp(end)), Math.max(clamp(start), clamp(end))] as const;

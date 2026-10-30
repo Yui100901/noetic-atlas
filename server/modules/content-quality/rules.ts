@@ -1,3 +1,4 @@
+import {inspectMathMarkdown} from '../../../shared/math/engine.js';
 import { createHash } from 'node:crypto';
 import type { Question, QuestionPart } from '../../../shared/models/types.js';
 import type { QualityRule, QualitySeverity } from '../../../shared/models/content-quality.js';
@@ -14,8 +15,8 @@ const string=(value:unknown)=>typeof value==='string'?value:'';
 const prose=(value:unknown)=>string(value).replace(/```[^\n]*\n[\s\S]*?(?:```|$)|~~~[^\n]*\n[\s\S]*?(?:~~~|$)|`+[^`\n]*`+/g,' ');
 const record=(value:any):Record<string,any>=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
 const array=(value:any):any[]=>Array.isArray(value)?value:[];
-const leaf=(raw:any):unknown=>{const value=record(raw);return{type:value.type,stemMarkdown:value.stemMarkdown,options:value.options,blanks:array(value.blanks).map((raw:any)=>{const blank=record(raw);return{id:blank.id,label:blank.label,caseSensitive:blank.caseSensitive,trim:blank.trim};}),...(Array.isArray(value.parts)?{parts:value.parts.map(leaf)}:{})};};
-const answers=(raw:any):unknown=>{const value=record(raw);return{correctAnswers:value.correctAnswers,answerMarkdown:value.answerMarkdown,blanks:array(value.blanks).map((raw:any)=>{const blank=record(raw);return{id:blank.id,answers:blank.answers,caseSensitive:blank.caseSensitive,trim:blank.trim};}),...(Array.isArray(value.parts)?{parts:value.parts.map(answers)}:{})};};
+const leaf=(raw:any):unknown=>{const value=record(raw);return{...(value.mathEnabled!==undefined?{mathEnabled:value.mathEnabled}:{}),type:value.type,stemMarkdown:value.stemMarkdown,options:value.options,blanks:array(value.blanks).map((raw:any)=>{const blank=record(raw);return{id:blank.id,label:blank.label,caseSensitive:blank.caseSensitive,trim:blank.trim};}),...(Array.isArray(value.parts)?{parts:value.parts.map(leaf)}:{})};};
+const answers=(raw:any):unknown=>{const value=record(raw);return{...(value.mathEnabled!==undefined?{mathEnabled:value.mathEnabled}:{}),correctAnswers:value.correctAnswers,answerMarkdown:value.answerMarkdown,blanks:array(value.blanks).map((raw:any)=>{const blank=record(raw);return{id:blank.id,answers:blank.answers,caseSensitive:blank.caseSensitive,trim:blank.trim};}),...(Array.isArray(value.parts)?{parts:value.parts.map(answers)}:{})};};
 export function qualityContentFingerprint(value:Question|Record<string,any>) {
   // Publication is a separate workflow; approving a question must not erase
   // a still-applicable finding or falsely change its input version.
@@ -41,6 +42,11 @@ export function inspectQuestionQuality(question:Question):QualityFinding[] {
     const options=Array.isArray(value.options)?value.options:[];
     const seen=new Map<string,string>();
     for(const option of options){if(!option||typeof option!=='object')continue;const text=string(option.text).replace(/\r\n/g,'\n');if(!text.trim())continue;const previous=seen.get(text);if(previous)add('duplicate_options','warning','两个选项具有完全相同的正文',`选项 ${previous} 与 ${option.key}：${text.slice(0,1500)}`,'核对是否误填了选项；不自动替换或重排答案。',partId);else seen.set(text,option.key);}
+    if(value.mathEnabled??question.mathEnabled){
+      const fields=[['题干',stem],['参考答案',answer],['解析',explanation],...options.map(option=>['选项 '+option.key,string(option.text)])];
+      const issues=fields.flatMap(([label,markdown])=>inspectMathMarkdown(markdown!).map(issue=>({label,...issue})));
+      if(issues.length)add('math_syntax','warning',`${[...new Set(issues.map(issue=>issue.label))].join('、')}中的公式未能排版`,issues.map(issue=>`${issue.label}（位置 ${issue.offset}）：${issue.message}\n${issue.source}`).join('\n\n'),'核对LaTeX分隔符与命令；化学反应使用\\ce{...}，单位使用\\mathrm{...}。本检查仅验证排版语法，不判断公式科学性。',partId);
+    }
     const visible=prose(stem);
     if(value.type==='fill_blank'){
       const placeholders=findBlankMarkers(stem);

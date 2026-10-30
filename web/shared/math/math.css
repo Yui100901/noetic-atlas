@@ -1,0 +1,133 @@
+.formula {
+  position: relative;
+  color: inherit;
+  max-width: 100%;
+}
+.formula-inline {
+  display: inline-flex;
+  vertical-align: baseline;
+  align-items: baseline;
+  gap: 3px;
+}
+.formula-inline .formula-content {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: baseline;
+  padding: 2px 1px;
+}
+.formula-display {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 16px 0;
+  padding: 10px 0;
+}
+.formula-display .formula-content {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 3px;
+}
+.formula-display .katex-display {
+  margin: 0;
+}
+.formula-copy {
+  flex: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px;
+  background: var(--theme-primary-soft, #edf4ef);
+  color: var(--green);
+  cursor: pointer;
+  opacity: 0.5;
+}
+.formula:hover .formula-copy,
+.formula:focus-within .formula-copy {
+  opacity: 1;
+}
+.formula-error {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-warning-border, #dfc890);
+  border-radius: 9px;
+  background: var(--theme-warning-soft, #fff8e6);
+  color: var(--theme-text, #473b23);
+  font-size: 13px;
+}
+.formula-error code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.formula-copy-error {
+  font-size: 11px;
+  color: var(--muted);
+}
+.math-format-control {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.math-format-control .muted {
+  font-size: 12px;
+}
+.math-insert-panel {
+  border-top: 1px solid var(--border);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  background: var(--theme-inset, #f5f8f5);
+}
+.math-template-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.math-insert-panel textarea {
+  width: 100%;
+  min-height: 80px;
+  font-family: var(--font-mono, monospace);
+}
+.math-insert-panel .formula-display {
+  margin: 0;
+}
+.math-editor-error {
+  color: var(--theme-danger, #a43930);
+  font-size: 13px;
+}
+.markdown .katex {
+  font-size: 1.08em;
+}
+.markdown .katex-display {
+  overflow: visible;
+}
+.markdown-editor-footer .math-format-control {
+  margin: 0;
+}
+.math-mode-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.math-mode-label input {
+  width: auto;
+}
+@media (max-width: 560px) {
+  .math-insert-panel {
+    padding: 12px;
+  }
+  .formula-inline {
+    max-width: 100%;
+  }
+  .formula-copy {
+    opacity: 0.8;
+  }
+  .math-format-control {
+    align-items: flex-start;
+  }
+}

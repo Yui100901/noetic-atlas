@@ -14,7 +14,7 @@ export interface AiQuestionEditReceipt {
 export type AiQuestionEditApplyResult={ok:true;value:QuestionInput;receipt:AiQuestionEditReceipt;message:string}|AiQuestionEditFailure;
 export type AiQuestionEditUndoResult={ok:true;value:QuestionInput;message:string}|AiQuestionEditFailure;
 
-const labels:Record<AiQuestionEditField,string>={title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签'};
+const labels:Record<AiQuestionEditField,string>={mathEnabled:'公式排版',title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签'};
 const gradingFields:AiQuestionEditField[]=['options','correctAnswers','blanks'];
 const taxonomyFields:AiQuestionEditField[]=['categoryIds','tagIds'];
 const allowed=new Set<string>(AI_QUESTION_EDIT_FIELDS);

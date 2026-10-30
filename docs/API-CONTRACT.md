@@ -344,3 +344,12 @@ learning_days保存生成时的目标与任务快照，learning_task_results以�
 - `POST /api/ai/document-jobs/:id/link-sources`接收`{confirmed:true,expectedUpdatedAt}`，返回`{job,linked,skipped}`，为旧任务发布教材摘录并关联已有导入题。任务繁忙、版本变化或引用超额整批回滚。
 
 完整迁移增加`documentVersions`数组；每个版本包含`id/documentId/versionId/title/format/bodyMarkdown/assetId/fileName/createdAt`。导入校验摘要、身份、位置与附件，失败回滚。PDF源附件与本机相同ID不同内容冲突时拒绝合并，避免错误定位。SQLite完整恢复采用同一验证。普通分享仅保留可移植引用上下文，清除本机资料ID和版本ID，不默认发布教材正文。原文版本参与附件引用保护。
+
+## 公式排版字段
+
+- 题目、小题、资料及资料草稿接受可选布尔值`mathEnabled`。缺省关闭；小题缺省继承整题，展平快照使用`groupMathEnabled`保存公共材料的模式。
+- 学习记录使用可选`notesMathEnabled`；作答对象使用可选`mathEnabled`，草稿、提交、单题历史和整卷快照保留它。专注复习`PUT /api/focus-sessions/:id/current`接受可选`mathEnabled`，作用于本次书面回答。
+- 不可变`documentVersions`可以携带`mathEnabled`；未启用模式的原摘要算法保持不变，启用的Markdown内容摘要增加`math:v1`标识。正文和UTF-16定位不改写。
+- 导出文档及各题包含对应排版模式，已完成回答另外使用`answerMathEnabled`。混合MD导出仅转义未启用内容的文字美元符号，代码及链接目标保持原样。
+- 新AI处理记录可含`mathEnabled`，用于排版结果。新生成题目支持相同字段；`AI_IMPORT_INVALID_FORMULA`表示候选题公式无法排版，失败有具体原因且不落入正式题库。AI修改建议的字段白名单包含`mathEnabled`，可与正文修改一起应用或撤回。
+- `math_syntax`为质量规则中的警告项，检查已启用内容的分隔符、命令及限额。字段未启用或无公式均不报缺失。

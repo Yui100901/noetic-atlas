@@ -22,7 +22,7 @@ export interface AttemptHistoryItem {
 }
 /** Frozen leaf content, including the material needed by grouped questions. */
 export interface LearningQuestionSnapshot extends Question {
-  sourceQuestionId?: string; groupId?: string; groupTitle?: string; groupStemMarkdown?: string; partId?: string; partIndex?: number;
+  sourceQuestionId?: string; groupId?: string; groupTitle?: string; groupStemMarkdown?: string; groupMathEnabled?:boolean; partId?: string; partIndex?: number;
 }
 export interface ContextLearningQuestion {
   question: LearningQuestionSnapshot;

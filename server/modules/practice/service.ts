@@ -19,7 +19,7 @@ import { freezePracticeTiming, initialPracticeTiming, validatePracticeTiming } f
 export interface StoredPaper extends Paper { snapshot: Question[] }
 export interface StoredAttempt extends Omit<Attempt, 'questions'> { questions: StoredLeafQuestion[] }
 export function examQuestion(q: StoredLeafQuestion, points?: number): ExamQuestion {
-  return { id: q.id, sourceQuestionId: q.sourceQuestionId || q.id, title: questionStemMarkdown({type:q.type,stemMarkdown:q.title}), type: q.type, stemMarkdown: questionStemMarkdown(q), options: q.options, difficulty: q.difficulty, depth: q.depth, frequency: q.frequency, collection: q.collection, points, blanks: q.blanks?.map(({ answers: _answers, ...b }) => b), groupId: q.groupId, groupTitle: q.groupTitle, groupStemMarkdown: q.groupStemMarkdown, partId: q.partId, partIndex: q.partIndex };
+  return { ...(q.mathEnabled!==undefined?{mathEnabled:q.mathEnabled}:{}), ...(q.groupMathEnabled!==undefined?{groupMathEnabled:q.groupMathEnabled}:{}), id: q.id, sourceQuestionId: q.sourceQuestionId || q.id, title: questionStemMarkdown({type:q.type,stemMarkdown:q.title}), type: q.type, stemMarkdown: questionStemMarkdown(q), options: q.options, difficulty: q.difficulty, depth: q.depth, frequency: q.frequency, collection: q.collection, points, blanks: q.blanks?.map(({ answers: _answers, ...b }) => b), groupId: q.groupId, groupTitle: q.groupTitle, groupStemMarkdown: q.groupStemMarkdown, partId: q.partId, partIndex: q.partIndex };
 }
 export function expandPaper(p: StoredPaper, maxAnswers = 1_500_000) {
   validatePaperAnswers(p.snapshot, maxAnswers);
@@ -204,7 +204,7 @@ export function mergeAnswers(attempt: StoredAttempt, answers: Record<string, Att
       const allowed = q!.type === 'true_false' ? ['true', 'false'] : q!.options.map(o => o.key);
       if (new Set(values).size !== values.length || values.some(v => !allowed.includes(v)) || (q!.type !== 'multiple_choice' && values.length > 1)) fail(400, 'INVALID_ANSWER', '选项无效、重复或单选题选择了多项');
     }
-    attempt.answers[id] = { value: answer.value };
+    attempt.answers[id] = { value: answer.value,...(answer.mathEnabled!==undefined?{mathEnabled:answer.mathEnabled}:{}) };
   }
 }
 export function isCorrect(q: Question, answer?: AttemptAnswer) {
@@ -245,7 +245,7 @@ export function validateAttemptSnapshot(attempt: StoredAttempt) {
   const validationCopy = { ...attempt, answers: {} } as StoredAttempt;
   const plainAnswers: Record<string, AttemptAnswer> = {};
   for (const [qid, answer] of Object.entries(attempt.answers)) {
-    plainAnswers[qid] = { value: answer.value };
+    plainAnswers[qid] = { value: answer.value,...(answer.mathEnabled!==undefined?{mathEnabled:answer.mathEnabled}:{}) };
     const q = attempt.questions.find(q => q.id === qid);
     if (!q || (!isSubjectiveType(q.type) && (answer.selfScore != null || answer.verdict != null)) || (attempt.status === 'in_progress' && (answer.selfScore != null || answer.mastery != null || answer.verdict != null)) || (answer.selfScore != null && (!scoring.enabled || answer.selfScore < 0 || cents(answer.selfScore) > cents(scoring.questionPoints[qid]!)))) fail(400, 'INVALID_ATTEMPT', '评分或掌握自评与题型、满分或作答状态不一致');
     if(answer.verdict!=null&&scoring.enabled&&answer.selfScore!=null&&answer.verdict!==(answer.selfScore>=scoring.questionPoints[qid]!? 'correct':answer.selfScore>0?'partial':'incorrect'))fail(400,'INVALID_ATTEMPT','主观判定与保存分值不一致');

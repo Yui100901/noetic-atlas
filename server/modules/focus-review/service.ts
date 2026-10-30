@@ -405,7 +405,15 @@ export function actFocus(
       if (item.phase !== 'recall')
         fail(409, 'FOCUS_ALREADY_REVEALED', '核对答案后不能再修改原回答');
       item.mode = input.mode || item.mode;
-      item.answer = input.answer === undefined ? item.answer : { value: input.answer };
+      item.answer =
+        input.answer === undefined
+          ? item.answer
+          : {
+              value: input.answer,
+              ...((input.mathEnabled ?? item.answer?.mathEnabled) !== undefined
+                ? { mathEnabled: input.mathEnabled ?? item.answer?.mathEnabled }
+                : {}),
+            };
       if (input.action === 'reveal') {
         sourceAvailable(store, item);
         if (item.mode === 'written') {

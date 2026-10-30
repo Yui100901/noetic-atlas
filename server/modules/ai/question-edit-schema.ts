@@ -3,6 +3,7 @@ import {blankSchema,id,questionSchema} from '../../core/validation.js';
 
 const ids=z.array(id).max(500).refine(values=>new Set(values).size===values.length,'引用不能重复');
 export const aiQuestionEditChangesSchema=z.object({
+ mathEnabled:z.boolean().optional(),
  title:z.string().trim().min(1).max(300).optional(),
  stemMarkdown:z.string().min(1).max(500_000).optional(),
  answerMarkdown:z.string().max(500_000).optional(),explanationMarkdown:z.string().max(500_000).optional(),

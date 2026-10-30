@@ -1,3 +1,4 @@
+import {literalMathMarkdown} from '../../../shared/math/markdown.js';
 import {validateDocumentCitations} from '../library/sources.js';
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseConnection } from '../../database/connection.js';
@@ -141,8 +142,8 @@ function appendNotes(store: Store, run: StoredRun, itemIds: string[]): string[] 
     if (run.kind === 'explain') { const r = run.result as AiExplanation; text = [r.explanationMarkdown, r.followUpsMarkdown ? `### 追问说明\n${r.followUpsMarkdown}` : '', r.pitfallsMarkdown ? `### 误区说明\n${r.pitfallsMarkdown}` : ''].filter(Boolean).join('\n\n'); }
     else { const result = run.result as AiGradeResult, r = result.items.find(i => i.questionId === itemId)!; text = [`建议判定：${r.requiresRegrade ? '未判定（旧记录需重新判题）' : AI_GRADE_VERDICT_LABELS[r.verdict]}。${r.maxPoints != null ? `建议得分：${r.score} / ${r.maxPoints}。` : '本次不计分。'}${r.comment}`, result.gradingRequirements ? `本次判题要求：\n${result.gradingRequirements}` : '', r.strengths.length ? `优点：\n${r.strengths.map(s => `- ${s}`).join('\n')}` : '', r.improvements.length ? `改进建议：\n${r.improvements.map(s => `- ${s}`).join('\n')}` : ''].filter(Boolean).join('\n\n'); }
     const state = noteStudy(store, run, itemId); const note = `## AI ${run.kind === 'grade' ? '作答评价' : '辅助解析'} · ${run.createdAt.slice(0, 10)}\n\n${text}${run.warnings.length ? `\n\n提示：${run.warnings.join('；')}` : ''}`;
-    const notes = [state.notes, note].filter(Boolean).join('\n\n'); if (notes.length > 500_000) fail(413, 'AI_NOTE_TOO_LONG', '追加后笔记超过长度上限，请先整理原笔记');
-    const updated = { ...state, notes }; validateAssetReferences(store, updated, getSettings(store)); store.putStudy(updated); already.add(itemId); appended.push(itemId);
+    const notesMathEnabled=!!state.notesMathEnabled||!!run.mathEnabled;const notes = [notesMathEnabled&&!state.notesMathEnabled?literalMathMarkdown(state.notes):state.notes,notesMathEnabled&&!run.mathEnabled?literalMathMarkdown(note):note].filter(Boolean).join('\n\n'); if (notes.length > 500_000) fail(413, 'AI_NOTE_TOO_LONG', '追加后笔记超过长度上限，请先整理原笔记');
+    const updated = { ...state, notes,...(notesMathEnabled?{notesMathEnabled:true}:{}) }; validateAssetReferences(store, updated, getSettings(store)); store.putStudy(updated); already.add(itemId); appended.push(itemId);
   }
   run.appendedNotes = [...already]; return appended;
 }

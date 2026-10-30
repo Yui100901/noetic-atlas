@@ -43,6 +43,7 @@ export async function downloadExport(document: ExportDocument, format: 'md' | 'p
   // Lazy loading keeps fontkit and PDF code outside the normal practice bundle.
   const [{ renderExportPdf }, { default: fontUrl }] = await Promise.all([import('./export-pdf'), import('../../assets/fonts/NotoSansSC-Regular.ttf?url')]);
   fontRequest ||= fetch(fontUrl).then(response => { if (!response.ok) throw new Error('本地 PDF 字体加载失败，请刷新或重新打开应用后重试。'); return response.arrayBuffer(); }).catch(error => { fontRequest = null; throw error; });
-  const bytes = await renderExportPdf(document, await fontRequest, undefined, resolvePdfImage);
+  const formulaResolver=document.mathEnabled?(await import('./formula-image')).createPdfFormulaResolver():undefined;
+  const bytes = await renderExportPdf(document, await fontRequest, undefined, resolvePdfImage,formulaResolver);
   return saveGeneratedFile(`${document.filename}.pdf`, bytes, 'application/pdf');
 }

@@ -16,13 +16,14 @@ import type { z } from 'zod';
 
 /** Content, not edit timestamps/titles, owns a locator's stable identity. */
 export function documentContentVersion(
-  document: Pick<DocumentRecord, 'format' | 'bodyMarkdown' | 'assetId'>,
+  document: Pick<DocumentRecord, 'format' | 'bodyMarkdown' | 'assetId' | 'mathEnabled'>,
 ): string {
   return createHash('sha256')
     .update(
       JSON.stringify([
         document.format || 'markdown',
         document.format === 'pdf' ? document.assetId : document.bodyMarkdown,
+        ...(document.format !== 'pdf' && document.mathEnabled ? ['math:v1'] : []),
       ]),
     )
     .digest('hex');
@@ -43,6 +44,7 @@ export function captureDocumentVersion(store: Store, document: DocumentRecord): 
     title: document.title,
     format: document.format || 'markdown',
     bodyMarkdown: document.bodyMarkdown,
+    ...(document.mathEnabled !== undefined ? { mathEnabled: document.mathEnabled } : {}),
     assetId: document.assetId || null,
     fileName: document.fileName || null,
     createdAt: now(),
@@ -70,6 +72,7 @@ export function readDocumentSource(
       title: document.title,
       format: document.format || 'markdown',
       bodyMarkdown: document.bodyMarkdown,
+      ...(document.mathEnabled !== undefined ? { mathEnabled: document.mathEnabled } : {}),
       assetId: document.assetId || null,
       fileName: document.fileName || null,
       createdAt: document.updatedAt || now(),

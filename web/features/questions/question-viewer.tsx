@@ -22,6 +22,7 @@ export interface QuestionSnapshot extends Question {
   sourceQuestionId?: string;
   groupTitle?: string;
   groupStemMarkdown?: string;
+  groupMathEnabled?:boolean;
   partId?: string;
 }
 export interface QuestionViewerHandle { confirmLeave: () => boolean; savePendingNotes: () => Promise<void>; refreshStudy: () => void; hasUnsavedChanges: () => boolean; isSaving: () => boolean }
@@ -35,22 +36,22 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   const { toast, reload, bootstrap } = useApp();
   const adaptive = (bootstrap.settings?.reviewScheduling || DEFAULT_REVIEW_SCHEDULING).strategy === 'fsrs';
   const [answerOpen, setAnswerOpen] = useState(false);
-  const [notes, setNotes] = useState('');
+  const [notesMathEnabled,setNotesMathEnabled]=useState(false); const [notes, setNotes] = useState('');
   const [reviewDate, setReviewDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [similarMode, setSimilarMode] = useState<SimilarQuestionsMode | null>(null);
   useEffect(() => { setSimilarMode(null); }, [sourceId, partId]);
   const study = partId === undefined ? source.data?.study : source.data?.partStudies?.find(state => state.partId === partId) || emptyStudy(sourceId, partId);
   const favorite = source.data?.study?.favorite || false;
-  const dirty = notes !== (study?.notes || '');
+  const dirty = notes !== (study?.notes || '')||notesMathEnabled!==!!study?.notesMathEnabled;
   useImperativeHandle(ref, () => ({
     confirmLeave: () => !busy && (!dirty || confirm('学习笔记尚未保存，确定离开这道题？')),
     hasUnsavedChanges: () => dirty,
     isSaving: () => busy,
-    savePendingNotes: async () => { if (busy) throw new Error('学习记录正在保存，请稍后再追加 AI 说明'); if (dirty && !await updateStudy({ notes })) throw new Error('小题笔记未保存，暂未追加 AI 说明'); },
+    savePendingNotes: async () => { if (busy) throw new Error('学习记录正在保存，请稍后再追加 AI 说明'); if (dirty && !await updateStudy({ notes, notesMathEnabled })) throw new Error('小题笔记未保存，暂未追加 AI 说明'); },
     refreshStudy: source.refresh,
-  }), [busy, dirty, notes, sourceId, partId, source.data]);
-  useEffect(() => { setNotes(study?.notes || ''); }, [sourceId, partId, study?.notes]);
+  }), [busy, dirty, notes, notesMathEnabled, sourceId, partId, source.data]);
+  useEffect(() => { setNotes(study?.notes || '');setNotesMathEnabled(!!study?.notesMathEnabled); }, [sourceId, partId, study?.notes,study?.notesMathEnabled]);
   useEffect(() => { setReviewDate(study?.nextReviewAt?.slice(0, 10) || ''); }, [sourceId, partId, study?.nextReviewAt]);
   const updateStudy = async (value: Partial<StudyState>, review = false) => {
     if (!source.data || source.error) return false;
@@ -79,10 +80,10 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
       <div className="question-viewer-main">
         {live && (!reverse || answerOpen) && <div className="question-viewer-feedback"><ReportQuestionAction questionId={sourceId} partId={partId} disabled={busy} snapshotDifferent={contentSource === 'snapshot' && !sameContent} /><SimilarQuestionsLauncher disabled={busy} archived={source.data?.status === 'archived'} onOpen={setSimilarMode} /></div>}
         {live && (!reverse || answerOpen) && similarMode && <SimilarQuestionsPanel key={`${sourceId}:${partId || ''}:${similarMode}`} questionId={sourceId} partId={partId} initialMode={similarMode} snapshotDifferent={contentSource === 'snapshot' && !sameContent} onClose={() => setSimilarMode(null)} />}
-        {!studyOnly && <SourceNoticeScope contents={questionNoticeContents(question)}>
+        {!studyOnly && <SourceNoticeScope mathEnabled={question.mathEnabled} contents={questionNoticeContents(question)}>
           <section className={`question-viewer-reading question-body${presentation === 'page' ? ' card' : ''}`}>
             {reverse ? <span className="badge">{readingConcept ? '概念逆向复习' : '词汇逆向复习'}</span> : <QuestionMeta question={question} />}{presentation !== 'page' && <h3 className="question-viewer-title">{reverse ? (readingConcept ? '看描述想概念' : '看释义想词') : question.title}</h3>}
-            {question.groupStemMarkdown && <section className="group-material"><span className="section-label">共用材料 · {question.groupTitle}</span><QuestionContent>{question.groupStemMarkdown}</QuestionContent></section>}
+            {question.groupStemMarkdown && <section className="group-material"><span className="section-label">共用材料 · {question.groupTitle}</span><QuestionContent mathEnabled={question.groupMathEnabled??question.mathEnabled}>{question.groupStemMarkdown}</QuestionContent></section>}
             <QuestionContent questionType={question.type}>{reverse ? recallPrompt : question.stemMarkdown}</QuestionContent>
             {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
             {!reverse && <><QuestionStructuredBody question={{...question,vocabulary:readingVocabulary}} />{!question.vocabulary && readingVocabulary && <p className="muted">读音补充来自当前词卡；题目正文仍为题集快照。</p>}<Tags ids={question.tagIds} max={30} /></>}
@@ -94,8 +95,8 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
         {source.loading ? <Loading text="正在读取学习记录…" /> : !live ? <div className="notice info">{contentSource === 'current' ? '当前原题已删除或暂时无法读取，仍展示打开窗口时读取的内容；关闭窗口刷新后重新确认。' : '原题已删除或暂时无法读取，仍可查看题集保存的完整题目与解析。'}当前无法保存原题学习记录。{source.error && <button type="button" className="button" onClick={source.refresh}>重试学习记录</button>}</div> : <>
           {(!reverse || answerOpen) && <section className="card question-viewer-notes">
             <h3><Bookmark size={17} />{partId !== undefined ? '本小题的学习笔记' : '我的学习笔记'}</h3>
-            <MarkdownEditor label="我的学习笔记" heading="学习笔记 Markdown" rows={5} compact maxLength={500000} allowImages={false} disabled={busy} value={notes} onChange={setNotes} placeholder="记录理解、错误原因和下一次要验证的问题…" />
-            <div className="form-actions"><span className="muted">{dirty ? '有未保存的笔记' : '笔记已同步'}</span><button type="button" className="button primary" disabled={busy || !dirty} onClick={() => void updateStudy({ notes })}>保存笔记</button></div>
+            <MarkdownEditor label="我的学习笔记" heading="学习笔记 Markdown" rows={5} compact maxLength={500000} allowImages={false} disabled={busy} mathEnabled={notesMathEnabled} onMathEnabledChange={setNotesMathEnabled} value={notes} onChange={setNotes} placeholder="记录理解、错误原因和下一次要验证的问题…" />
+            <div className="form-actions"><span className="muted">{dirty ? '有未保存的笔记' : '笔记已同步'}</span><button type="button" className="button primary" disabled={busy || !dirty} onClick={() => void updateStudy({ notes, notesMathEnabled })}>保存笔记</button></div>
           </section>}
           {partId !== undefined && source.data && <LegacyGroupStudy question={source.data} />}
           {contentSource === 'snapshot' && !sameContent && !question.groupStemMarkdown && <p className="muted">原题内容已修改，此处继续展示题集保存时的内容。学习记录仍与原题共用。</p>}
@@ -126,7 +127,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
 function LegacyGroupStudy({ question }: { question: Question }) {
   const [open, setOpen] = useState(false);
   const history = useResource<Paged<{ id: string; mastery: number; reviewedAt: string }>>(open ? `/api/reviews?questionId=${idPath(question.id)}&whole=true&page=1&pageSize=20` : null);
-  return <details className="card" onToggle={event => setOpen(event.currentTarget.open)}><summary>整组历史与公共笔记</summary><p className="muted">原有整组记录保留在这里。它们不会作为每道小题的复习完成记录。</p><p>整组掌握：{question.study?.mastery == null ? '未记录' : `${question.study.mastery}/3`} · 最近复习：{localDate(question.study?.lastReviewedAt)}</p>{question.study?.notes && <QuestionContent>{question.study.notes}</QuestionContent>}{history.loading ? <Loading /> : history.error ? <ErrorNotice message={history.error} retry={history.refresh} /> : history.data?.items.map(item => <p key={item.id}>{localDate(item.reviewedAt)} · 掌握 {item.mastery}/3</p>)}{history.data && history.data.total > 20 && <p className="muted">最近20次，共{history.data.total}次整组复习记录。</p>}</details>;
+  return <details className="card" onToggle={event => setOpen(event.currentTarget.open)}><summary>整组历史与公共笔记</summary><p className="muted">原有整组记录保留在这里。它们不会作为每道小题的复习完成记录。</p><p>整组掌握：{question.study?.mastery == null ? '未记录' : `${question.study.mastery}/3`} · 最近复习：{localDate(question.study?.lastReviewedAt)}</p>{question.study?.notes && <QuestionContent mathEnabled={question.study.notesMathEnabled}>{question.study.notes}</QuestionContent>}{history.loading ? <Loading /> : history.error ? <ErrorNotice message={history.error} retry={history.refresh} /> : history.data?.items.map(item => <p key={item.id}>{localDate(item.reviewedAt)} · 掌握 {item.mastery}/3</p>)}{history.data && history.data.total > 20 && <p className="muted">最近20次，共{history.data.total}次整组复习记录。</p>}</details>;
 }
 
 /** The library study tools use the exact same per-part editor as
@@ -137,7 +138,7 @@ export const GroupStudyTools = forwardRef<QuestionViewerHandle, { question: Ques
   useImperativeHandle(ref, () => ({ confirmLeave: () => viewer.current?.confirmLeave() !== false, savePendingNotes: async () => { await viewer.current?.savePendingNotes(); }, refreshStudy: () => viewer.current?.refreshStudy(), hasUnsavedChanges: () => viewer.current?.hasUnsavedChanges() || false, isSaving: () => viewer.current?.isSaving() || false }), []);
   const part = question.parts?.find(item => item.id === partId) || question.parts?.[0];
   if (!part) return null;
-  const leaf: QuestionSnapshot = { ...question, ...part, id: `${question.id}::${part.id}`, parts: undefined, sourceQuestionId: question.id, partId: part.id, groupTitle: question.title, groupStemMarkdown: question.stemMarkdown };
+  const leaf: QuestionSnapshot = { ...question, ...part, id: `${question.id}::${part.id}`, parts: undefined, sourceQuestionId: question.id, partId: part.id, groupTitle: question.title, groupStemMarkdown: question.stemMarkdown,groupMathEnabled:question.mathEnabled };
   return <section className="group-study-tools"><Field label="选择小题学习记录"><select value={part.id} onChange={event => { if (viewer.current?.confirmLeave() !== false) setPartId(event.target.value); }}>{question.parts!.map((item, index) => <option key={item.id} value={item.id}>小题 {index + 1} · {item.title}</option>)}</select></Field><QuestionViewer key={part.id} ref={viewer} question={leaf} contentSource="current" studyOnly presentation="page" onStudyChange={onStudyChange} /></section>;
 });
 

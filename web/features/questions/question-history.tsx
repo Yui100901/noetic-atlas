@@ -5,7 +5,7 @@ import { typeLabels } from '../../../shared/models/types';
 import type { LearningQuestionSnapshot } from '../../../shared/practice/context-learning';
 import { href, idPath, localDate, qs, useResource } from '../../shared/lib/api';
 import { pointText } from '../../shared/lib/scoring';
-import { ErrorNotice, Loading, Pagination } from '../../shared/ui/components';
+import { ErrorNotice, Loading, Pagination, Markdown } from '../../shared/ui/components';
 import { QuestionContent, SourceNoticeScope, questionNoticeContents } from '../../shared/ui/content-notices';
 import { BlankAnswerSummary } from './question-structure';
 import { vocabularyDirectionLabel } from '../papers/vocabulary-practice';
@@ -89,13 +89,13 @@ function QuestionHistoryRecord({ item, beforeOpenReview }: { item: QuestionHisto
     <summary><span className={`question-history-verdict verdict-${item.verdict}`}>{verdictLabels[item.verdict]}</span><span className="question-history-record-info"><time dateTime={item.submittedAt}>{localDate(item.submittedAt)}</time><span>{source}</span></span><span className="question-history-score">{score}</span><ChevronDown size={15} className={open ? 'rotated' : ''} /></summary>
     {open && <div className="question-history-record-body">
       {item.beforeReset && <p className="notice info">重置前记录，不计当前统计。</p>}
-      <SourceNoticeScope contents={questionNoticeContents(question)}>
+      <SourceNoticeScope mathEnabled={question.mathEnabled} contents={questionNoticeContents(question)}>
         <div className="question-history-snapshot-heading"><span className="section-label">本次提交时的题目快照</span><span className="badge">{typeLabels[question.type]}</span></div>
         <h3>{question.title}</h3>
-        {question.groupStemMarkdown && <section className="group-material"><span className="section-label">公共材料{question.groupTitle ? ` · ${question.groupTitle}` : ''}</span><QuestionContent>{question.groupStemMarkdown}</QuestionContent></section>}
+        {question.groupStemMarkdown && <section className="group-material"><span className="section-label">公共材料{question.groupTitle ? ` · ${question.groupTitle}` : ''}</span><QuestionContent mathEnabled={question.groupMathEnabled??question.mathEnabled}>{question.groupStemMarkdown}</QuestionContent></section>}
         <QuestionContent questionType={question.type}>{question.stemMarkdown}</QuestionContent>
         {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
-        <section className="question-history-user-answer"><h4>我的作答</h4>{question.type === 'fill_blank' && Array.isArray(item.answer.value) ? <ol>{values.map((value, index) => <li key={index}><span className="muted">{question.blanks?.[index]?.label || `第${index + 1}空`}：</span><span className="question-history-answer-text">{value || '（此空未填写）'}</span></li>)}</ol> : <div className="question-history-answer-text">{values.map(value => answerText(value, question)).join('、')}</div>}<p className="muted">判定：{verdictLabels[item.verdict]} · {score}{item.answer.mastery != null ? ` · 掌握自评 ${item.answer.mastery}/3` : ''}</p></section>
+        <section className="question-history-user-answer"><h4>我的作答</h4>{question.type === 'fill_blank' && Array.isArray(item.answer.value) ? <ol>{values.map((value, index) => <li key={index}><span className="muted">{question.blanks?.[index]?.label || `第${index + 1}空`}：</span><span className="question-history-answer-text">{value || '（此空未填写）'}</span></li>)}</ol> : <div className="question-history-answer-text"><Markdown mathEnabled={!!item.answer.mathEnabled}>{values.map(value => answerText(value, question)).join('、')}</Markdown></div>}<p className="muted">判定：{verdictLabels[item.verdict]} · {score}{item.answer.mastery != null ? ` · 掌握自评 ${item.answer.mastery}/3` : ''}</p></section>
         <section className="question-history-reference"><h4>当时的参考答案{question.correctAnswers.length ? ` · ${question.correctAnswers.map(value => answerText(value, question)).join('、')}` : ''}</h4><BlankAnswerSummary blanks={question.blanks} /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><h4>当时的解析</h4><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</section>
       </SourceNoticeScope>
       <div className="question-history-record-footer"><span className="muted">来源：{source} · 提交于 {localDate(item.submittedAt)}</span>{item.historyAvailable ? <a className="text-button" data-question-history-review="true" href={href('attempts', item.attemptId)} onClick={event => { if (beforeOpenReview?.() === false) event.preventDefault(); }}>打开整卷复盘 →</a> : <span className="muted">整卷历史已清理，本题完整作答仍保留。</span>}</div>

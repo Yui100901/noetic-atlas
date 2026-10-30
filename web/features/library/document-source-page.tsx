@@ -76,7 +76,9 @@ export function DocumentSourcePage({ id }: { id: string }) {
             onPage={changePage}
           />
         ) : (
-          <MarkdownRenderer sourceRange={location.range}>{source.bodyMarkdown}</MarkdownRenderer>
+          <MarkdownRenderer mathEnabled={source.mathEnabled} sourceRange={location.range}>
+            {source.bodyMarkdown}
+          </MarkdownRenderer>
         )}
       </article>
       <DocumentRelatedQuestions

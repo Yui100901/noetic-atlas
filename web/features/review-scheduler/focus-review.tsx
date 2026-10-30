@@ -5,6 +5,8 @@ import type { ReviewRating } from '../../../shared/models/adaptive-review';
 import { REVIEW_RATING_LABELS } from '../../../shared/models/adaptive-review';
 import { idPath, localDate, send, useResource } from '../../shared/lib/api';
 import { Empty, ErrorNotice, Field, Loading, PageHeader, useApp } from '../../shared/ui/components';
+import { MathScope } from '../../shared/math/math-context';
+import { MarkdownEditor } from '../../shared/ui/markdown-editor';
 import { QuestionContent } from '../../shared/ui/content-notices';
 import { QuestionStructuredBody } from '../questions/question-structure';
 import { usePracticeTimer } from '../practice/use-practice-timer';
@@ -12,7 +14,8 @@ import { useSaveBeforeNavigation } from '../../shared/lib/save-before-navigation
 import { isSubjectiveType } from '../../../shared/questions/question-utils';
 import './focus-review.css';
 
-const signature = (mode: string, value: string | string[]) => JSON.stringify({ mode, value });
+const signature = (mode: string, value: string | string[], mathEnabled = false) =>
+  JSON.stringify({ mode, value, mathEnabled });
 const emptyValue = (type: string) => (['fill_blank', 'multiple_choice'].includes(type) ? [] : '');
 export function FocusReviewPage({ id }: { id: string }) {
   const path = `/api/focus-sessions/${idPath(id)}`,
@@ -21,6 +24,7 @@ export function FocusReviewPage({ id }: { id: string }) {
   const view = resource.data,
     current = view?.current;
   const timer = usePracticeTimer(id, view, view?.status === 'in_progress', '/api/focus-sessions');
+  const [mathEnabled, setMathEnabled] = useState(false);
   const [mode, setMode] = useState<'mental' | 'written'>('mental'),
     [value, setValue] = useState<string | string[]>(''),
     [verdict, setVerdict] = useState(''),
@@ -28,8 +32,8 @@ export function FocusReviewPage({ id }: { id: string }) {
     [error, setError] = useState('');
   const latest = useRef(view);
   latest.current = view;
-  const local = useRef({ mode, value });
-  local.current = { mode, value };
+  const local = useRef({ mode, value, mathEnabled });
+  local.current = { mode, value, mathEnabled };
   const baseline = useRef(''),
     queue = useRef<Promise<unknown>>(Promise.resolve()),
     saving = useRef(false);
@@ -48,10 +52,12 @@ export function FocusReviewPage({ id }: { id: string }) {
           ? 'mental'
           : 'written';
     const value = item.answer?.value ?? emptyValue(item.question.type);
+    const mathEnabled = !!item.answer?.mathEnabled;
+    setMathEnabled(mathEnabled);
     setMode(mode);
     setValue(value);
     setVerdict('');
-    baseline.current = signature(mode, value);
+    baseline.current = signature(mode, value, mathEnabled);
     setError('');
   }, [current?.key]);
   const serialize = <T,>(run: () => Promise<T>) => {
@@ -61,7 +67,8 @@ export function FocusReviewPage({ id }: { id: string }) {
   };
   const dirty = () =>
     latest.current?.current?.phase === 'recall' &&
-    signature(local.current.mode, local.current.value) !== baseline.current;
+    signature(local.current.mode, local.current.value, local.current.mathEnabled) !==
+      baseline.current;
   const saveDraft = async () => {
     const key = latest.current?.current?.key,
       captured = { ...local.current };
@@ -78,9 +85,10 @@ export function FocusReviewPage({ id }: { id: string }) {
           action: 'save',
           mode: captured.mode,
           answer: captured.value,
+          mathEnabled: captured.mathEnabled,
         });
         accept(next);
-        baseline.current = signature(captured.mode, captured.value);
+        baseline.current = signature(captured.mode, captured.value, captured.mathEnabled);
         setError('');
         return true;
       } catch (reason) {
@@ -97,7 +105,7 @@ export function FocusReviewPage({ id }: { id: string }) {
       void saveDraft();
     }, 600);
     return () => clearTimeout(handle);
-  }, [mode, value, current?.key, busy]);
+  }, [mode, value, mathEnabled, current?.key, busy]);
   const leave = async () => {
     await queue.current;
     if (!(await saveDraft())) return false;
@@ -130,11 +138,21 @@ export function FocusReviewPage({ id }: { id: string }) {
           index: item.index,
           revision: session.revision,
           action,
-          ...(action === 'reveal' ? { mode: local.current.mode, answer: local.current.value } : {}),
+          ...(action === 'reveal'
+            ? {
+                mode: local.current.mode,
+                answer: local.current.value,
+                mathEnabled: local.current.mathEnabled,
+              }
+            : {}),
           ...(rating ? { rating, verdict: verdict || null } : {}),
         });
         accept(next);
-        baseline.current = signature(local.current.mode, local.current.value);
+        baseline.current = signature(
+          local.current.mode,
+          local.current.value,
+          local.current.mathEnabled,
+        );
         reload();
       });
     } catch (reason) {
@@ -298,262 +316,278 @@ export function FocusReviewPage({ id }: { id: string }) {
         )
         .join('\n\n');
   return (
-    <article className="focus-page" aria-label="专注复习会话">
-      <PageHeader
-        eyebrow="专注复习"
-        title={view.title}
-        description={`${view.rated} 项已评级 · ${view.skipped} 项已跳过 · 当前第 ${current.index + 1} / ${view.total} 项`}
-        actions={
-          <>
-            <span className="focus-clock" aria-label="本次复习用时">
-              <Clock3 size={16} />
-              {clock}
-            </span>
-            <button
-              type="button"
-              className="button"
-              disabled={busy}
-              onClick={() => {
-                void leave().then((ok) => {
-                  if (ok) window.location.hash = back;
-                });
-              }}
-            >
-              <Pause size={15} />
-              保存并退出
-            </button>
-            <button type="button" className="button" disabled={busy} onClick={() => void end()}>
-              结束本次复习
-            </button>
-          </>
-        }
-      />
-      <progress
-        className="focus-progress"
-        aria-label="本次复习进度"
-        max={view.total}
-        value={view.rated + view.skipped}
-      />
-      {(error || timer.error) && <ErrorNotice message={error || timer.error} />}
-      <section className="card focus-question">
-        <div className="section-label">
-          {current.direction === 'meaning_to_word' ? '逆向回忆' : '回忆阶段'}
-        </div>
-        <h2>{question.title}</h2>
-        {question.groupStemMarkdown && (
-          <section className="group-material">
-            <span className="section-label">共用材料 · {question.groupTitle}</span>
-            <QuestionContent>{question.groupStemMarkdown}</QuestionContent>
-          </section>
-        )}
-        <QuestionContent questionType={question.type}>{question.stemMarkdown}</QuestionContent>
-        {!revealed && (
-          <>
-            <div className="segmented focus-answer-mode" role="group" aria-label="回忆方式">
+    <MathScope enabled={!!question.mathEnabled}>
+      <article className="focus-page" aria-label="专注复习会话">
+        <PageHeader
+          eyebrow="专注复习"
+          title={view.title}
+          description={`${view.rated} 项已评级 · ${view.skipped} 项已跳过 · 当前第 ${current.index + 1} / ${view.total} 项`}
+          actions={
+            <>
+              <span className="focus-clock" aria-label="本次复习用时">
+                <Clock3 size={16} />
+                {clock}
+              </span>
               <button
                 type="button"
+                className="button"
                 disabled={busy}
-                className={mode === 'mental' ? 'selected' : ''}
-                onClick={() => setMode('mental')}
+                onClick={() => {
+                  void leave().then((ok) => {
+                    if (ok) window.location.hash = back;
+                  });
+                }}
               >
-                心答自评
+                <Pause size={15} />
+                保存并退出
               </button>
-              <button
-                type="button"
-                disabled={busy}
-                className={mode === 'written' ? 'selected' : ''}
-                onClick={() => setMode('written')}
-              >
-                填写回答
+              <button type="button" className="button" disabled={busy} onClick={() => void end()}>
+                结束本次复习
               </button>
-            </div>
-            {mode === 'mental' ? (
-              <p className="muted">
-                先在心里完整回答，再核对参考答案；本项只记录复习，不计作答正误。
-              </p>
-            ) : subjective ? (
-              <Field label="本次回答">
-                <textarea
+            </>
+          }
+        />
+        <progress
+          className="focus-progress"
+          aria-label="本次复习进度"
+          max={view.total}
+          value={view.rated + view.skipped}
+        />
+        {(error || timer.error) && <ErrorNotice message={error || timer.error} />}
+        <section className="card focus-question">
+          <div className="section-label">
+            {current.direction === 'meaning_to_word' ? '逆向回忆' : '回忆阶段'}
+          </div>
+          <h2>{question.title}</h2>
+          {question.groupStemMarkdown && (
+            <section className="group-material">
+              <span className="section-label">共用材料 · {question.groupTitle}</span>
+              <QuestionContent mathEnabled={question.groupMathEnabled ?? question.mathEnabled}>
+                {question.groupStemMarkdown}
+              </QuestionContent>
+            </section>
+          )}
+          <QuestionContent questionType={question.type}>{question.stemMarkdown}</QuestionContent>
+          {!revealed && (
+            <>
+              <div className="segmented focus-answer-mode" role="group" aria-label="回忆方式">
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={mode === 'mental' ? 'selected' : ''}
+                  onClick={() => setMode('mental')}
+                >
+                  心答自评
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={mode === 'written' ? 'selected' : ''}
+                  onClick={() => setMode('written')}
+                >
+                  填写回答
+                </button>
+              </div>
+              {mode === 'mental' ? (
+                <p className="muted">
+                  先在心里完整回答，再核对参考答案；本项只记录复习，不计作答正误。
+                </p>
+              ) : subjective ? (
+                <MarkdownEditor
+                  label="本次回答"
+                  heading="本次回答 Markdown"
+                  compact
                   rows={6}
+                  allowImages={false}
                   disabled={busy}
                   value={typeof value === 'string' ? value : ''}
-                  onChange={(event) => setValue(event.target.value)}
-                  placeholder="用自己的话说明关键结论和依据…"
+                  onChange={setValue}
+                  mathEnabled={mathEnabled}
+                  onMathEnabledChange={setMathEnabled}
                 />
-              </Field>
-            ) : question.type === 'fill_blank' ? (
-              <div className="focus-blanks">
-                {question.blanks?.map((blank, index) => (
-                  <Field key={blank.id} label={`${index + 1}. ${blank.label}`}>
-                    <input
-                      disabled={busy}
-                      autoComplete="off"
-                      value={Array.isArray(value) ? value[index] || '' : ''}
-                      onChange={(event) =>
-                        setValue(
-                          question.blanks!.map((_, i) =>
-                            i === index
-                              ? event.target.value
-                              : Array.isArray(value)
-                                ? value[i] || ''
-                                : '',
-                          ),
-                        )
-                      }
-                    />
-                  </Field>
-                ))}
-              </div>
-            ) : (
-              <fieldset className="focus-options" disabled={busy}>
-                <legend className="sr-only">本次回答</legend>
-                {options.map((option) => {
-                  const checked = Array.isArray(value)
-                    ? value.includes(option.key)
-                    : value === option.key;
-                  return (
-                    <label key={option.key} className={checked ? 'selected' : ''}>
+              ) : question.type === 'fill_blank' ? (
+                <div className="focus-blanks">
+                  {question.blanks?.map((blank, index) => (
+                    <Field key={blank.id} label={`${index + 1}. ${blank.label}`}>
                       <input
-                        type={question.type === 'multiple_choice' ? 'checkbox' : 'radio'}
-                        name="focus-answer"
-                        checked={checked}
-                        onChange={() =>
+                        disabled={busy}
+                        autoComplete="off"
+                        value={Array.isArray(value) ? value[index] || '' : ''}
+                        onChange={(event) =>
                           setValue(
-                            question.type === 'multiple_choice'
-                              ? checked
-                                ? (Array.isArray(value) ? value : []).filter(
-                                    (v) => v !== option.key,
-                                  )
-                                : [...(Array.isArray(value) ? value : []), option.key]
-                              : option.key,
+                            question.blanks!.map((_, i) =>
+                              i === index
+                                ? event.target.value
+                                : Array.isArray(value)
+                                  ? value[i] || ''
+                                  : '',
+                            ),
                           )
                         }
                       />
-                      <strong>{question.type === 'true_false' ? '' : option.key}</strong>
-                      <QuestionContent>{option.text}</QuestionContent>
-                    </label>
-                  );
-                })}
-              </fieldset>
-            )}
-            <div className="focus-actions">
-              <button
-                type="button"
-                className="button"
-                disabled={busy}
-                onClick={() => void act('skip')}
-              >
-                <SkipForward size={16} />
-                跳过本题
-              </button>
-              <button
-                type="button"
-                className="button primary"
-                disabled={busy || (mode === 'written' && !hasAnswer)}
-                onClick={() => void act('reveal')}
-              >
-                <BookOpen size={17} />
-                {mode === 'written' ? '提交回答并核对' : '我已回忆，核对答案'}
-                <kbd>空格</kbd>
-              </button>
-            </div>
-          </>
-        )}
-        {revealed && reference && (
-          <>
-            {current.mode === 'written' && (
-              <details className="focus-submitted-answer" open>
-                <summary>你的回答</summary>
-                <QuestionContent>{answerText}</QuestionContent>
-              </details>
-            )}
-            <section className="focus-reference">
-              <h3>参考答案与解析</h3>
-              {current.mode === 'written' && (
-                <div className="notice info">
-                  {current.correct === undefined
-                    ? '回答已提交，主观题保持未判；可在下方核对判定。'
-                    : current.correct
-                      ? '本次回答正确，建议选择良好；回忆费力也可选困难。'
-                      : '本次回答错误，请选择重学。'}
+                    </Field>
+                  ))}
                 </div>
+              ) : (
+                <fieldset className="focus-options" disabled={busy}>
+                  <legend className="sr-only">本次回答</legend>
+                  {options.map((option) => {
+                    const checked = Array.isArray(value)
+                      ? value.includes(option.key)
+                      : value === option.key;
+                    return (
+                      <label key={option.key} className={checked ? 'selected' : ''}>
+                        <input
+                          type={question.type === 'multiple_choice' ? 'checkbox' : 'radio'}
+                          name="focus-answer"
+                          checked={checked}
+                          onChange={() =>
+                            setValue(
+                              question.type === 'multiple_choice'
+                                ? checked
+                                  ? (Array.isArray(value) ? value : []).filter(
+                                      (v) => v !== option.key,
+                                    )
+                                  : [...(Array.isArray(value) ? value : []), option.key]
+                                : option.key,
+                            )
+                          }
+                        />
+                        <strong>{question.type === 'true_false' ? '' : option.key}</strong>
+                        <QuestionContent>{option.text}</QuestionContent>
+                      </label>
+                    );
+                  })}
+                </fieldset>
               )}
-              <QuestionStructuredBody question={reference} showAnswers />
-              {reference.correctAnswers.length > 0 && (
-                <p>
-                  参考答案：
-                  {reference.correctAnswers
-                    .map((v) => (v === 'true' ? '正确' : v === 'false' ? '错误' : v))
-                    .join('、')}
-                </p>
-              )}
-              <QuestionContent>{reference.answerMarkdown}</QuestionContent>
-              {reference.explanationMarkdown && (
-                <QuestionContent>{reference.explanationMarkdown}</QuestionContent>
-              )}
-              {current.mode === 'written' && subjective && (
-                <Field
-                  label="本次主观回答判定"
-                  hint="判定与回忆评级分别记录；保留未判也可以继续评级。"
+              <div className="focus-actions">
+                <button
+                  type="button"
+                  className="button"
+                  disabled={busy}
+                  onClick={() => void act('skip')}
                 >
-                  <select
-                    value={verdict}
-                    disabled={busy}
-                    onChange={(event) => setVerdict(event.target.value)}
-                  >
-                    <option value="">未判定</option>
-                    <option value="correct">正确</option>
-                    <option value="partial">部分正确</option>
-                    <option value="incorrect">错误</option>
-                  </select>
-                </Field>
-              )}
-            </section>
-            <section className="focus-rating" aria-label="本次回忆评级">
-              <p>根据核对结果，记录这次回忆的质量。</p>
-              <div>
-                {(['again', 'hard', 'good', 'easy'] as const).map((rating, index) => (
-                  <button
-                    className={`button focus-rate-${rating}`}
-                    type="button"
-                    key={rating}
-                    disabled={busy || (mustAgain && rating !== 'again')}
-                    onClick={() => void act('rate', rating)}
-                  >
-                    <strong>{REVIEW_RATING_LABELS[rating]}</strong>
-                    <span>
-                      {
-                        ['想不起或有遗漏', '答对但回忆费力', '能正常独立回答', '完整且几乎不费力'][
-                          index
-                        ]
-                      }
-                    </span>
-                    <kbd>{index + 1}</kbd>
-                  </button>
-                ))}
+                  <SkipForward size={16} />
+                  跳过本题
+                </button>
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={busy || (mode === 'written' && !hasAnswer)}
+                  onClick={() => void act('reveal')}
+                >
+                  <BookOpen size={17} />
+                  {mode === 'written' ? '提交回答并核对' : '我已回忆，核对答案'}
+                  <kbd>空格</kbd>
+                </button>
               </div>
-            </section>
-            <div className="focus-actions">
-              <button
-                type="button"
-                className="button"
-                disabled={busy}
-                onClick={() => void act('skip')}
-              >
-                <SkipForward size={16} />
-                暂不评级，跳过
-              </button>
-            </div>
-          </>
-        )}
-      </section>
-      <p className="focus-save-status" role="status">
-        {busy
-          ? '正在保存…'
-          : dirty()
-            ? '正在暂存输入…'
-            : '进度已保存；退出后计时暂停，可从原题集继续。'}
-      </p>
-    </article>
+            </>
+          )}
+          {revealed && reference && (
+            <>
+              {current.mode === 'written' && (
+                <details className="focus-submitted-answer" open>
+                  <summary>你的回答</summary>
+                  <QuestionContent
+                    mathEnabled={
+                      subjective ? !!current.answer?.mathEnabled : !!question.mathEnabled
+                    }
+                  >
+                    {answerText}
+                  </QuestionContent>
+                </details>
+              )}
+              <section className="focus-reference">
+                <h3>参考答案与解析</h3>
+                {current.mode === 'written' && (
+                  <div className="notice info">
+                    {current.correct === undefined
+                      ? '回答已提交，主观题保持未判；可在下方核对判定。'
+                      : current.correct
+                        ? '本次回答正确，建议选择良好；回忆费力也可选困难。'
+                        : '本次回答错误，请选择重学。'}
+                  </div>
+                )}
+                <QuestionStructuredBody question={reference} showAnswers />
+                {reference.correctAnswers.length > 0 && (
+                  <p>
+                    参考答案：
+                    {reference.correctAnswers
+                      .map((v) => (v === 'true' ? '正确' : v === 'false' ? '错误' : v))
+                      .join('、')}
+                  </p>
+                )}
+                <QuestionContent>{reference.answerMarkdown}</QuestionContent>
+                {reference.explanationMarkdown && (
+                  <QuestionContent>{reference.explanationMarkdown}</QuestionContent>
+                )}
+                {current.mode === 'written' && subjective && (
+                  <Field
+                    label="本次主观回答判定"
+                    hint="判定与回忆评级分别记录；保留未判也可以继续评级。"
+                  >
+                    <select
+                      value={verdict}
+                      disabled={busy}
+                      onChange={(event) => setVerdict(event.target.value)}
+                    >
+                      <option value="">未判定</option>
+                      <option value="correct">正确</option>
+                      <option value="partial">部分正确</option>
+                      <option value="incorrect">错误</option>
+                    </select>
+                  </Field>
+                )}
+              </section>
+              <section className="focus-rating" aria-label="本次回忆评级">
+                <p>根据核对结果，记录这次回忆的质量。</p>
+                <div>
+                  {(['again', 'hard', 'good', 'easy'] as const).map((rating, index) => (
+                    <button
+                      className={`button focus-rate-${rating}`}
+                      type="button"
+                      key={rating}
+                      disabled={busy || (mustAgain && rating !== 'again')}
+                      onClick={() => void act('rate', rating)}
+                    >
+                      <strong>{REVIEW_RATING_LABELS[rating]}</strong>
+                      <span>
+                        {
+                          [
+                            '想不起或有遗漏',
+                            '答对但回忆费力',
+                            '能正常独立回答',
+                            '完整且几乎不费力',
+                          ][index]
+                        }
+                      </span>
+                      <kbd>{index + 1}</kbd>
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <div className="focus-actions">
+                <button
+                  type="button"
+                  className="button"
+                  disabled={busy}
+                  onClick={() => void act('skip')}
+                >
+                  <SkipForward size={16} />
+                  暂不评级，跳过
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+        <p className="focus-save-status" role="status">
+          {busy
+            ? '正在保存…'
+            : dirty()
+              ? '正在暂存输入…'
+              : '进度已保存；退出后计时暂停，可从原题集继续。'}
+        </p>
+      </article>
+    </MathScope>
   );
 }

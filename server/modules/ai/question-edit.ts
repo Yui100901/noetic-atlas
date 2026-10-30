@@ -15,7 +15,7 @@ import {aiQuestionEditInputSchema,aiQuestionEditResultSchema} from './question-e
 type Input=z.infer<typeof aiQuestionEditInputSchema>;
 interface EditTaxonomy {domains:Array<Pick<Domain,'id'|'name'>>;categories:Array<Pick<Category,'id'|'name'|'domainId'|'parentId'>>;tags:Array<Pick<Tag,'id'|'name'|'domainId'>>}
 const stamp=(question:Question)=>question.updatedAt||question.createdAt||'';
-const modelFields=['title','type','stemMarkdown','answerMarkdown','explanationMarkdown','options','correctAnswers','blanks','parts','categoryIds','tagIds','vocabulary','concept'] as const;
+const modelFields=['mathEnabled','title','type','stemMarkdown','answerMarkdown','explanationMarkdown','options','correctAnswers','blanks','parts','categoryIds','tagIds','vocabulary','concept'] as const;
 export const questionEditModelQuestion=(question:QuestionInput)=>Object.fromEntries(modelFields.filter(key=>question[key]!==undefined).map(key=>[key,question[key]]));
 const unchanged=(store:Store,input:Input)=>{const saved=store.get<Question>('questions',input.questionId);if(!saved||stamp(saved)!==input.expectedUpdatedAt)return fail(409,'AI_QUESTION_VERSION_CONFLICT','题目在分析前后已被修改或删除，请刷新原题后重新分析');return saved;};
 

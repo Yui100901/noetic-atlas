@@ -1,6 +1,7 @@
 import type {Question} from '../../../shared/models/types';
 import {questionStemMarkdown} from '../../../shared/questions/blank-markers';
 import {idPath} from '../../shared/lib/api';
+import {MathScope} from '../../shared/math/math-context';
 import {Markdown} from '../../shared/ui/components';
 
 const text=(value:unknown)=>typeof value==='string'?value:'';
@@ -20,8 +21,8 @@ function SourceBody({value}:{value:any}){
 /** Shared, defensive evidence view. Broken structures remain inspectable. */
 export function QualitySource({question,partId,actions=true}:{question:Pick<Question,'id'>&Partial<Question>;partId?:string;actions?:boolean}){
   const parts=list(question.parts),part=partId?parts.find(p=>p&&p.id===partId):undefined;
-  return <div className="quality-source">
-    {partId?<><h4>公共材料</h4><Markdown>{text(question.stemMarkdown)}</Markdown>{part?<section><h4>{text(part.title)||partId}</h4><SourceBody value={part}/></section>:<p className="notice">指定小题已不存在，反馈和历史证据仍保留。</p>}</>:<><SourceBody value={question}/>{parts.map((value,index)=><section key={value?.id||index}><h4>小题 {index+1} · {text(value?.title)}</h4><SourceBody value={value}/></section>)}</>}
+  return <MathScope enabled={!!question.mathEnabled}><div className="quality-source">
+    {partId?<><h4>公共材料</h4><Markdown>{text(question.stemMarkdown)}</Markdown>{part?<section><h4>{text(part.title)||partId}</h4><MathScope enabled={part.mathEnabled??!!question.mathEnabled}><SourceBody value={part}/></MathScope></section>:<p className="notice">指定小题已不存在，反馈和历史证据仍保留。</p>}</>:<><SourceBody value={question}/>{parts.map((value,index)=><section key={value?.id||index}><h4>小题 {index+1} · {text(value?.title)}</h4><MathScope enabled={value?.mathEnabled??!!question.mathEnabled}><SourceBody value={value}/></MathScope></section>)}</>}
     {actions&&<div className="quality-actions"><a className="button" href={`#/questions/${idPath(question.id)}`} target="_blank" rel="noopener noreferrer">打开原题（新窗口）</a><a className="button" href={`#/questions/${idPath(question.id)}/edit`} target="_blank" rel="noopener noreferrer">编辑原题（新窗口）</a></div>}
-  </div>;
+  </div></MathScope>;
 }

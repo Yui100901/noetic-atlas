@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, rm } from 'node:fs/promises';
+import { copyFile, cp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
 // Include the installed dependency licenses in both local distributions.
@@ -6,6 +6,10 @@ for (const target of ['public/licenses', 'mobile/assets/licenses']) {
   await mkdir(resolve(root, target), { recursive: true });
   await copyFile(resolve(root, 'node_modules/pdfjs-dist/LICENSE'), resolve(root, target, 'PDFjs-Apache-2.0.txt'));
   await copyFile(resolve(root, 'node_modules/ts-fsrs/LICENSE'), resolve(root, target, 'ts-fsrs-MIT.txt'));
+  await copyFile(resolve(root, 'node_modules/katex/LICENSE'), resolve(root, target, 'KaTeX-MIT.txt'));
+  await copyFile(resolve(root, 'node_modules/html-to-image/LICENSE'), resolve(root, target, 'html-to-image-MIT.txt'));
+  const mhchem=await readFile(resolve(root,'node_modules/katex/contrib/mhchem/mhchem.js'),'utf8'),start=mhchem.indexOf('/********');
+  await writeFile(resolve(root,target,'mhchem-NOTICE.txt'),mhchem.slice(start,mhchem.indexOf('*/',start)+2)+'\nFull Apache 2.0 text: PDFjs-Apache-2.0.txt\n');
 }
 // Text extraction may need CMaps and standard font metrics for older books.
 // Ship them locally along with their own notices; do not fetch a public CDN.

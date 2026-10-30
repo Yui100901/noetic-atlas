@@ -1,3 +1,4 @@
+import {AI_MATH_INSTRUCTIONS} from '../../../shared/ai/math.js';
 import { z } from 'zod';
 import type { AiSettings } from '../../../shared/ai/ai.js';
 import { aiTransportSupportsStreaming, sendAiRequest, type AiTransportChunkInfo } from '../../../shared/ai/ai-transport.js';
@@ -120,7 +121,7 @@ export async function requestAiJson<T>(settings: PrivateAiSettings, task: string
   const collector = streaming ? streamCollector(context!,settings.maxTokens) : undefined;
   context?.emit({ type: 'status', stage: 'model_start', message: '正在请求模型生成结果' });
   if (context && !streaming) context.emit({ type: 'status', stage: 'buffered_transport', message: '当前原生网络通道暂不支持流式接收，将按实际工作阶段显示进度' });
-  const requestBody = JSON.stringify({ model: settings.model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content }], response_format: { type: 'json_object' }, max_tokens: settings.maxTokens, stream: streaming });
+  const requestBody = JSON.stringify({ model: settings.model, messages: [{ role: 'system', content: systemPrompt+AI_MATH_INSTRUCTIONS }, { role: 'user', content }], response_format: { type: 'json_object' }, max_tokens: settings.maxTokens, stream: streaming });
   const safeModel = settings.key ? settings.model.replaceAll(settings.key, '[redacted]') : settings.model;
   context?.telemetry?.({ type: 'provider_start', model: safeModel, inputBytes: encoder.encode(requestBody).length });
   let succeeded = false, failureCode = 'AI_PROCESSING_FAILED';

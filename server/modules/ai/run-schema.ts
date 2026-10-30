@@ -75,6 +75,7 @@ export const completedAiResultSchemas = {
 
 export const completedAiRunMetadataSchema = z
   .object({
+    mathEnabled: z.boolean().optional(),
     id,
     kind: z.enum(AI_RUN_KINDS.filter((kind) => kind !== 'connection_test')),
     status: z.literal('completed'),

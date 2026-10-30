@@ -11,7 +11,7 @@ import './ai-question-editor.css';
 
 type EditRun=Extract<AiRun<AiQuestionEditResult>,{status:'completed'}>;
 interface Applied {key:string;runId:string;suggestion:AiQuestionEditSuggestion;receipt:AiQuestionEditReceipt}
-const labels:Record<keyof AiQuestionEditChanges,string>={title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签'};
+const labels:Record<keyof AiQuestionEditChanges,string>={mathEnabled:'公式排版',title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签'};
 const confidence={high:'较高把握',medium:'建议核对',low:'需重点核对'};
 
 /** Suggestions operate on the current local form, never a server mutation. */

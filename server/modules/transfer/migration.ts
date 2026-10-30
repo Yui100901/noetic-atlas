@@ -51,7 +51,7 @@ const attemptSchema = z.object({
   focusSessionId: id.optional(),
   practiceMode: z.enum(['practice','exam']).optional(), durationMinutes: z.number().int().min(1).max(1440).nullable().optional(), deadlineAt: datetime.nullable().optional(), elapsedSeconds: z.number().int().nonnegative().optional(), autoSubmitted: z.boolean().optional(), practiceTiming: practiceTimingStateSchema.optional(),
 });
-const studySchema = z.object({ questionId: id, favorite: z.boolean(), mastery: z.number().int().min(0).max(3).nullable(), notes: z.string().max(500000), nextReviewAt: datetime.nullable(), lastReviewedAt: datetime.nullable(), wrongCount: z.number().int().nonnegative() });
+const studySchema = z.object({ notesMathEnabled: z.boolean().optional(), questionId: id, favorite: z.boolean(), mastery: z.number().int().min(0).max(3).nullable(), notes: z.string().max(500000), nextReviewAt: datetime.nullable(), lastReviewedAt: datetime.nullable(), wrongCount: z.number().int().nonnegative() });
 const partStudySchema = studySchema.extend({ partId: id, favorite: z.literal(false).default(false) });
 const reviewSchema = z.object({ id: id.optional(), questionId: id, partId: id.optional(), mastery: z.number().int().min(0).max(3), reviewedAt: datetime, source: z.string().max(100).default('manual'), attemptId: id.optional(), rating: ratingSchema.optional(), schedulerEventId: z.string().min(1).max(1600).optional() });
 const envelopeSchema = z.object({

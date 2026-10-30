@@ -7,6 +7,7 @@ export interface FocusQuestion extends Question {
   groupId?: string;
   groupTitle?: string;
   groupStemMarkdown?: string;
+  groupMathEnabled?: boolean;
   partIndex?: number;
 }
 export interface FocusItem {

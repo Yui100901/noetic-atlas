@@ -41,7 +41,7 @@ export function validatePracticeTiming(attempt: TimedAttempt) {
  * session. Only a new maximum contributes a delta; timestamps do not add time.
  * A missing final unload event can lose the last checkpoint interval, but can
  * never charge the hours/days spent outside the practice page. */
-export function updatePracticeTiming<T extends TimedAttempt & Pick<Attempt, 'id' | 'updatedAt' | 'startedAt'>>(store: Store, attempt: T, input: PracticeTimingInput): T {
+export function updatePracticeTiming<T extends TimedAttempt & Pick<Attempt, 'id' | 'updatedAt' | 'startedAt'>>(store: Store, attempt: T, input: PracticeTimingInput, table: 'attempts' | 'focus_sessions' = 'attempts'): T {
   if (attempt.practiceMode === 'exam') fail(409, 'EXAM_TIMER_CONTINUES', '考试使用固定倒计时，不能暂停或更改计时');
   if (attempt.status === 'submitted') return attempt;
   const previous = attempt.practiceTiming || initialPracticeTiming(attempt);
@@ -60,6 +60,6 @@ export function updatePracticeTiming<T extends TimedAttempt & Pick<Attempt, 'id'
   }
   attempt.practiceTiming = next; attempt.elapsedSeconds = Math.floor(next.elapsedMilliseconds / 1000);
   attempt.updatedAt = nextStamp(attempt.updatedAt || attempt.startedAt);
-  store.put('attempts', attempt.id, attempt);
+  store.put(table, attempt.id, attempt);
   return attempt;
 }

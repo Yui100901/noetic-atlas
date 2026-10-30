@@ -1,3 +1,4 @@
+import { focusSessionSignatures } from '../focus-review/retention.js';
 import { readOnlyOperation } from '../../http/operation.js';
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
@@ -24,7 +25,7 @@ export const configurationImportInputSchema = configurationPreviewInputSchema.ex
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/), confirmed: z.literal(true), confirmedRetention: z.literal(true).optional(),
 }).strict();
 export const configurationExportQuerySchema = z.object({ includeAi: z.enum(['true', 'false']).default('true') }).strict();
-export const configurationRetentionSchema = z.object({ drafts: z.number().int().nonnegative(), history: z.number().int().nonnegative(), authoring: z.number().int().nonnegative(), total: z.number().int().nonnegative(),questionHistory:z.number().int().nonnegative().optional(),documentDrafts:z.number().int().nonnegative().optional() }).strict();
+export const configurationRetentionSchema = z.object({focusDrafts:z.number().int().nonnegative().optional(),focusHistory:z.number().int().nonnegative().optional(), drafts: z.number().int().nonnegative(), history: z.number().int().nonnegative(), authoring: z.number().int().nonnegative(), total: z.number().int().nonnegative(),questionHistory:z.number().int().nonnegative().optional(),documentDrafts:z.number().int().nonnegative().optional() }).strict();
 const changeSchema = z.object({ key: z.string(), before: z.unknown(), after: z.unknown() }).strict();
 export const configurationPreviewSchema = z.object({
   fingerprint: z.string(), systemChanges: z.array(changeSchema), aiChanges: z.array(changeSchema), retention: configurationRetentionSchema,
@@ -90,6 +91,7 @@ export function previewConfiguration(store: Store, raw: unknown): ConfigurationP
     data, system: getSettings(store), ai: currentAi,
     attempts: store.all('attempts').sort((a, b) => a.id.localeCompare(b.id)),
     paperDrafts: store.all('paper_drafts').sort((a, b) => a.id.localeCompare(b.id)),
+    focusSessions:focusSessionSignatures(store),
     documentDrafts: store.all('document_drafts').sort((a, b) => a.id.localeCompare(b.id)),
     questionHistory:store.all('question_history').sort((a,b)=>a.id.localeCompare(b.id)),
   })).digest('hex');

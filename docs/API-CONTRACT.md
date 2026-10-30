@@ -303,3 +303,15 @@ FSRS完整备份另含`reviewCards、reviewEvents`及`reviewScheduling`配置。
 导入和读取旧记录时，也会清理已停用的专用复习元数据；题目、个人专项属性、笔记、成绩及作答时间保留。JSON和SQLite下载副本也采用相同清理规则，不改写正文中的普通词语或任意用户对象。
 
 分享用于独立内容交付，完整迁移用于恢复工作空间。两者都由服务验证关系、图片字节和引用完整性；分享不携带个人笔记、作答和 AI 密钥。Android 的文件分享面板由用户选择应用及接收者，系统不自动向联系人发送文件。
+
+
+## 专注复习会话
+
+- `POST /api/focus-sessions`：从题集到期／全部题目或全局实时到期队列创建会话；默认20项，1～200项。支持领域、分类、方向、到期类型筛选。
+- `GET /api/focus-sessions?paperId=...&status=in_progress&page=1&pageSize=10`：分页返回缓存摘要，不载入完整题干快照；不传paperId只查询全局会话。
+- `GET /api/focus-sessions/:id`：当前任务与总结。回忆阶段仅返回安全题面；核对后才返回参考答案、解析和实际回答判定。学习笔记不进入题面。
+- `PUT /api/focus-sessions/:id/current`：以index和revision提交save／reveal／rate／skip。多页面版本冲突返回409；重复核对或相同评级不重复计数。实际书面提交复用作答与统计，显式评级单独写入一个FSRS事件；心答不创建作答。
+- `POST /api/focus-sessions/:id/timing`：复用普通练习的resume／checkpoint／pause累计计时和sessionId校验；不会按离开时间补计。计时更新不增加内容revision。
+- `POST /api/focus-sessions/:id/finish`：提交revision结束会话，暂停计时并保留总结；未评级任务保留原排期。
+
+原题内容指纹变化会阻止核对和评级，允许跳过。切换复习算法后应新开会话。JSON迁移包含focusSessions并校验快照、进度和计时，SQLite与Android完整恢复包含同一数据表。学习进度重置会结束进行中的会话；会话清理不删除独立作答统计与复习事件。

@@ -41,6 +41,7 @@ import { registerQuestionHistoryRoutes } from './modules/questions/history.js';
 import { registerDailyPushRoutes } from './modules/daily-push/routes.js';
 import { registerAnalyticsRoutes } from './modules/analytics/routes.js';
 import { registerSearchRoutes } from './modules/search/routes.js';
+import { registerFocusRoutes } from './modules/focus-review/routes.js';
 import { registerReviewSchedulerRoutes } from './modules/review-scheduler/routes.js';
 import { checkDailyPush } from './modules/daily-push/service.js';
 import { createDailyPushScheduler, dailyPushRefreshesAfter, type DailyPushSchedulerClock } from './scheduling/daily-push.js';
@@ -114,6 +115,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerAnalyticsRoutes(app, store);
   registerSearchRoutes(app, store);
   registerReviewSchedulerRoutes(app, store);
+  registerFocusRoutes(app, store);
   if (scheduler) {
     app.addHook('onReady', async () => { scheduler.refresh(); });
     app.addHook('onResponse', async request => { if (dailyPushRefreshesAfter(request.method, request.url.split('?')[0]!)) scheduler.refresh(); });

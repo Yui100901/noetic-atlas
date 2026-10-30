@@ -4,6 +4,10 @@ import { z } from 'zod';
 import type { StudyState } from '../../../shared/models/types.js';
 import type { Store } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
+import type { FocusSession } from '../../../shared/models/focus-review.js';
+import { focusSessionSignatures } from '../focus-review/retention.js';
+import { saveFocus } from '../focus-review/service.js';
+import { freezePracticeTiming } from '../practice/practice-timing.js';
 import type { LearningResult } from '../practice/learning-results.js';
 
 export const learningResetInputSchema = z.object({ confirmed: z.literal(true), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
@@ -20,9 +24,10 @@ function plan(store: Store) {
   const questionHistory=db.all(db.query.selectFrom('question_history').select(['id','data']).orderBy('id'));
   const cards = db.all(db.query.selectFrom('review_cards').select(['id', 'data']).orderBy('id'));
   const events = db.all(db.query.selectFrom('review_events').select(['id', 'data']).orderBy('id'));
-  const fingerprint = createHash('sha256').update(JSON.stringify({ states: states.sort((a, b) => a.questionId.localeCompare(b.questionId)), partStates: partStates.sort((a, b) => JSON.stringify([a.questionId, a.partId]).localeCompare(JSON.stringify([b.questionId, b.partId]))), reviews, results, attempts, questionHistory, cards, events })).digest('hex');
+  const focusSessions=focusSessionSignatures(store);
+  const fingerprint = createHash('sha256').update(JSON.stringify({ focusSessions:focusSessions.map(s=>({id:s.id,revision:s.revision,status:s.status,updatedAt:s.updatedAt})), states: states.sort((a, b) => a.questionId.localeCompare(b.questionId)), partStates: partStates.sort((a, b) => JSON.stringify([a.questionId, a.partId]).localeCompare(JSON.stringify([b.questionId, b.partId]))), reviews, results, attempts, questionHistory, cards, events })).digest('hex');
   const preview = { fingerprint, counts: { states: states.length, partStates: partStates.length, reviews: reviews.length, results: results.filter(row => !row.reset).length, reviewCards: cards.length, reviewEvents: events.length }, retained: { attempts: attempts.filter(row => row.status === 'submitted').length, drafts: attempts.filter(row => row.status === 'in_progress').length } };
-  return { states, partStates, attempts, questionHistory, preview };
+  return { states, partStates, attempts, questionHistory, preview, focusSessions };
 }
 
 export function learningResetPreview(store: Store) { return plan(store).preview; }
@@ -33,6 +38,12 @@ export function resetLearningProgress(store: Store, fingerprint: string) {
   return store.transaction(() => {
     const current = plan(store);
     if (current.preview.fingerprint !== fingerprint) fail(409, 'LEARNING_RESET_PREVIEW_STALE', '预览后学习记录已变化，请重新预览后确认');
+    for(const row of current.focusSessions){
+      if(row.status!=='in_progress')continue;
+      const session=store.require<FocusSession>('focus_sessions',row.id);
+      session.status='submitted';session.submittedAt=new Date().toISOString();session.updatedAt=session.submittedAt;
+      session.reset=true;session.revision++;freezePracticeTiming(session);saveFocus(store,session);
+    }
     for (const state of [...current.states, ...current.partStates]) store.putStudy({ ...state, mastery: null, lastReviewedAt: null, nextReviewAt: null, wrongCount: 0 });
     store.database.run(store.database.query.deleteFrom('reviews'));
     store.database.run(store.database.query.deleteFrom('review_cards'));

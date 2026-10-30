@@ -6,6 +6,7 @@ import { localDate, qs, useResource } from '../../shared/lib/api';
 import { Empty, ErrorNotice, Loading, PageHeader, Pagination, QuestionMeta, useApp } from '../../shared/ui/components';
 import { LearningOrigins, snapshotDescription } from './learning-origins';
 import './global-learning.css';
+import { FocusLauncher, FocusHistory } from '../review-scheduler/focus-launcher';
 import { AdaptiveReviewQueue } from '../review-scheduler/review-queue';
 import { DEFAULT_REVIEW_SCHEDULING } from '../../../shared/models/settings';
 import {learningListHref,learningReaderHref,readLearningPagination} from './learning-reader-navigation';
@@ -30,10 +31,11 @@ export function GlobalLearningPage({ kind }: { kind: GlobalLearningKind }) {
   useEffect(()=>{if(!questions.data||questions.loading)return;const maximum=Math.max(1,Math.ceil(questions.data.total/pageSize));if(page>maximum)setPage(maximum);},[questions.data,questions.loading,page,pageSize]);
   return <section className="global-learning-page">
     <a className="back-link" href="#/papers"><ArrowLeft size={15} />返回题集与练习</a>
-    <PageHeader eyebrow="SMART QUESTION SET" title={view.title} description={view.description} actions={<button type="button" className="button" onClick={refresh}>刷新题集</button>} />
+    <PageHeader eyebrow="SMART QUESTION SET" title={view.title} description={view.description} actions={<>{kind==='due'&&!adaptive&&<FocusLauncher/>}<button type="button" className="button" onClick={refresh}>刷新题集</button></>} />
     <nav className="global-learning-tabs" aria-label="系统汇总题集">{views.map(({ kind: value, title, Icon }) => <a key={value} href={`#/learning/${value}`} className={value === kind ? 'selected' : ''} aria-current={value === kind ? 'page' : undefined}><Icon size={17} /><span>{title}</span><strong>{!summary.loading && !summary.error && summary.data ? summary.data.counts[value].toLocaleString() : '—'}</strong></a>)}</nav>
     {summary.error && <ErrorNotice message={`汇总题数刷新失败：${summary.error}`} retry={summary.refresh} />}
     {adaptive && <AdaptiveReviewQueue />}
+    {kind==='due'&&<FocusHistory/>}
     {!adaptive && <>
     <p className="global-learning-rule">{kind === 'wrong' ? '每题阅读最近一次错误的题目快照，保留当时的共用材料；清理整卷历史、修改或删除原题不影响错误内容与来源摘要。' : '每题展示当前原题内容。收藏共享原题；组合小题分别记录笔记、掌握程度和复习日期。关联来源不代表收藏或复习发生的位置。'} 这是动态汇总视图，同一原题的同一小题只列一次，来源可展开查看。</p>
     {questions.loading ? <Loading text={`正在读取${view.title}…`} /> : questions.error ? <ErrorNotice message={questions.error} retry={questions.refresh} /> : questions.data?.items.length ? <div className="global-learning-questions">{questions.data.items.map((item, index) => <article className="card global-learning-question" key={item.key}>

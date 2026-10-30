@@ -1,0 +1,311 @@
+.focus-page {
+  display: grid;
+  gap: 20px;
+  max-width: 1060px;
+  margin-inline: auto;
+  min-width: 0;
+}
+.focus-page > .page-header {
+  margin: 0;
+}
+.focus-page .header-actions {
+  margin-top: 0;
+}
+.focus-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 14px;
+}
+.focus-progress {
+  width: 100%;
+  height: 7px;
+  accent-color: var(--green);
+  border: 0;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.focus-question {
+  min-width: 0;
+}
+.focus-question > h2 {
+  font-size: clamp(20px, 3vw, 27px);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  margin: 12px 0 24px;
+}
+.focus-answer-mode {
+  margin: 22px 0 18px;
+  width: fit-content;
+}
+.focus-blanks,
+.focus-options {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0;
+}
+.focus-options {
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.focus-options > label {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+.focus-options > label.selected {
+  background: var(--green-soft);
+  border-color: var(--green);
+}
+.focus-options input {
+  flex: none;
+  margin-top: 5px;
+}
+.focus-options .markdown {
+  min-width: 0;
+}
+.focus-options .markdown > p {
+  margin: 0;
+}
+.focus-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 20px;
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.focus-actions .button {
+  white-space: normal;
+}
+.focus-actions kbd {
+  opacity: 0.65;
+  font-size: 10px;
+  margin-left: 6px;
+}
+.focus-reference {
+  display: grid;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 22px;
+  padding-top: 22px;
+}
+.focus-reference > h3 {
+  font-size: 18px;
+}
+.focus-reference .markdown {
+  margin: 0;
+}
+.focus-rating {
+  padding-top: 24px;
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.focus-rating > p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.focus-rating > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.focus-rating .button {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  min-width: 0;
+  white-space: normal;
+}
+.focus-rating .button span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.focus-rating kbd {
+  font-size: 10px;
+  opacity: 0.65;
+}
+.focus-rate-again {
+  color: var(--theme-danger, #a24d44);
+}
+.focus-rate-hard {
+  color: var(--theme-warning, #9b742d);
+}
+.focus-save-status {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.focus-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.focus-summary dl > div {
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--theme-inset, #f6f8f3);
+}
+.focus-summary dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.focus-summary dd {
+  font-size: 24px;
+  margin: 6px 0 0;
+}
+.focus-summary-ratings {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.focus-summary-ratings > span {
+  font-size: 13px;
+}
+.focus-results {
+  display: grid;
+  gap: 16px;
+}
+.focus-results > div {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  min-width: 0;
+}
+.focus-results strong {
+  overflow-wrap: anywhere;
+}
+.focus-results span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.focus-results .button {
+  margin-left: auto;
+}
+.focus-resume {
+  display: grid;
+  gap: 10px;
+}
+.focus-resume h3,
+.focus-history > summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 15px;
+}
+.focus-resume-item {
+  justify-content: space-between;
+  white-space: normal;
+  text-align: left;
+}
+.focus-resume-item > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.focus-history {
+  margin-block: 18px;
+}
+.focus-history > summary {
+  cursor: pointer;
+}
+.focus-history-body {
+  padding-top: 16px;
+}
+.focus-history-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding: 16px 0;
+  min-width: 0;
+  color: inherit;
+}
+.focus-history-row > div {
+  min-width: 0;
+}
+.focus-history-row strong {
+  font-size: 14px;
+}
+.focus-history-row p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .focus-page {
+    gap: 16px;
+  }
+  .focus-rating > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .focus-summary dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .focus-page .header-actions {
+    justify-content: flex-start;
+  }
+  .focus-actions {
+    gap: 10px;
+  }
+  .focus-actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .focus-question .field {
+    min-width: 0;
+  }
+  .focus-question input,
+  .focus-question textarea,
+  .focus-question select {
+    max-width: 100%;
+  }
+}
+
+.focus-context-entry {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.focus-context-entry > .button {
+  justify-self: start;
+}
+.focus-context-entry .focus-history {
+  margin: 0;
+}
+
+.focus-submitted-answer {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.focus-submitted-answer > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+}
+.focus-submitted-answer > .markdown {
+  max-height: 260px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}

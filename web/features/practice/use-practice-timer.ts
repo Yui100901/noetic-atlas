@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Attempt } from '../../../shared/models/types';
 import { ApiError, idPath, request } from '../../shared/lib/api';
 
+type TimerRecord = Pick<Attempt, 'practiceTiming' | 'elapsedSeconds' | 'status'>;
 interface Session {
   id: string; started: number | null; milliseconds: number; closed: boolean;
   confirmedTotal: number; confirmedSession: number;
@@ -9,20 +10,20 @@ interface Session {
 }
 interface PendingPause { sessionId: string; elapsedMilliseconds: number }
 const milliseconds = (session: Session) => session.milliseconds + (session.started === null ? 0 : Math.max(0, performance.now() - session.started));
-const total = (attempt: Attempt | null) => attempt?.practiceTiming?.elapsedMilliseconds ?? (attempt?.elapsedSeconds || 0) * 1000;
+const total = (attempt: TimerRecord | null) => attempt?.practiceTiming?.elapsedMilliseconds ?? (attempt?.elapsedSeconds || 0) * 1000;
 const visible = () => document.visibilityState !== 'hidden';
 
 /** Ordinary practice is a foreground stopwatch. The database stores only
  * confirmed cumulative milliseconds; sleeping or abandoned pages cannot make
  * drafts grow. Session totals make duplicate checkpoints and late exits safe. */
-export function usePracticeTimer(id: string, attempt: Attempt | null, enabled: boolean) {
+export function usePracticeTimer(id: string, attempt: TimerRecord | null, enabled: boolean, apiBase = '/api/attempts') {
   const source = useRef(attempt); source.current = attempt;
   const active = useRef(enabled); active.current = enabled;
   const mounted = useRef(true), foreground = useRef(false);
   const session = useRef<Session | null>(null), savedTotal = useRef(0), knownSessionId = useRef<string | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const [revision, redraw] = useState(0), [error, setError] = useState('');
-  const pendingKey = `noetic-atlas:practice-timing:${id}`;
+  const pendingKey = apiBase==='/api/attempts'?`noetic-atlas:practice-timing:${id}`:`noetic-atlas:practice-timing:${apiBase}:${id}`;
   const render = () => { if (mounted.current) redraw(value => value + 1); };
   const readPause = (): PendingPause | undefined => {
     try {
@@ -37,9 +38,9 @@ export function usePracticeTimer(id: string, attempt: Attempt | null, enabled: b
     const promise = queue.current.then(operation); queue.current = promise.catch(() => undefined); return promise;
   }, []);
   const post = useCallback((body: { action: 'resume' | 'checkpoint' | 'pause'; sessionId: string; elapsedMilliseconds?: number; expectedSessionId?: string | null }, lifecycle = false) =>
-    request<Attempt>(`/api/attempts/${idPath(id)}/timing`, { method: 'POST', body: JSON.stringify(body), ...(lifecycle ? { keepalive: true } : {}) }), [id]);
+    request<TimerRecord>(`${apiBase}/${idPath(id)}/timing`, { method: 'POST', body: JSON.stringify(body), ...(lifecycle ? { keepalive: true } : {}) }), [id, apiBase]);
   const report = (reason: unknown) => { if (mounted.current) setError(reason instanceof Error ? reason.message : '计时尚未保存，请重试'); };
-  const accept = (value: Attempt, current?: Session) => {
+  const accept = (value: TimerRecord, current?: Session) => {
     const confirmed = total(value); savedTotal.current = confirmed; knownSessionId.current = value.practiceTiming?.sessionId || null;
     if (current && session.current === current && value.practiceTiming?.sessionId === current.id) {
       current.confirmedTotal = confirmed; current.confirmedSession = value.practiceTiming.sessionElapsedMilliseconds;
@@ -62,11 +63,11 @@ export function usePracticeTimer(id: string, attempt: Attempt | null, enabled: b
         const pending = readPause();
         if (pending) { const value = await post({ action: 'pause', ...pending }); accept(value); clearPause(pending); }
         if (!active.current || !mounted.current || !foreground.current || session.current !== next) return;
-        let value: Attempt;
+        let value: TimerRecord;
         try { value = await post({ action: 'resume', sessionId: next.id, expectedSessionId: knownSessionId.current }); }
         catch (reason) {
           if (!(reason instanceof ApiError) || reason.code !== 'PRACTICE_TIMING_SESSION_CHANGED' || !active.current || !mounted.current || !foreground.current || session.current !== next || next.closed || !visible()) throw reason;
-          const current = await request<Attempt>(`/api/attempts/${idPath(id)}`); accept(current);
+          const current = await request<TimerRecord>(`${apiBase}/${idPath(id)}`); accept(current);
           if (!active.current || !mounted.current || !foreground.current || session.current !== next || next.closed || !visible()) return;
           value = await post({ action: 'resume', sessionId: next.id, expectedSessionId: knownSessionId.current });
         }

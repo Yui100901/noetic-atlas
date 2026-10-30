@@ -1,3 +1,4 @@
+import { createFocusSchema,focusActionSchema,focusSummarySchema } from '../modules/focus-review/schema.js';
 import packageInfo from '../../package.json' with { type: 'json' };
 import * as quality from '../modules/content-quality/schema.js';
 import type { FastifyInstance, FastifySchema } from 'fastify';
@@ -128,6 +129,10 @@ const pathBodies: Record<string,z.ZodType> = {
 };
 const summaries: Record<string,string> = {questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
+  if(url==='/api/focus-sessions'&&method==='POST')return toJson(createFocusSchema);
+  if(url==='/api/focus-sessions/:id/current')return toJson(focusActionSchema);
+  if(url==='/api/focus-sessions/:id/timing')return toJson(practiceTimingInputSchema);
+  if(url==='/api/focus-sessions/:id/finish')return toJson(z.object({revision:z.number().int().positive()}).strict());
   if(url==='/api/review-scheduler/card'&&method==='PATCH')return toJson(changeCardSchema);
   if(url==='/api/review-scheduler/review'&&method==='POST')return toJson(manualReviewSchema);
   if(url==='/api/review-scheduler/attempts/:id/rating'&&method==='POST')return toJson(attemptRatingSchema);
@@ -262,6 +267,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/review-scheduler/attempts/:id'||url==='/api/review-scheduler/attempts/:id/rating')success=toJson(attemptReviewOutputSchema);
   if(method==='DELETE')success=object;
   schema.response={...(schema.response as Record<string,unknown>),200:success};
+  if(url==='/api/focus-sessions'&&method==='GET'){schema.querystring=toJson(z.object({page:paginationFields.page,pageSize:paginationFields.pageSize,paperId:id.optional(),status:z.enum(['in_progress','submitted']).optional()}).strict());success=paged(toJson(focusSummarySchema));}
   const body=bodyFor(method,url); if(body)schema.body=body;
   if(method==='POST')schema.response={...(schema.response as Record<string,unknown>),201:success};
   if(streamingAiRoute(method,url)) {

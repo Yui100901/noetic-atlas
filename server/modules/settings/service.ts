@@ -1,3 +1,4 @@
+import { focusRetentionCandidates } from '../focus-review/retention.js';
 import { z } from 'zod';
 import {
   DEFAULT_SETTINGS,
@@ -203,7 +204,13 @@ export function settingsRetentionPlan(store: Store, settings: SystemSettings) {
     retention.documentDrafts = documentDrafts.length;
     retention.total += documentDrafts.length;
   }
-  return { attempts, authoring, questionHistory, documentDrafts, retention };
+  const focus = focusRetentionCandidates(store, settings);
+  if (focus.length) {
+    retention.focusDrafts = focus.filter((row) => row.status === 'in_progress').length;
+    retention.focusHistory = focus.length - retention.focusDrafts;
+    retention.total += focus.length;
+  }
+  return { attempts, authoring, questionHistory, documentDrafts, retention, focus };
 }
 
 /** Caller owns the transaction, so configuration import can atomically update both sections. */
@@ -216,10 +223,8 @@ export function saveSettings(
   const previous = getSettings(store);
   if (settings.updatedAt !== previous.updatedAt)
     fail(409, 'SETTINGS_VERSION_CONFLICT', '配置已被修改，请刷新后重新编辑');
-  const { attempts, authoring, questionHistory, documentDrafts, retention } = settingsRetentionPlan(
-    store,
-    settings,
-  );
+  const { attempts, authoring, questionHistory, documentDrafts, retention, focus } =
+    settingsRetentionPlan(store, settings);
   if (retention.total && !options.confirmedRetention)
     fail(
       409,
@@ -231,7 +236,16 @@ export function saveSettings(
     options.confirmedRetention &&
     options.expectedRetention &&
     (
-      ['drafts', 'history', 'total', 'authoring', 'questionHistory', 'documentDrafts'] as const
+      [
+        'drafts',
+        'history',
+        'total',
+        'authoring',
+        'questionHistory',
+        'documentDrafts',
+        'focusDrafts',
+        'focusHistory',
+      ] as const
     ).some((key) => (options.expectedRetention![key] || 0) !== (retention[key] || 0))
   )
     fail(
@@ -292,5 +306,6 @@ export function saveSettings(
   }
   for (const old of authoring) store.remove('paper_drafts', old.id);
   for (const old of documentDrafts) store.remove('document_drafts', old);
+  for (const row of focus) store.remove('focus_sessions', row.id);
   return { settings: saved, retention };
 }

@@ -30,6 +30,7 @@ export class DatabaseConnection {
     this.run(this.query.schema.createTable('metadata').ifNotExists().addColumn('key','text',c=>c.primaryKey()).addColumn('value','text',c=>c.notNull()));
     this.run(this.query.insertInto('metadata').values({key:'schema_version',value:'1'}).onConflict(c=>c.column('key').doNothing()));
     for (const [name,table,fields] of [
+      ['focus_sessions_paper_status_updated_idx','focus_sessions',['paperId','status','updatedAt']],
       ['papers_archived_updated_idx','papers',['archived','updatedAt']],
       ['papers_updated_idx','papers',['updatedAt']],
       ['attempts_exam_status_started_idx','attempts',['practiceMode','status','startedAt']],

@@ -62,4 +62,4 @@ export const DEFAULT_SETTINGS: SystemSettings = {
   dailyPush: { ...DEFAULT_DAILY_PUSH, categoryIds: [] },
 };
 
-export interface RetentionPreview { drafts: number; history: number; total: number; authoring?: number; questionHistory?: number; documentDrafts?: number }
+export interface RetentionPreview { focusDrafts?:number;focusHistory?:number; drafts: number; history: number; total: number; authoring?: number; questionHistory?: number; documentDrafts?: number }

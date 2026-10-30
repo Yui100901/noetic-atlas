@@ -130,6 +130,8 @@ function eligible(store: Store, attempt: StoredAttempt, leafId: string, headers?
 
 export function syncAttemptReviewEvents(store: Store, attempt: StoredAttempt, ratings: Record<string, ReviewRating | null> = {}, affectedLeafIds?: string[]) {
   const settings = getSettings(store).reviewScheduling;
+  // Focus sessions record one explicit recall event, independent of answer grading.
+  if (attempt.focusSessionId) return;
   if (settings.strategy !== 'fsrs' || attempt.status !== 'submitted' || store.get<any>('learning_results', attempt.id)?.reset) return;
   const selected = affectedLeafIds ? new Set(affectedLeafIds) : null;
   const headers = sourceHeaders(store, attempt.questions.map(question => question.sourceQuestionId || question.id));

@@ -14,6 +14,7 @@ export const assetReferenceSources = [
   'question_history',
   'document_drafts',
   'ai_import_jobs',
+  'focus_sessions',
 ] as const satisfies readonly RecordTable[];
 export type AssetReferenceSource = (typeof assetReferenceSources)[number];
 

@@ -15,6 +15,7 @@ export function registerReviewSchedulerRoutes(app: FastifyInstance, store: Store
   app.get('/api/review-scheduler/attempts/:id', async request => attemptReviewOverview(store, store.require<StoredAttempt>('attempts', getId(request))));
   app.post('/api/review-scheduler/attempts/:id/rating', async request => {
     const attempt = store.require<StoredAttempt>('attempts', getId(request)), input = parse(attemptRatingSchema, request.body);
+    if(attempt.focusSessionId)fail(409,'FOCUS_RATING_IN_SESSION','本次实际作答来自专注复习，请在专注复习会话中记录回忆评级');
     if (getSettings(store).reviewScheduling.strategy !== 'fsrs') fail(409, 'REVIEW_FIXED_MODE', '请先在系统配置开启自适应复习');
     if (!attempt.questions.some(question => question.id === input.leafId)) fail(400, 'REVIEW_LEAF_INVALID', '评级题号不属于本次作答');
     store.transaction(() => syncAttemptReviewEvents(store, attempt, { [input.leafId]: input.rating }, [input.leafId]));

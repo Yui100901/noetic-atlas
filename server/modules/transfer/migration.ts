@@ -30,6 +30,9 @@ import { questionFeedbackSchema } from '../quality-feedback/schema.js';
 import { practiceTimingStateSchema } from '../practice/practice-timing.js';
 import { aiWorkspaceDraftSchema } from '../ai/workspace-draft-schema.js';
 
+import { focusSessionSchema } from '../focus-review/schema.js';
+import { validateFocusSession } from '../focus-review/service.js';
+
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
 const paperSchema = z.object({
@@ -41,6 +44,7 @@ const attemptSchema = z.object({
   id, paperId: id, paperTitle: z.string().max(300), paperVersion: z.number().int().min(1), source: z.enum(['paper','quick']).default('paper'), updatedAt: datetime.optional(), referenceViewedAt: datetime.nullable().optional(), status: z.enum(['in_progress', 'submitted']), questions: z.array(snapshotQuestion).min(1).max(500), answers: answersSchema,
   objectiveScore: moneySchema, objectiveMax: moneySchema, subjectiveScore: moneySchema, subjectiveMax: moneySchema, startedAt: datetime, submittedAt: datetime.nullable(), scoring: storedScoringSchema.optional(),
   practiceKind: z.enum(['standard','vocabulary','concept']).optional(), vocabularyDirection: z.enum(['word_to_meaning','meaning_to_word']).optional(),
+  focusSessionId: id.optional(),
   practiceMode: z.enum(['practice','exam']).optional(), durationMinutes: z.number().int().min(1).max(1440).nullable().optional(), deadlineAt: datetime.nullable().optional(), elapsedSeconds: z.number().int().nonnegative().optional(), autoSubmitted: z.boolean().optional(), practiceTiming: practiceTimingStateSchema.optional(),
 });
 const studySchema = z.object({ questionId: id, favorite: z.boolean(), mastery: z.number().int().min(0).max(3).nullable(), notes: z.string().max(500000), nextReviewAt: datetime.nullable(), lastReviewedAt: datetime.nullable(), wrongCount: z.number().int().nonnegative() });
@@ -50,6 +54,7 @@ const envelopeSchema = z.object({
   schemaVersion: z.literal(1), generatedAt: z.string().optional(), exportedAt: z.string().optional(),
   domains: z.array(domainSchema.extend({ id })), categories: z.array(categorySchema.extend({ id })), tags: z.array(tagSchema.extend({ id })), questions: z.array(questionSchema), documents: z.array(documentSchema.extend({ _archived: z.boolean().optional() })), papers: z.array(paperSchema),
   study: z.array(studySchema).default([]), studyParts: z.array(partStudySchema).default([]), learningResults: z.array(learningResultSchema).default([]), reviews: z.array(reviewSchema).default([]), attempts: z.array(attemptSchema).default([]),
+  focusSessions: z.array(focusSessionSchema).default([]),
   questionBanks: z.array(questionBankSchema.safeExtend({ id })).default([]),
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
@@ -61,7 +66,7 @@ const envelopeSchema = z.object({
   questionFeedback: z.array(questionFeedbackSchema).default([]),
   qualityScans: z.array(qualityScanSchema).default([]), qualityIssues: z.array(qualityIssueSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
+const dataKey = (table: Table) => table === 'focus_sessions' ? 'focusSessions' : table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -172,6 +177,7 @@ export function importData(store: Store, raw: unknown) {
       a.updatedAt = a.updatedAt || a.submittedAt || a.startedAt;
     }
     insert('attempts', data.attempts);
+    insert('focus_sessions', data.focusSessions.map(validateFocusSession));
     const importedAttempts = new Map(data.attempts.map(value => [value.id, value as StoredAttempt]));
     insert('learning_results', data.learningResults.map(value => validateLearningResult(store, value, importedAttempts.get(value.id))));
     migrateLearningResults(store);

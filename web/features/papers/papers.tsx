@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, ArrowLeft, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
+import { Archive, ArrowLeft, BookOpen, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
 import type { Attempt, Paper, PaperDetail } from '../../../shared/models/types';
 import { href, idPath, localDate, navigate, request, send, useDebounced, useResource, qs } from '../../shared/lib/api';
 import type {PaperListItem,PaperListPage} from '../../../shared/practice/paper-list';
@@ -19,6 +19,7 @@ import { PaperLearningWorkspace, RetainedSetHistories } from './paper-learning';
 import { PaperCard, SpecialLearningSets, useLearningCardSummaries } from './learning-cards';
 import { ActionDropdown } from '../../shared/ui/action-dropdown';
 import { VocabularyDirectionFields, vocabularyDirectionLabel, type VocabularyDirection } from './vocabulary-practice';
+import { FocusLauncher } from '../review-scheduler/focus-launcher';
 import { DailyPushCard, useDailyPush } from '../daily-push/daily-push';
 
 export function PapersPage() {
@@ -63,6 +64,7 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
   const [vocabularyDirection, setVocabularyDirection] = useState<VocabularyDirection>('word_to_meaning');
   const [practiceSetup, setPracticeSetup] = useState(false); const [questionCount, setQuestionCount] = useState(20); const [selection, setSelection] = useState<'ordered' | 'random'>('random');
   const [examSetup, setExamSetup] = useState(false); const [durationMinutes, setDurationMinutes] = useState((settings as any).examDurationMinutes || 120);
+  const [focusSetup,setFocusSetup]=useState(false);
   const [transfer, setTransfer] = useState<'share' | 'export' | null>(null);
   useEffect(() => { setTransfer(null); setVocabularyDirection('word_to_meaning'); setDrafts(null); setPracticeSetup(false); setExamSetup(false); }, [id]);
   const startNew = async (mode: 'practice' | 'exam' = 'practice') => { setBusy(true); try { const attempt = await send<Attempt>(`/api/papers/${idPath(id)}/attempts`, 'POST', { mode, ...(['vocabulary','concept'].includes(paper?.practiceKind || 'standard') ? { vocabularyDirection } : {}), ...(mode === 'exam' ? { durationMinutes } : {}), ...((paper?.answerCount ?? paper?.questions.length ?? 0) > 500 ? { count: questionCount, selection } : {}) }); setDrafts(null); setExamSetup(false); setPracticeSetup(false); notifyExamState(attempt); navigate('attempts', attempt.id); } catch (err) { toast((err as Error).message, true); } finally { setBusy(false); } };
@@ -90,9 +92,11 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
     ]} />
     <ActionDropdown label={busy ? '正在准备…' : '开始练习'} triggerLabel="选择练习模式" icon={<Play size={16} />} primary disabled={busy || paper.archived} primaryAction={() => void start()} items={[
       { id: 'practice', label: '普通练习', icon: <Play size={16} />, onSelect: () => void start() },
+      { id: 'focus', label: '专注复习', icon: <BookOpen size={16}/>, onSelect: () => setFocusSetup(true) },
       { id: 'exam', label: '考试模式', icon: <Clock3 size={16} />, onSelect: () => { setQuestionCount(Math.min(100, paper.questionCount)); setSelection('random'); setExamSetup(true); } },
     ]} />
   </div>} />
+    <FocusLauncher paperId={id} practiceKind={paper.practiceKind} open={focusSetup} onOpenChange={setFocusSetup} hideTrigger/>
     <ExportButton paperId={id} open={transfer === 'export'} onOpenChange={open => setTransfer(open ? 'export' : null)} hideTrigger />
     <ShareButton kind="paper" id={id} open={transfer === 'share'} onOpenChange={open => setTransfer(open ? 'share' : null)} hideTrigger />
     {paper.archived && <div className="notice info">这份题集已归档，全部成员审核发布后，可在顶部「题集管理 → 恢复题集」中继续练习。</div>}<div className="paper-organization-label">{vocabularySet && <span className="badge">{paper.practiceKind === 'concept' ? '概念题集 · 双向练习' : '词汇题集 · 双向练习'}</span>}<span className="badge">{paper.organization === 'domain' ? `${bootstrap.domains.find(domain => domain.id === paper.domainId)?.name || '未识别领域'}专项` : '其他题集'}</span></div><section className="card paper-scoring-detail"><ScoringBreakdown scoring={scoring} questionCount={paper.questionCount} />{scoring.enabled && paper.mode === 'random' && <p className="scoring-help">目标客观占比 {pointText(scoring.objectivePercent)}%，实际客观占比 {pointText(scoring.actualObjectivePercent)}%。题量与分值已固定，开始练习时保留本题集快照。</p>}{scoring.scheme === 'legacy' && <p className="scoring-help">这份历史题集采用历史分值：单选 / 判断 1 分、多选 2 分、主观 3 分。修改会生成新版本，不重算已有作答。</p>}</section>

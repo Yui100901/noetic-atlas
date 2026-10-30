@@ -47,5 +47,16 @@
   "tests/release/release-version.test.ts",
   "scripts/qa/check-learning-reader-layout-ui.mjs",
   "web/features/practice/learning-origins.css",
-  "web/shared/ui/group-material.css"
+  "web/shared/ui/group-material.css",
+  "shared/models/focus-review.ts",
+  "server/modules/focus-review/schema.ts",
+  "server/modules/focus-review/service.ts",
+  "server/modules/focus-review/routes.ts",
+  "web/features/review-scheduler/focus-launcher.tsx",
+  "web/features/review-scheduler/focus-review.tsx",
+  "web/features/review-scheduler/focus-review.css",
+  "tests/server/focus-review.test.ts",
+  "tests/mobile/mobile-focus-review.test.ts",
+  "scripts/qa/check-focus-review-ui.mjs",
+  "server/modules/focus-review/retention.ts"
 ]

@@ -65,7 +65,7 @@ interface AttemptReviewContextValue { attempt: Attempt; data: AttemptReviewOverv
 const AttemptReviewContext = createContext<AttemptReviewContextValue | null>(null);
 export function AttemptReviewProvider({ attempt, children }: { attempt: Attempt; children: ReactNode }) {
   const { bootstrap } = useApp();
-  const enabled = (bootstrap.settings?.reviewScheduling || DEFAULT_REVIEW_SCHEDULING).strategy === 'fsrs' && attempt.status === 'submitted';
+  const enabled = !attempt.focusSessionId && (bootstrap.settings?.reviewScheduling || DEFAULT_REVIEW_SCHEDULING).strategy === 'fsrs' && attempt.status === 'submitted';
   const resource = useResource<AttemptReviewOverview>(enabled ? `/api/review-scheduler/attempts/${idPath(attempt.id)}` : null);
   const token = `${attempt.id}:${attempt.updatedAt || attempt.submittedAt || ''}:${attempt.status}`, seen = useRef(token);
   useEffect(() => { if (seen.current !== token) { seen.current = token; resource.refresh(); } }, [token, resource.refresh]);
@@ -73,6 +73,7 @@ export function AttemptReviewProvider({ attempt, children }: { attempt: Attempt;
 }
 export function AttemptReviewSummary() {
   const context = useContext(AttemptReviewContext), { bootstrap } = useApp();
+  if(context?.attempt.focusSessionId)return <div className="notice info"><CalendarClock size={17}/><span>此处保留实际作答结果；回忆评级在专注复习会话中记录。</span></div>;
   if (!context || context.attempt.status !== 'submitted' || (bootstrap.settings?.reviewScheduling || DEFAULT_REVIEW_SCHEDULING).strategy !== 'fsrs') return null;
   if (context.error) return <ErrorNotice message={`自适应复习记录读取失败：${context.error}`} retry={context.refresh} />;
   if (context.loading) return <p className="review-scheduling-help">正在读取本次复习安排…</p>;
@@ -81,7 +82,7 @@ export function AttemptReviewSummary() {
 export function AttemptReviewControls({ leafId, onChanged }: { leafId: string; onChanged?: () => void }) {
   const context = useContext(AttemptReviewContext); const [open, setOpen] = useState(false);
   const item: AttemptReviewItem | undefined = context?.data?.items.find(value => value.leafId === leafId);
-  if (!context || !item) return null;
+  if (!context || context.attempt.focusSessionId || !item) return null;
   const question = context.attempt.questions.find(value => value.id === leafId);
   const state = context.attempt.answerStates?.[leafId] || (question ? answerState(question, context.attempt.answers[leafId], true, question.points ?? context.attempt.scoring?.questionPoints[leafId]) : 'ungraded');
   const onlyAgain = state !== 'correct' || !!context.attempt.referenceViewedAt;

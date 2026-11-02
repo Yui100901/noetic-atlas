@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import { DatabaseSync, backup, type SQLInputValue } from 'node:sqlite';
 import { sql, type CompiledQuery, type Compilable } from 'kysely';
 import { createQueryBuilder } from './query-builder.js';
@@ -17,6 +18,7 @@ export class DatabaseConnection {
   constructor(path: string, initialize = true) {
     this.client = new DatabaseSync(path);
     this.maintenance = { exec: value=>this.client.exec(value), prepare: value=>this.client.prepare(value), function: this.client.function.bind(this.client) };
+    this.client.function('atlas_record_fingerprint',{deterministic:true},value=>createHash('sha256').update(String(value)).digest('hex'));
     this.client.function('atlas_unicode_contains',{deterministic:true},(value,needle)=>Number(String(value).toLowerCase().includes(String(needle))));
     this.projections=new RecordProjections(this);
     const missingTables = initialize && recordTables.some(table => !this.hasTable(table));
@@ -84,6 +86,13 @@ export class DatabaseConnection {
   putRecord(table:RecordTable,id:string,data:unknown) { this.assertTable(table);const row={id,data:JSON.stringify(data)};this.run(this.query.insertInto(table).values(row).onConflict(c=>c.column('id').doUpdateSet({data:row.data}))); }
   deleteRecord(table:RecordTable,id:string) { this.assertTable(table);this.run(this.query.deleteFrom(table).where('id','=',id)); }
   hasTable(table:string):boolean { return Boolean(this.client.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)); }
+  logicalBytes(column:string){return sql<number>`length(cast(${sql.ref(column)} as blob))`;}
+  recordFingerprint(column:string){return sql<string>`atlas_record_fingerprint(${sql.ref(column)})`;}
+  storageHealth(integrity=false){
+    const number=(pragma:string)=>Number(Object.values(this.client.prepare(pragma).get()||{})[0]||0);
+    const pageSize=number('PRAGMA page_size'),pages=number('PRAGMA page_count'),free=number('PRAGMA freelist_count');
+    return {databaseBytes:pages*pageSize,freeBytes:free*pageSize,pageSize,...(integrity?{integrity:this.client.prepare('PRAGMA quick_check(1)').all().flatMap(row=>Object.values(row).map(String))}:{})};
+  }
   compact() { this.client.exec('VACUUM'); }
   backupTo(path:string) { return backup(this.client,path); }
   snapshotTo(path:string) { this.client.prepare('VACUUM INTO ?').run(path); }

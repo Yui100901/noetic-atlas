@@ -20,7 +20,11 @@ export interface PlanEvidence {
   sourceId: string;
 }
 /** Persist completion independently of answer-history and focus-session retention. */
-export function recordPlanEvidence(store: Store, evidence: PlanEvidence[]) {
+export function recordPlanEvidence(
+  store: Store,
+  evidence: PlanEvidence[],
+  onlyTaskResults?: ReadonlySet<string>,
+) {
   if (!evidence.length) return;
   const db = store.database,
     x = db.expressions;
@@ -56,6 +60,7 @@ export function recordPlanEvidence(store: Store, evidence: PlanEvidence[]) {
       )
         continue;
       for (const task of day.tasks) {
+        if (onlyTaskResults && !onlyTaskResults.has(JSON.stringify([day.id, task.id]))) continue;
         if (
           task.questionId !== event.questionId ||
           task.partId !== event.partId ||

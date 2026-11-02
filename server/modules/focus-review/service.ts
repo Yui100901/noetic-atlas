@@ -130,6 +130,7 @@ export function focusView(session: FocusSession): FocusView {
             {
               index,
               title: item.question.title,
+              ...(item.beforeReset ? { beforeReset: true as const } : {}),
               phase: item.phase,
               rating: item.rating,
               dueAt: item.dueAt,

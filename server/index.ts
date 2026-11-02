@@ -1,3 +1,4 @@
+import {registerMaintenanceRoutes} from './modules/maintenance/routes.js';
 import {migrateFeedbackQualityIssues} from './modules/content-quality/feedback-links.js';
 import {retireMissingSourceIssues,retireMissingExplanationIssues} from './modules/content-quality/maintenance.js';
 import {registerContentQualityRoutes} from './modules/content-quality/routes.js';
@@ -104,6 +105,7 @@ export async function buildApp(options: AppOptions = {}) {
 
   registerStudyRoutes(app, store);
   registerLearningResetRoutes(app, store);
+  registerMaintenanceRoutes(app,store);
 
   registerExportRoutes(app, store);
 

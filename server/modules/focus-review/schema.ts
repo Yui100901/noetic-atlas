@@ -47,6 +47,7 @@ export const focusSessionSchema = z
       .array(
         z
           .object({
+            beforeReset: z.literal(true).optional(),
             paperId: id.optional(),
             paperTitle: z.string().max(300).optional(),
             paperVersion: z.number().int().positive().optional(),
@@ -103,7 +104,9 @@ export const focusSessionSchema = z
         'partStudies' in item.question ||
         'feedbackSummary' in item.question ||
         item.startedElapsedSeconds > value.elapsedSeconds ||
-        (index > value.index && item.phase !== 'recall') ||
+        (index > value.index &&
+          item.phase !== 'recall' &&
+          !(item.beforeReset && item.phase === 'skipped')) ||
         (item.mode === 'mental' && item.attemptId) ||
         (item.attemptId && !item.answer) ||
         (item.mode === 'written' &&

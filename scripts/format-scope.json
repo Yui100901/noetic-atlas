@@ -117,5 +117,22 @@
   "tests/mobile/mobile-math.test.ts",
   "scripts/qa/check-math-ui.mjs",
   "tests/math/math-rendering.test.ts",
-  "web/shared/lib/clipboard.ts"
+  "web/shared/lib/clipboard.ts",
+  "server/modules/maintenance/cleanup.ts",
+  "server/modules/maintenance/health.ts",
+  "server/modules/maintenance/journal.ts",
+  "server/modules/maintenance/output-schema.ts",
+  "server/modules/maintenance/plan-evidence.ts",
+  "server/modules/maintenance/reset-plan.ts",
+  "server/modules/maintenance/reset.ts",
+  "server/modules/maintenance/routes.ts",
+  "shared/models/maintenance.ts",
+  "web/features/settings/learning-reset.tsx",
+  "web/features/settings/maintenance.tsx",
+  "web/features/settings/maintenance.css",
+  "tests/server/maintenance.test.ts",
+  "tests/mobile/mobile-maintenance.test.ts",
+  "server/modules/maintenance/reset-progress.ts",
+  "scripts/qa/check-maintenance-ui.mjs",
+  "scripts/qa/check-learning-reset-ui.mjs"
 ]

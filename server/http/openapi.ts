@@ -1,3 +1,7 @@
+import {healthOutputSchema,cleanupOutputSchema,resetOutputSchema,compactOutputSchema} from '../modules/maintenance/output-schema.js';
+import {cleanupSelectionSchema} from '../modules/maintenance/cleanup.js';
+import {resetSelectionSchema} from '../modules/maintenance/reset-plan.js';
+import {cleanupInputSchema,resetInputSchema,maintenanceConfirmationSchema} from '../modules/maintenance/routes.js';
 import {documentVersionSchema,documentSourceParamsSchema,relatedQuestionsQuerySchema} from '../modules/library/source-schema.js';
 import {aiDocumentLinkSourcesSchema} from '../modules/ai/document-schema.js';
 import {learningDaySchema,learningTaskResultSchema,planStartSchema} from '../modules/learning-plans/schema.js';
@@ -113,6 +117,12 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/questions/metadata': validation.questionMetadataInputSchema,
   '/api/learning/card-summaries': learningCardSummariesInputSchema,
   '/api/learning/reset': learningResetInputSchema,
+  '/api/maintenance/cleanup-preview':cleanupSelectionSchema,
+  '/api/maintenance/cleanup':cleanupInputSchema,
+  '/api/maintenance/reset-preview':resetSelectionSchema,
+  '/api/maintenance/reset':resetInputSchema,
+  '/api/maintenance/compact':maintenanceConfirmationSchema,
+  '/api/maintenance/reindex':maintenanceConfirmationSchema,
   '/api/questions/bulk-import': validation.bulkQuestionImportSchema, '/api/questions/review': validation.questionReviewSchema,
   '/api/ai/settings': ai.aiSettingsSchema, '/api/ai/paper-plan': ai.aiPaperPlanInputSchema,
   '/api/attempts/:id/timing': practiceTimingInputSchema,
@@ -136,7 +146,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
   '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),documentDrafts:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
 };
-const summaries: Record<string,string> = {'learning-plans':'学习计划','focus-sessions':'专注复习',questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
+const summaries: Record<string,string> = {'learning-plans':'学习计划','focus-sessions':'专注复习',questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',maintenance:'数据维护',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
   if(url==='/api/learning-plans/:id/start')return toJson(planStartSchema);
   if(url==='/api/focus-sessions'&&method==='POST')return toJson(createFocusSchema);
@@ -192,6 +202,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/search')schema.querystring=toJson(searchQuerySchema);
   if(url==='/api/review-scheduler/card'&&method==='GET')schema.querystring=toJson(cardQuerySchema);
   if(url==='/api/review-scheduler/queue')schema.querystring=toJson(queueQuerySchema);
+  if(url==='/api/maintenance/health')schema.querystring=toJson(z.object({integrity:z.enum(['true','false']).default('false')}).strict());
   if(url==='/api/learning/reset-preview')schema.querystring=toJson(z.object({}).strict());
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
@@ -212,6 +223,12 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/content-quality/scans'&&method==='GET')schema.querystring=toJson(quality.qualityScanQuerySchema);
   const outputs:Record<string,JsonSchema>={questions:toJson(validation.questionSchema),documents:toJson(validation.documentSchema),domains:toJson(validation.domainSchema),categories:toJson(validation.categorySchema),tags:toJson(validation.tagSchema),papers:paperOutput,attempts:attemptOutput,'paper-drafts':toJson(paperDraftSchema)};
   let success:JsonSchema=outputs[area]||object;
+  if(url==='/api/maintenance/health')success=toJson(healthOutputSchema);
+  if(url==='/api/maintenance/cleanup-preview')success=toJson(cleanupOutputSchema);
+  if(url==='/api/maintenance/cleanup')success=toJson(cleanupOutputSchema.extend({ok:z.literal(true)}));
+  if(url==='/api/maintenance/reset-preview')success=toJson(resetOutputSchema);
+  if(url==='/api/maintenance/reset')success=toJson(resetOutputSchema.extend({ok:z.literal(true)}));
+  if(url==='/api/maintenance/compact'||url==='/api/maintenance/reindex')success=toJson(compactOutputSchema);
   if(url==='/api/content-quality/issues'&&method==='GET')success=learningPage(qualityIssueViewOutput);
   if(url==='/api/content-quality/questions'&&method==='GET')success=learningPage(toJson(quality.qualityQuestionGroupSchema));
   if(url==='/api/content-quality/overview'&&method==='GET')success=toJson(quality.qualityOverviewSchema);

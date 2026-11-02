@@ -272,7 +272,11 @@ export function FocusReviewPage({ id }: { id: string }) {
                 {item.index + 1}. {item.title}
               </strong>
               <span>
-                {item.rating ? REVIEW_RATING_LABELS[item.rating] : '已跳过'}
+                {item.beforeReset
+                  ? '重置前记录'
+                  : item.rating
+                    ? REVIEW_RATING_LABELS[item.rating]
+                    : '已跳过'}
                 {item.dueAt && ` · 下次 ${localDate(item.dueAt)}`}
               </span>
               {item.attemptId && (

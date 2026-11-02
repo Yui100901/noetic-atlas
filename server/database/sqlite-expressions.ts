@@ -3,6 +3,9 @@ import { sql, type RawBuilder, type Expression, type SqlBool } from 'kysely';
 /** SQLite/WASM-specific JSON, Unicode and row-order semantics live only here.
  * A new database adapter implements this expression contract for its dialect. */
 export class SqliteExpressions {
+  focusResetItems(ref:string):RawBuilder<string>{
+    return sql<string>`(select coalesce(json_group_array(json_object('paperId',json_extract(item.value,'$.paperId'))),'[]') from json_each(${sql.ref(ref)},'$.items') item)`;
+  }
   /** All constraints belong to the same citation, never separate array entries. */
   documentCitationMatch(ref:string,documentId:string,versionId?:string,page?:number):RawBuilder<SqlBool>{
     return sql<SqlBool>`exists(select 1 from json_each(${sql.ref(ref)},'$.documentLinks') as citation where json_extract(citation.value,'$.documentId')=${documentId} ${versionId?sql`and json_extract(citation.value,'$.versionId')=${versionId}`:sql``} ${page?sql`and json_extract(citation.value,'$.pageStart')<=${page} and coalesce(json_extract(citation.value,'$.pageEnd'),json_extract(citation.value,'$.pageStart'))>=${page}`:sql``})`;

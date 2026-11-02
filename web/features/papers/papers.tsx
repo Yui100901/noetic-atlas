@@ -1,3 +1,4 @@
+import { LearningReset } from '../settings/learning-reset';
 import { useEffect, useMemo, useState } from 'react';
 import { Archive, ArrowLeft, BookOpen, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
 import type { Attempt, Paper, PaperDetail } from '../../../shared/models/types';
@@ -65,6 +66,7 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
   const [practiceSetup, setPracticeSetup] = useState(false); const [questionCount, setQuestionCount] = useState(20); const [selection, setSelection] = useState<'ordered' | 'random'>('random');
   const [examSetup, setExamSetup] = useState(false); const [durationMinutes, setDurationMinutes] = useState((settings as any).examDurationMinutes || 120);
   const [focusSetup,setFocusSetup]=useState(false);
+  const [resetOpen,setResetOpen]=useState(false);
   const [transfer, setTransfer] = useState<'share' | 'export' | null>(null);
   useEffect(() => { setTransfer(null); setVocabularyDirection('word_to_meaning'); setDrafts(null); setPracticeSetup(false); setExamSetup(false); }, [id]);
   const startNew = async (mode: 'practice' | 'exam' = 'practice') => { setBusy(true); try { const attempt = await send<Attempt>(`/api/papers/${idPath(id)}/attempts`, 'POST', { mode, ...(['vocabulary','concept'].includes(paper?.practiceKind || 'standard') ? { vocabularyDirection } : {}), ...(mode === 'exam' ? { durationMinutes } : {}), ...((paper?.answerCount ?? paper?.questions.length ?? 0) > 500 ? { count: questionCount, selection } : {}) }); setDrafts(null); setExamSetup(false); setPracticeSetup(false); notifyExamState(attempt); navigate('attempts', attempt.id); } catch (err) { toast((err as Error).message, true); } finally { setBusy(false); } };
@@ -88,6 +90,7 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
       paper.archived
         ? { id: 'restore', label: '恢复题集', icon: <RotateCcw size={16} />, onSelect: () => void restore() }
         : { id: 'archive', label: '归档题集', icon: <Archive size={16} />, onSelect: () => void archive() },
+      {id:'reset-learning',label:'重置本集学习记录',icon:<RotateCcw size={16}/>,onSelect:()=>setResetOpen(true)},
       { id: 'delete', label: '永久删除', icon: <Trash2 size={16} />, danger: true, separatorBefore: true, onSelect: () => void remove() },
     ]} />
     <ActionDropdown label={busy ? '正在准备…' : '开始练习'} triggerLabel="选择练习模式" icon={<Play size={16} />} primary disabled={busy || paper.archived} primaryAction={() => void start()} items={[
@@ -97,6 +100,7 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
     ]} />
   </div>} />
     <FocusLauncher paperId={id} practiceKind={paper.practiceKind} open={focusSetup} onOpenChange={setFocusSetup} hideTrigger/>
+    {resetOpen&&<LearningReset paperId={id} onClose={()=>setResetOpen(false)} onDone={()=>{setResetOpen(false);refresh();}}/>}
     <ExportButton paperId={id} open={transfer === 'export'} onOpenChange={open => setTransfer(open ? 'export' : null)} hideTrigger />
     <ShareButton kind="paper" id={id} open={transfer === 'share'} onOpenChange={open => setTransfer(open ? 'share' : null)} hideTrigger />
     {paper.archived && <div className="notice info">这份题集已归档，全部成员审核发布后，可在顶部「题集管理 → 恢复题集」中继续练习。</div>}<div className="paper-organization-label">{vocabularySet && <span className="badge">{paper.practiceKind === 'concept' ? '概念题集 · 双向练习' : '词汇题集 · 双向练习'}</span>}<span className="badge">{paper.organization === 'domain' ? `${bootstrap.domains.find(domain => domain.id === paper.domainId)?.name || '未识别领域'}专项` : '其他题集'}</span></div><section className="card paper-scoring-detail"><ScoringBreakdown scoring={scoring} questionCount={paper.questionCount} />{scoring.enabled && paper.mode === 'random' && <p className="scoring-help">目标客观占比 {pointText(scoring.objectivePercent)}%，实际客观占比 {pointText(scoring.actualObjectivePercent)}%。题量与分值已固定，开始练习时保留本题集快照。</p>}{scoring.scheme === 'legacy' && <p className="scoring-help">这份历史题集采用历史分值：单选 / 判断 1 分、多选 2 分、主观 3 分。修改会生成新版本，不重算已有作答。</p>}</section>

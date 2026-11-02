@@ -89,6 +89,26 @@ function writeCard(store: Store, card: ReviewCard, events: ReviewEvent[], stamp 
   store.put('review_cards', rebuilt.id, rebuilt); mirrorReviewStudy(store, rebuilt); return rebuilt;
 }
 
+/** Remove only provenance-matched events, then replay peers' evidence instead
+ * of clearing a shared card's memory. Preserve explicit manual scheduling. */
+export function removeReviewSources(store:Store,ids:ReadonlySet<string>){
+  if(!ids.size)return;
+  const db=store.database,x=db.expressions;
+  const rows=db.all(db.query.selectFrom('review_events').select('data').where(x.idInJson('id',[...ids]))).map(row=>JSON.parse(row.data)as ReviewEvent);
+  for(const row of rows)db.deleteRecord('review_events',row.id);
+  for(const cardId of new Set(rows.map(row=>row.cardId))){
+    const card=store.get<ReviewCard>('review_cards',cardId);if(!card)continue;
+    const remaining=eventsFor(store,cardId);
+    // An inherited due date equal to a removed event is that source's legacy
+    // mirror, not an independent manual override.
+    if(!card.baseline.reps&&!remaining.length){
+      if(rows.some(row=>row.cardId===cardId&&row.occurredAt===card.legacyDueAt))card.legacyDueAt=null;
+      if(rows.some(row=>row.cardId===cardId&&row.occurredAt===card.legacyLastReviewedAt))card.legacyLastReviewedAt=null;
+    }
+    writeCard(store,card,remaining);
+  }
+}
+
 export function reviewCardView(store: Store, input: { questionId: string; partId?: string; direction?: ReviewDirection; attemptId?: string; leafId?: string }, at = new Date()): ReviewCardView {
   const identity = sourceIdentity(store, input.questionId, input.partId, input.direction), cardId = reviewCardId(identity);
   const card = store.get<ReviewCard>('review_cards', cardId) || null, state = card || makeCard(store, identity, at), parameters = getSettings(store).reviewScheduling;

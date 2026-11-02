@@ -353,3 +353,14 @@ learning_days保存生成时的目标与任务快照，learning_task_results以�
 - 导出文档及各题包含对应排版模式，已完成回答另外使用`answerMathEnabled`。混合MD导出仅转义未启用内容的文字美元符号，代码及链接目标保持原样。
 - 新AI处理记录可含`mathEnabled`，用于排版结果。新生成题目支持相同字段；`AI_IMPORT_INVALID_FORMULA`表示候选题公式无法排版，失败有具体原因且不落入正式题库。AI修改建议的字段白名单包含`mathEnabled`，可与正文修改一起应用或撤回。
 - `math_syntax`为质量规则中的警告项，检查已启用内容的分隔符、命令及限额。字段未启用或无公式均不报缺失。
+
+## 数据维护与分级重置
+
+- `GET /api/maintenance/health?integrity=true`：表数量、数据库页／空闲页、附件引用提示、活动教材任务及最近维护摘要；省略参数不执行深度一致性检查。
+- `POST /api/maintenance/cleanup-preview`：`{kinds:["unused_assets"],olderThanDays:30}`，返回各类数量、记录体积、截止日期、示例与指纹。类别还包括`practice_drafts、paper_drafts、document_drafts、ai_drafts、attempt_history、question_history、focus_history、ai_history`。
+- `POST /api/maintenance/cleanup`：`{selection,fingerprint,confirmed:true}`，必须与预览相同。旧整卷清理保留独立学习结果及仍保留的单题详情；保护引用附件、活动作答、教材任务及反馈关联AI证据。
+- `POST /api/maintenance/reset-preview`：`{scope:"all"|"paper"|"quick",paperId?,mode:"progress"|"complete"}`；仅`paper`范围需要题集ID。结果区分调整／删除／保留数量。
+- `POST /api/maintenance/reset`：`{selection,fingerprint,confirmed:true}`；进度重置保留历史并设置重置标记，完整清空按范围删除答卷、详细记录和关联AI作答评价。只有全局完整清空才删除共享笔记和收藏。内容、附件与系统配置保留。
+- `POST /api/maintenance/compact`、`POST /api/maintenance/reindex`：`{confirmed:true}`，分别整理空闲页和重建派生索引，返回维护前后存储摘要。
+
+预览POST声明只读存储语义，Android不会因预览重写SQLite文件。清理／重置事务内重新核对指纹，过期分别返回`MAINTENANCE_PREVIEW_STALE`或`LEARNING_RESET_PREVIEW_STALE`（409）。失败不写维护成功记录，Android持久化失败恢复原库。原`/api/learning/reset-preview`和`/api/learning/reset`继续返回全局进度重置原契约，内部复用同一维护实现。

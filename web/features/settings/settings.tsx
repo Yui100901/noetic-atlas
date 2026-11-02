@@ -11,7 +11,7 @@ import { saveGeneratedFile } from '@platform';
 import '../../shared/media/media.css';
 import { AiSettingsForm } from '../ai/ai-settings';
 import {usePagination} from '../../shared/lib/pagination';
-import { LearningReset } from './learning-reset';
+import { DataMaintenance } from './maintenance';
 import { ThemePicker } from '../../shared/theme/theme-picker';
 import { applyTheme, savedTheme } from '../../shared/theme/theme';
 import './settings-layout.css';
@@ -24,7 +24,7 @@ type Tab = 'practice' | 'assets' | 'backup' | 'ai' | 'daily';
 export function SettingsPage({ initialTab = 'practice' }: { initialTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(initialTab),[visited,setVisited]=useState<Tab[]>([initialTab]);
   const selectTab=(next:Tab)=>{setVisited(old=>old.includes(next)?old:[...old,next]);setTab(next);};
-  return <div className="settings-page"><PageHeader eyebrow="SYSTEM SETTINGS" title="让学习空间，适合自己的节奏。" description="主题外观、练习默认值、记录保留与文件限制。" /><nav className="settings-tabs" aria-label="系统配置分区">{([['practice','学习与练习'],['daily','每日推题'],['assets','文件资源'],['backup','数据与备份'],['ai','AI辅助']] as const).map(([value,label]) => <button className={`button ${tab === value ? 'selected' : ''}`} key={value} onClick={() => selectTab(value)} aria-controls={`settings-panel-${value}`} aria-current={tab === value ? 'page' : undefined}>{label}</button>)}</nav><p className="muted settings-session-note">切换分区会保留未保存内容，离开系统配置前请保存。导入配置或在其他页面修改后，请刷新查看最新值。</p><div className="settings-content">{visited.map(value=><div className="settings-panel ui-stack" id={`settings-panel-${value}`} key={value} hidden={value!==tab}>{value === 'practice' ? <><SettingsForm /><LearningReset /></> : value === 'daily' ? <DailyPushSettingsForm /> : value === 'assets' ? <AssetsManager /> : value === 'ai' ? <AiSettingsForm /> : <DataPage embedded />}</div>)}</div></div>;
+  return <div className="settings-page"><PageHeader eyebrow="SYSTEM SETTINGS" title="让学习空间，适合自己的节奏。" description="主题外观、练习默认值、记录保留与文件限制。" /><nav className="settings-tabs" aria-label="系统配置分区">{([['practice','学习与练习'],['daily','每日推题'],['assets','文件资源'],['backup','数据维护与备份'],['ai','AI辅助']] as const).map(([value,label]) => <button className={`button ${tab === value ? 'selected' : ''}`} key={value} onClick={() => selectTab(value)} aria-controls={`settings-panel-${value}`} aria-current={tab === value ? 'page' : undefined}>{label}</button>)}</nav><p className="muted settings-session-note">切换分区会保留未保存内容，离开系统配置前请保存。导入配置或在其他页面修改后，请刷新查看最新值。</p><div className="settings-content">{visited.map(value=><div className="settings-panel ui-stack" id={`settings-panel-${value}`} key={value} hidden={value!==tab}>{value === 'practice' ? <SettingsForm /> : value === 'daily' ? <DailyPushSettingsForm /> : value === 'assets' ? <AssetsManager /> : value === 'ai' ? <AiSettingsForm /> : <><DataMaintenance /><section id="maintenance-backups"><DataPage embedded /></section></>}</div>)}</div></div>;
 }
 function SettingsForm() {
   const resource = useResource<SystemSettings>('/api/settings'); const { reload, toast } = useApp();

@@ -1,0 +1,100 @@
+.maintenance-stack {
+  display: grid;
+  gap: var(--space-5, 1.25rem);
+}
+.maintenance-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.maintenance-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0;
+}
+.maintenance-heading p {
+  margin-bottom: 0;
+}
+.maintenance-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.maintenance-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.maintenance-metrics span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.maintenance-metrics strong {
+  font-size: 1.1rem;
+  overflow-wrap: anywhere;
+}
+.maintenance-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+.maintenance-fields > .field {
+  max-width: 19rem;
+}
+.maintenance-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem 1rem;
+}
+.maintenance-choices label,
+.maintenance-paper-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.maintenance-paper-picker {
+  display: grid;
+  gap: 0.7rem;
+}
+.maintenance-paper-options {
+  display: grid;
+  gap: 0.65rem;
+  max-height: 19rem;
+  overflow: auto;
+  padding: 0.5rem;
+}
+.maintenance-preview {
+  display: grid;
+  gap: 0.65rem;
+  margin-block: 1rem;
+}
+.maintenance-impact {
+  line-height: 1.85;
+  padding-inline-start: 1.4rem;
+}
+@media (max-width: 650px) {
+  .maintenance-metrics,
+  .maintenance-choices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .maintenance-heading .action-row {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 360px) {
+  .maintenance-choices {
+    grid-template-columns: 1fr;
+  }
+}

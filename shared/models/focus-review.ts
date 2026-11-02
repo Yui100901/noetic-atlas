@@ -11,6 +11,7 @@ export interface FocusQuestion extends Question {
   partIndex?: number;
 }
 export interface FocusItem {
+  beforeReset?: true;
   paperId?: string;
   paperTitle?: string;
   paperVersion?: number;
@@ -89,6 +90,7 @@ export interface FocusView extends FocusSummary {
     attemptId?: string;
   };
   results: Array<{
+    beforeReset?: true;
     index: number;
     title: string;
     phase: FocusItem['phase'];

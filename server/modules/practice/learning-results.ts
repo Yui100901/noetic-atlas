@@ -84,14 +84,14 @@ export function resultFromAttempt(attempt: StoredAttempt): LearningResult {
 }
 
 /** Call inside the same transaction as submit/grade and BEFORE history pruning. */
-export function preserveLearningResults(store: Store, attempt: StoredAttempt): void {
+export function preserveLearningResults(store: Store, attempt: StoredAttempt, historyOptions:{trim?:boolean;create?:boolean}={}): void {
   if (attempt.status !== 'submitted') return;
   const previous=store.get<LearningResult>('learning_results',attempt.id);
   if(!previous?.reset){
     store.put('learning_results', attempt.id, resultFromAttempt(attempt));
     recordPlanEvidence(store,attempt.questions.filter(q=>isAnswerPresent(attempt.answers[q.id])).map(q=>({dayId:attempt.learningDayId,questionId:q.sourceQuestionId||q.id,...(q.partId?{partId:q.partId}:{}),direction:attempt.vocabularyDirection||(!q.partId&&(q.vocabulary||q.concept)?'word_to_meaning':'standard'),kind:'answer',at:attempt.submittedAt!,sourceId:attempt.id})));
   }
-  preserveQuestionHistory(store,attempt,true,!previous?.historyIndexed);
+  preserveQuestionHistory(store,attempt,historyOptions.trim??true,historyOptions.create??!previous?.historyIndexed);
 }
 
 /** Idempotent upgrade/import: previously pruned history cannot be reconstructed. */

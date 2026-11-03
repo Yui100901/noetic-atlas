@@ -29,8 +29,7 @@ const api = async (path) => {
 };
 try {
   const before = await api('/api/questions/' + h.state.questionId);
-  await page.goto(origin + '/#/settings');
-  await page.locator('details.settings-retention > summary').click();
+  await page.goto(origin + '/#/settings?tab=retention&sub=content');
   const drafts = page.getByLabel('每个题目编辑入口最多草稿数', { exact: true });
   const revisions = page.getByLabel('每题最多内容修订版本', { exact: true });
   assert.equal(await drafts.inputValue(), '3');
@@ -41,8 +40,8 @@ try {
   await page.getByRole('button', { name: '保存系统配置', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '确认记录保留范围', exact: true });
   await dialog.waitFor();
-  assert.match(await dialog.innerText(), /2份题目编辑草稿/);
-  assert.match(await dialog.innerText(), /2个题目修订版本/);
+  assert.match(await dialog.innerText(), /题目草稿：2 份/);
+  assert.match(await dialog.innerText(), /题目修订版本：2 份/);
   assert.equal((await api('/api/export')).questionDrafts.length, 3);
   assert.equal((await api('/api/export')).questionRevisions.length, 3);
   await dialog.getByRole('button', { name: '取消', exact: true }).click();

@@ -1,4 +1,5 @@
 import * as questionMaintenance from '../modules/questions/maintenance-schema.js';
+import { contentExportSelectionSchema, contentExportBuildSchema, contentExportPreviewSchema, contentExportFileSchema } from '../modules/transfer/domain-export-schema.js';
 import {explainInputSchema,gradeInputSchema} from '../modules/ai/reading-source.js';
 import {healthOutputSchema,cleanupOutputSchema,resetOutputSchema,compactOutputSchema} from '../modules/maintenance/output-schema.js';
 import {cleanupSelectionSchema} from '../modules/maintenance/cleanup.js';
@@ -149,6 +150,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/assets': assetInputSchema,
   '/api/sharing/export':shareSelection,'/api/sharing/export-document':shareSelection,'/api/sharing/preview':z.object({data:z.unknown()}).strict(),'/api/sharing/import':z.object({data:z.unknown(),confirmed:z.literal(true),expectedFingerprint:z.string().length(64).optional()}).strict(),
   '/api/import':z.object({data:z.unknown(),mode:z.literal('merge')}).strict(),
+  '/api/content-exports/preview':contentExportSelectionSchema,'/api/content-exports':contentExportBuildSchema,
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
   '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),documentDrafts:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
 };
@@ -237,6 +239,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   const outputs:Record<string,JsonSchema>={questions:toJson(validation.questionSchema),documents:toJson(validation.documentSchema),domains:toJson(validation.domainSchema),categories:toJson(validation.categorySchema),tags:toJson(validation.tagSchema),papers:paperOutput,attempts:attemptOutput,'paper-drafts':toJson(paperDraftSchema)};
   let success:JsonSchema=outputs[area]||object;
   if(url==='/api/maintenance/health')success=toJson(healthOutputSchema);
+  if(url==='/api/content-exports/preview')success=toJson(contentExportPreviewSchema);
+  if(url==='/api/content-exports')success=toJson(contentExportFileSchema);
   if(url==='/api/maintenance/cleanup-preview')success=toJson(cleanupOutputSchema);
   if(url==='/api/maintenance/cleanup')success=toJson(cleanupOutputSchema.extend({ok:z.literal(true)}));
   if(url==='/api/maintenance/reset-preview')success=toJson(resetOutputSchema);
@@ -335,6 +339,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
     schema.description+=' 独立配置迁移只处理常规偏好与可选 AI 非敏感设置，不含题目、笔记或 API 密钥。先 POST import/preview，再携带 fingerprint 与 confirmed:true 导入；若预览将清理历史/草稿，还须 confirmedRetention:true。配置或作答记录变化后须重新预览。更换服务端点会清除旧密钥，同端点保留本机密钥。';
     if(schema.body) (schema.body as JsonSchema).examples=[url.endsWith('/preview')?{data:configurationExample}:{data:configurationExample,fingerprint:'0'.repeat(64),confirmed:true}];
   }
+  if(url.startsWith('/api/content-exports')) { schema.tags=['数据迁移']; schema.summary=url.endsWith('/preview')?'预览按领域导出范围与目录计数':'生成按领域题库文件'; schema.description+=' 只读领域内容导出。domainIds为空仅预览全目录计数，不代表全选；purpose=migration默认所有审核状态和归属，输出无format的可信schemaVersion=1迁移包并保留审核状态；purpose=share默认published/general，输出learning-share，新增题目仍待审核。build必须携带同scope的expectedFingerprint；源题、分类标签、附件变化后409要求重新预览。combined返回单JSON；per_domain返回UTF-8 STORE ZIP，含独立JSON分片、manifest与README，解压后逐份导入。跨领域题在combined去重，在per_domain可重复。每份JSON不超过50000题或80MiB（分片最多500题），ZIP最多128MiB，按真实UTF-8序列化字节检查，不静默截断。响应dataBase64为文件字节，byteLength可校验。选题含其分类祖先、标签及题内附件；原文引用脱离本机document/version，仅保留标题、位置和摘录，不导出教材全文、未选题正文、学习状态、笔记、作答、草稿、修订、配置、AI凭据。'; }
   if(url.startsWith('/api/learning/'))schema.description+=' 学习记录按题集或随机练习来源隔离。错误状态、必要题目快照及来源摘要独立于整卷历史保留；按交卷时间取最近已判结果，未判主观题不覆盖已有判定。历史已清理时historyAvailable=false，不提供失效的复盘链接。收藏属于整题，组合小题独立掌握、笔记与复习。读取只加载当前页正文，不写入缓存。重置学习进度另需预览指纹与显式确认，保留收藏、笔记、历史成绩和草稿。';
   if(area==='analytics')schema.description+=' 只读学习统计，按配置时区的提交日期和复习日期归属。真实已答次数、去重知识项、漏答、未判与旧记录未知状态分开；正确率为正确/(正确+部分正确+错误)，无已判时为null。时长仅汇总实际答过且具有计时记录的提交，包含可能的停留时间。周报周一至周日；本周对比上周相同已过时段。历史裁剪保留学习摘要，主动重置后不借旧卷面重新灌入统计。';
   if(area==='search')schema.description+=' 统一检索题目、题集、资料、学习笔记、领域、分类和标签，NFKC规范化并忽略大小写，多词取交集，SQL特殊字符按字面匹配。counts为所有类型命中量，total为当前类型，totalAll为总量。默认排除归档及未发布题目，可显式包含待审核和草稿题；不检索未保存草稿、历史回答、AI配置或密钥。PDF仅元数据，Markdown可检索正文，题目答案解析仅用于匹配不返回原文。分页结果仅返回安全文本摘要，空词返回空结果；搜索派生索引可按需维护但不修改业务记录。考试期间受统一访问锁定。';

@@ -32,6 +32,8 @@ jobs:
       - run: node scripts/qa/check-form-save-bar-focus-ui.mjs
       - run: node scripts/qa/check-library-compact-ui.mjs
       - run: node scripts/qa/check-learning-reader-layout-ui.mjs
+      - run: node scripts/qa/check-settings-save-bar-ui.mjs
+      - run: node scripts/qa/check-domain-export-ui.mjs
       - name: Keep synthetic screenshots and failure diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -41,5 +43,7 @@ jobs:
             test-results/form-save-bar-focus-ui/
             test-results/library-compact-ui/
             test-results/learning-reader-layout/
+            test-results/settings-save-bar-ui/
+            test-results/domain-export-ui/
           retention-days: 7
           if-no-files-found: ignore

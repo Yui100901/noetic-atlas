@@ -3,14 +3,16 @@ import { flattenQuestions } from '../questions/structure.js';
 import { readOnlyOperation } from '../../http/operation.js';
 import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
+import { cleanContentQuestion, contentExportContext } from './export-content.js';
+import { sharePackageSchema, shareQuestionSchema, validateShareExport } from './schema.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Category, Domain, Question, Tag } from '../../../shared/models/types.js';
 import type { SharePackage, SharePreview, ShareSelection } from '../../../shared/models/sharing.js';
 import { type AssetRecord } from '../../../shared/assets/assets.js';
 import { Store, makeId, now, type Table } from '../../core/store.js';
-import { id, parse, fail, domainSchema, categorySchema, tagSchema, questionSchema, questionBankSchema, storedScoringSchema, filtersSchema, types, gradingRequirementsSchema, questionGradingRequirementsSchema } from '../../core/validation.js';
-import { assetRecordSchema, validateAssetRecord } from '../assets/schema.js';
+import { id, parse, fail, filtersSchema, types } from '../../core/validation.js';
+import { validateAssetRecord } from '../assets/schema.js';
 import { collectAssetReferences, validateAssetReferences } from '../assets/service.js';
 import { type StoredPaper, QUICK_PAPER_ID } from '../practice/service.js';
 import { resolveConceptQuestion, validateConceptPaperSnapshot } from '../practice/concept-practice.js';
@@ -29,10 +31,7 @@ function shareFilters(raw:Record<string,unknown>={}) {
   if(typeof input.tagIds==='string')input.tagIds=input.tagIds.split(',').filter(Boolean);
   return parse(shareFiltersSchema,input);
 }
-const shareQuestion = questionSchema.safeExtend({ id });
-const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), gradingRequirements: gradingRequirementsSchema.optional(), questionGradingRequirements:questionGradingRequirementsSchema.optional(), inheritedGradingRequirements:questionGradingRequirementsSchema.optional(), mode: z.enum(['manual','random']), practiceKind: z.enum(['standard','vocabulary','concept']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000), questionCount: z.number().int().min(0).max(50000), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).max(50000), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
-const packageSchema = z.object({ format: z.literal('learning-share'), schemaVersion: z.literal(1), exportedAt: z.string().datetime({offset:true}), title: z.string().min(1).max(300), domains: z.array(domainSchema.extend({id})).max(10000), categories: z.array(categorySchema.extend({id})).max(50000), tags: z.array(tagSchema.extend({id})).max(50000), assets: z.array(assetRecordSchema).max(10000), questions: z.array(shareQuestion).max(50000), papers: z.array(paperSchema).max(100), questionBanks: z.array(questionBankSchema.safeExtend({id})).max(100).default([]) }).strict();
-const cleanQuestion = (question: Question): Question => { const { study: _study, ...record } = question; return { ...record, sourceDocument: null, sourceAnchor: null, ...(record.documentLinks?{documentLinks:record.documentLinks.map(link=>({...link,documentId:null,versionId:null}))}:{}) }; };
+const cleanQuestion = cleanContentQuestion;
 function canonical(value: unknown): string { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([a],[b]) => a.localeCompare(b)).map(([key,entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(',')}}`; return JSON.stringify(value); }
 function fingerprint(store: Store) { return createHash('sha256').update(canonical(['domains','categories','tags','assets','questions','papers','question_banks'].map(table => store.all(table as Table)))).digest('hex'); }
 function semantic(value: any, table: Table) {
@@ -142,17 +141,13 @@ export function exportShare(store: Store, selection: ShareSelection): SharePacka
   }
   if (!questions.length && !papers.length) fail(422, 'EMPTY_SHARE', '当前范围没有可分享的题目');
   assertUnique(questions, 'questions');
-  const categories = new Map(store.all<Category>('categories').map(category => [category.id, category])); const categoryIds = new Set(questions.flatMap(question => question.categoryIds));
-  for (const cid of categoryIds) { let parent = categories.get(cid)?.parentId; const seen = new Set([cid]); while (parent) { if (seen.has(parent)) fail(400,'CATEGORY_CYCLE','分类不能形成环'); seen.add(parent); categoryIds.add(parent); parent = categories.get(parent)?.parentId; } }
-  const tagIds = new Set(questions.flatMap(question => question.tagIds)); const tags = [...tagIds].map(tid => store.require<Tag>('tags', tid));
-  const chosenCategories = [...categoryIds].map(cid => store.require<Category>('categories', cid)); const domainIds = new Set([...chosenCategories.map(category => category.domainId), ...tags.flatMap(tag => tag.domainId ? [tag.domainId] : []), ...papers.flatMap(paper => paper.domainId ? [paper.domainId] : [])]);
-  const assets = [...collectAssetReferences({ questions, papers })].map(aid => store.require<AssetRecord>('assets', aid));
-  return { format:'learning-share', schemaVersion:1, exportedAt:now(), title, domains:[...domainIds].map(did => store.require<Domain>('domains', did)), categories:chosenCategories, tags, assets, questions, papers, questionBanks:[] };
+  const dependencies = contentExportContext(store).dependencies(questions, papers, papers.flatMap(paper => paper.domainId ? [paper.domainId] : []));
+  return validateShareExport({ format:'learning-share', schemaVersion:1, exportedAt:now(), title, ...dependencies, questions, papers, questionBanks:[] });
 }
 
 /** Build the whole graph before writing. ID collisions never overwrite local data. */
 export function planShareImport(store: Store, raw: unknown) {
-  const data = parse(packageSchema, raw) as SharePackage;
+  const data = parse(sharePackageSchema, raw) as SharePackage;
   for (const [key, entries] of Object.entries({domains:data.domains,categories:data.categories,tags:data.tags,assets:data.assets,questions:data.questions,papers:data.papers,question_banks:data.questionBanks})) assertUnique(entries, key);
   const sourceQuestions = new Map(data.questions.map(question => [question.id, question]));
   // Older share files may contain reference collections. Fold them into the
@@ -231,7 +226,7 @@ export function planShareImport(store: Store, raw: unknown) {
   for(const [source,target]of questionTargets)mapFor('questions').set(source,target);
   for(let i=0;i<data.questions.length;i++){
     const question=data.questions[i]!,transformed=mapQuestionLinks(transformedQuestions[i],qid=>questionRoute(ref('questions',qid)));
-    assign('questions',question,parse(shareQuestion,transformed),questionTargets.get(question.id));
+    assign('questions',question,parse(shareQuestionSchema,transformed),questionTargets.get(question.id));
   }
   for (const paper of data.papers) {
     if (paper.id === QUICK_PAPER_ID) fail(400,'RESERVED_PAPER_ID','分享题集ID无效');

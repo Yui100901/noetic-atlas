@@ -145,15 +145,15 @@ try {
   assert.equal(await page.locator('.global-learning-questions').count(), 0, 'adaptive queue replaces the old duplicate due listing');
   checks.push('手动改期和暂停/恢复不增加回忆次数，到期队列实时更新并替代重复旧列表');
 
-  await go('settings'); await page.getByLabel('复习调度方式', { exact: true }).selectOption('fixed'); await page.getByRole('button', { name: '保存系统配置', exact: true }).click(); await waitFor(async () => (await api('/api/settings')).reviewScheduling.strategy === 'fixed');
+  await go('settings?tab=review&sub=scheduler'); await page.getByLabel('复习调度方式', { exact: true }).selectOption('fixed'); await page.getByRole('button', { name: '保存系统配置', exact: true }).click(); await waitFor(async () => (await api('/api/settings')).reviewScheduling.strategy === 'fixed');
   await go('questions/ADAPT-TF'); assert.equal(await panel().count(), 0); await page.getByText('调整复习日期', { exact: true }).waitFor();
-  await go('settings'); await page.getByLabel('复习调度方式', { exact: true }).selectOption('fsrs'); await page.getByLabel('目标记忆率（%）', { exact: true }).fill('90'); await page.getByRole('button', { name: '保存系统配置', exact: true }).click(); await waitFor(async () => (await api('/api/settings')).reviewScheduling.strategy === 'fsrs');
+  await go('settings?tab=review&sub=scheduler'); await page.getByLabel('复习调度方式', { exact: true }).selectOption('fsrs'); await page.getByLabel('目标记忆率（%）', { exact: true }).fill('90'); await page.getByRole('button', { name: '保存系统配置', exact: true }).click(); await waitFor(async () => (await api('/api/settings')).reviewScheduling.strategy === 'fsrs');
   checks.push('系统配置可保存FSRS参数并切换固定间隔；两种策略的界面与独立掌握记录保持明确');
 
   const settings = await api('/api/settings'); await api('/api/settings', 'PUT', { settings: { ...settings, theme: 'dark' } }); await page.setViewportSize({ width: 390, height: 844 });
   await go('questions/ADAPT-TF'); await rateButton(panel(), '良好').waitFor(); await capture('card-dark-mobile');
   await go('learning/due'); await page.getByLabel('自适应复习队列', { exact: true }).waitFor(); await capture('queue-dark-mobile');
-  await go('settings'); await page.getByLabel('复习调度方式', { exact: true }).waitFor(); await capture('settings-dark-mobile');
+  await go('settings?tab=review&sub=scheduler'); await page.getByLabel('复习调度方式', { exact: true }).waitFor(); await capture('settings-dark-mobile');
   checks.push('390px暗色题目、实时队列和设置无横向溢出，四档按钮和配置控件可用');
 
   const exam = await api('/api/papers/' + paperId + '/attempts', 'POST', { mode: 'exam', durationMinutes: 120 }, 201);

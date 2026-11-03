@@ -37,6 +37,7 @@ import { registerPracticeRoutes } from './modules/practice/routes.js';
 import { registerContextLearningRoutes } from './modules/practice/learning.js';
 import { registerGlobalLearningRoutes } from './modules/practice/global-learning.js';
 import { registerTransferRoutes } from './modules/transfer/routes.js';
+import { registerContentExportRoutes } from './modules/transfer/domain-exports.js';
 import { migrateLearningResults } from './modules/practice/learning-results.js';
 import { registerLearningResetRoutes } from './modules/study/reset.js';
 import { migrateQuestionHistory } from './modules/questions/history-store.js';
@@ -118,6 +119,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerGlobalLearningRoutes(app, store);
 
   registerTransferRoutes(app, store);
+  registerContentExportRoutes(app, store);
   registerDailyPushRoutes(app, store, { now: options.dailyPushNow || options.dailyPushSchedulerClock?.now.bind(options.dailyPushSchedulerClock) });
   registerAnalyticsRoutes(app, store);
   registerSearchRoutes(app, store);

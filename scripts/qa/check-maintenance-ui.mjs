@@ -26,12 +26,13 @@ const noOverflow = async () =>
     'page must not overflow horizontally',
   );
 try {
-  await page.goto(origin + '/#/settings?tab=backup');
+  await page.goto(origin + '/#/settings?tab=backup&sub=health');
   await page.getByRole('heading', { name: '数据健康', exact: true }).waitFor();
   await page.getByRole('button', { name: '检查数据库', exact: true }).click();
   await page.getByText(/一致性正常/).waitFor();
   checks.push('health counts and native integrity check');
   await page.screenshot({ path: resolve(h.folder, 'maintenance-desktop.png'), fullPage: true });
+  await page.goto(origin + '/#/settings?tab=backup&sub=cleanup');
   await page.getByRole('button', { name: '预览清理范围', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: '确认清理旧数据' });
   await dialog.waitFor();
@@ -51,6 +52,7 @@ try {
   assert.equal((await page.request.get(origin + '/api/assets/orphan/data')).status(), 404);
   assert.equal((await page.request.get(origin + '/api/assets/used/data')).status(), 200);
   checks.push('unused asset cleanup preserves referenced images');
+  await page.goto(origin + '/#/settings?tab=backup&sub=reset');
   const panel = page.getByRole('region', { name: '分级重置学习进度' });
   await panel.getByLabel('重置范围', { exact: true }).selectOption('paper');
   await panel.getByRole('radio', { name: '维护题集甲', exact: true }).check();
@@ -117,7 +119,7 @@ try {
     .getByRole('button', { name: '取消', exact: true })
     .click();
   checks.push('set menu reuses a single dialog with the correct source');
-  await page.goto(origin + '/#/settings?tab=backup');
+  await page.goto(origin + '/#/settings?tab=backup&sub=health');
   await page.getByRole('heading', { name: '数据健康', exact: true }).waitFor();
   await page.getByText('高级维护与最近操作', { exact: true }).click();
   await page.getByRole('button', { name: '整理数据库空间', exact: true }).click();
@@ -128,6 +130,7 @@ try {
   await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
   await page.screenshot({ path: resolve(h.folder, 'maintenance-mobile-dark.png'), fullPage: true });
   await page.evaluate(() => (document.documentElement.dataset.theme = 'green'));
+  await page.goto(origin + '/#/settings?tab=backup&sub=reset');
   await panel.getByLabel('重置级别', { exact: true }).selectOption('complete');
   await preview();
   await confirmation.waitFor();

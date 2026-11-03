@@ -201,13 +201,13 @@ try {
   }
   checks.push('五个内置主题从真实配置加载，手机设置布局和表单保持可用');
   // Exercise reusable controls without creating application content.
-  await page.setViewportSize({ width: 1440, height: 1000 }); await go('settings');
+  await page.setViewportSize({ width: 1440, height: 1000 }); await go('settings?tab=practice');
   const duration = page.getByLabel('考试模式默认时长（分钟）', { exact: true });
   await duration.fill('90');
   await page.getByRole('button', { name: '保存系统配置', exact: true }).click();
   for (let index = 0; index < 30 && (await api('/api/settings')).examDurationMinutes !== 90; index++) await delay(100);
   assert.equal((await api('/api/settings')).examDurationMinutes, 90);
-  await page.getByRole('button', { name: '数据维护与备份', exact: true }).click();
+  await page.getByRole('navigation', { name: '系统配置分区', exact: true }).getByRole('link', { name: '数据与迁移', exact: false }).click();
   await page.getByRole('heading', { name: '完整 JSON 备份', exact: true }).waitFor();
   await geometry('settings-backup-tab-click');
   checks.push('设置保存及分区切换通过真实按钮操作，复用样式未影响表单与导航');

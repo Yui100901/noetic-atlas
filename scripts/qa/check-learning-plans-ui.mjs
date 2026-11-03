@@ -48,13 +48,16 @@ try {
   await added.getByLabel('学习领域', { exact: true }).selectOption('A');
   await added.getByRole('checkbox', { name: '计算机基础分类', exact: true }).check();
   await added.getByRole('checkbox', { name: '启用此目标', exact: true }).uncheck();
-  await page.getByRole('button', { name: '保存推题配置', exact: true }).click();
-  await page.getByText('每日推题配置已保存', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '保存系统配置', exact: true }).click();
+  await page
+    .getByRole('region', { name: '系统配置保存操作', exact: true })
+    .getByText('系统配置已保存', { exact: true })
+    .waitFor();
   assert.equal((await api('/api/settings')).dailyPush.goals.length, 3);
   checks.push('多目标编辑、分类筛选、暂停与保存');
   await added.getByRole('button', { name: '移除目标', exact: true }).click();
   await page.getByLabel('开启每日推题', { exact: true }).check();
-  await page.getByRole('button', { name: '保存推题配置', exact: true }).click();
+  await page.getByRole('button', { name: '保存系统配置', exact: true }).click();
   await wait(async () => !!(await api('/api/daily-push')).plan);
   await page.goto(`${origin}/#/papers`);
   const card = page

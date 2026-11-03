@@ -78,7 +78,7 @@ export function ConfigurationTransfer() {
     <p className="muted">配置导入可以覆盖本机自定义设置；题目和笔记保留。导入前会展示差异，超限记录清理需另行确认。AI接口改变时会清除目标设备旧密钥。</p>
     <input ref={inputRef} type="file" className="sr-only" aria-label="选择配置JSON文件" accept=".json,application/json" disabled={busy} onChange={event => void load(event.target.files?.[0])} />
     {error && <ErrorNotice message={error} />}{busy && <p role="status">正在处理配置…</p>}
-    {done && <div className="notice success" role="status">配置已导入。可切换到“学习与练习”或“AI辅助”查看最新设置。</div>}
+    {done && <div className="notice success" role="status">配置已导入。可切换到对应配置分区查看；未保存修改会保留并提示版本冲突。</div>}
     {data !== null && !preview && !busy && <button className="button" onClick={() => void inspectAgain()}>重新预览配置</button>}
     {preview && <div className="configuration-preview ui-stack"><h3>配置导入预览：{filename}</h3><Changes title="常规配置差异" changes={preview.systemChanges} /><Changes title="AI配置差异" changes={preview.aiChanges} />
       <p>{preview.aiKey.message}</p>{preview.warnings.length > 0 && <ul>{preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}

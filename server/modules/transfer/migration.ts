@@ -88,6 +88,7 @@ export function exportData(store: Store) {
   return { schemaVersion: 1, exportedAt: now(), ...Object.fromEntries(tables.map(table => [dataKey(table), table === 'question_banks' ? [] : table === 'papers' ? papers : store.all(table)])) };
 }
 export function importData(store: Store, raw: unknown) {
+  if (raw && typeof raw === 'object' && Object.hasOwn(raw, 'format')) fail(400, 'CONTENT_IMPORT_PURPOSE_MISMATCH', '此入口只接受可信迁移备份。分享包或新增题目包请使用对应导入入口，新增题目仍须审核');
   const data = parse(envelopeSchema, cleanLegacyBankFilters(cleanLearningEnvelope(raw)));
   const revisionSequences = data.questionRevisions.map(value => JSON.stringify([value.questionId, value.sequence]));
   if (new Set(revisionSequences).size !== revisionSequences.length) fail(400, 'DUPLICATE_QUESTION_REVISION_SEQUENCE', '导入数据包含相同题目的重复修订序号');

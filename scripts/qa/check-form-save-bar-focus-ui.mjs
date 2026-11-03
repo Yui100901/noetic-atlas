@@ -13,7 +13,7 @@ try{
   for(const [route,field,preceding,region] of [
     ['questions/new','参考来源','详细解析、追问与常见误区','题目保存操作'],
     ['documents/new','资料简介','出版年份 / 版本','资料保存操作'],
-    ['settings','单张图片上限（MiB）','单份MD / PDF上限（MiB）','系统配置保存操作']
+    ['settings?tab=assets&sub=uploads','单张图片上限（MiB）','单份MD / PDF上限（MiB）','系统配置保存操作']
   ]){
     await page.goto(origin+'/#/'+route);
     const target=page.getByLabel(field,{exact:true});await target.waitFor();
@@ -26,7 +26,7 @@ try{
     for(let i=0;i<20&&!(await target.evaluate(el=>document.activeElement===el));i++)await page.keyboard.press('Tab');
     const state=await target.evaluate(el=>({active:document.activeElement===el,top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom}));
     const box=await bar.boundingBox();focusResults.push({width,route,field,...state,barTop:box.y,barHeight:box.height,covered:state.bottom>box.y+1});
-    await page.screenshot({path:resolve(folder,'focus-'+route.split('/')[0]+'-'+width+'.png'),fullPage:false});
+    await page.screenshot({path:resolve(folder,'focus-'+route.split(/[/?]/)[0]+'-'+width+'.png'),fullPage:false});
   }
  }
  console.log(JSON.stringify({focusResults,errors}));assert.equal(focusResults.length,9);for(const result of focusResults){assert.equal(result.active,true,JSON.stringify(result));assert.equal(result.covered,false,JSON.stringify(result));assert.ok(result.top>=0,JSON.stringify(result));}assert.deepEqual(errors,[]);assert.deepEqual(external,[]);await writeFile(resolve(folder,'focus-report.json'),JSON.stringify({focusResults,errors},null,2));

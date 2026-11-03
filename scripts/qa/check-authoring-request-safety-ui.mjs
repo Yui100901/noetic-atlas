@@ -155,6 +155,15 @@ try {
   await preview().getByText('3 道题目', { exact: true }).waitFor();
   assert.match(await preview().innerText(), /recovered-D\.json/);
   checks.push('无效JSON保留所选文件名并阻止导入，重新选文件可恢复且无旧数据混入');
+  await choose('shared.json', JSON.stringify({ ...json('S', 1), format: 'learning-share' }));
+  await page.getByRole('alert').filter({ hasText: '这是分享包' }).waitFor();
+  assert.equal(await preview().count(), 0);
+  assert.equal(await page.getByRole('button', { name: '确认合并导入', exact: true }).count(), 0);
+  assert.equal(
+    await page.getByRole('link', { name: '导入分享包', exact: true }).getAttribute('href'),
+    '#/sharing',
+  );
+  checks.push('分享包不能通过可信备份入口跳过审核，提示使用正确导入入口');
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await page.screenshot({ path: resolve(h.folder, 'backup-mobile.png'), fullPage: true });

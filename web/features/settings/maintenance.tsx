@@ -13,9 +13,12 @@ import { LearningReset } from './learning-reset';
 import './maintenance.css';
 
 const bytes = (value: number) => `${(value / 1024 / 1024).toFixed(2)} MiB`;
-export function DataMaintenance() {
+export type MaintenanceView = 'health' | 'cleanup' | 'reset' | 'all';
+export function DataMaintenance({ view = 'all' }: { view?: MaintenanceView }) {
+  const showHealth = view === 'health' || view === 'all';
+  const showCleanup = view === 'cleanup' || view === 'all';
   const { toast, reload } = useApp(),
-    health = useResource<DataHealth>('/api/maintenance/health');
+    health = useResource<DataHealth>(showHealth ? '/api/maintenance/health' : null);
   const [checked, setChecked] = useState<DataHealth | null>(null),
     [selection, setSelection] = useState<CleanupSelection>({
       kinds: ['unused_assets'],
@@ -59,169 +62,177 @@ export function DataMaintenance() {
   };
   return (
     <div className="maintenance-stack">
-      <section className="card settings-section ui-stack">
-        <header className="maintenance-heading">
-          <div>
-            <h2>
-              <Activity size={20} />
-              数据健康
-            </h2>
-            <p className="muted">先检查与预览，再决定维护范围。</p>
-          </div>
-          <div className="action-row">
+      {showHealth && (
+        <section className="card settings-section ui-stack">
+          <header className="maintenance-heading">
+            <div>
+              <h2>
+                <Activity size={20} />
+                数据健康
+              </h2>
+              <p className="muted">先检查与预览，再决定维护范围。</p>
+            </div>
+            <div className="action-row">
+              <a className="button" href="#/settings?tab=backup&sub=backup">
+                导出或恢复备份
+              </a>
+              <button className="button" disabled={busy || health.loading} onClick={refresh}>
+                <RefreshCw size={15} />
+                刷新
+              </button>
+              <button
+                className="button"
+                disabled={busy}
+                onClick={() =>
+                  void task(async () => {
+                    setChecked(await request<DataHealth>('/api/maintenance/health?integrity=true'));
+                  })
+                }
+              >
+                检查数据库
+              </button>
+            </div>
+          </header>
+          {health.loading && !data ? (
+            <Loading />
+          ) : data ? (
+            <>
+              <div className="maintenance-metrics">
+                {[
+                  ['题目', data.counts.questions],
+                  ['题集', data.counts.papers],
+                  ['学习资料', data.counts.documents],
+                  ['作答记录', data.counts.attempts],
+                  ['数据库', bytes(data.storage.databaseBytes)],
+                  ['可整理空间', bytes(data.storage.freeBytes)],
+                ].map(([name, value]) => (
+                  <div key={name}>
+                    <span>{name}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+              <p className="muted">
+                最近检查 {localDate(data.checkedAt)}
+                {data.storage.integrity
+                  ? ` · 一致性${data.storage.integrity.every((v) => v === 'ok') ? '正常' : '存在异常'}`
+                  : ''}{' '}
+                · 未引用文件{data.unusedAssets}份，{bytes(data.unusedAssetBytes)}
+              </p>
+              {data.issues.map((issue, index) => (
+                <p
+                  key={index}
+                  className={`notice ${issue.level === 'warning' ? 'warning' : 'info'}`}
+                >
+                  {issue.message}
+                  {issue.href && <a href={issue.href}>前往查看</a>}
+                </p>
+              ))}
+              {!data.issues.length && (
+                <p className="notice success">未发现附件引用或空间方面的维护提示。</p>
+              )}
+              <details>
+                <summary>高级维护与最近操作</summary>
+                <p className="muted">
+                  索引重建用于修复搜索和引用索引；空间整理用于回收清理后的空闲页。维护期间请等待操作完成。
+                </p>
+                <div className="form-actions">
+                  <button className="button" disabled={busy} onClick={() => setAction('reindex')}>
+                    重建搜索与引用索引
+                  </button>
+                  <button className="button" disabled={busy} onClick={() => setAction('compact')}>
+                    整理数据库空间
+                  </button>
+                </div>
+                {data.operations.length ? (
+                  <ol>
+                    {data.operations.map((op, i) => (
+                      <li key={i}>
+                        {localDate(op.at)} · {op.summary}
+                        {op.count ? `（${op.count}项）` : ''}
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="muted">暂无维护操作。</p>
+                )}
+              </details>
+            </>
+          ) : health.error ? (
+            <ErrorNotice message={health.error} retry={refresh} />
+          ) : null}
+        </section>
+      )}
+      {showCleanup && (
+        <section className="card settings-section ui-stack">
+          <h2>清理旧数据</h2>
+          <p className="muted">
+            清理历史卷面与单题详细回答不会清空累计统计、错题、笔记或收藏。正在计时和考试中的草稿、教材任务关联记录及仍被引用的文件会保留。
+          </p>
+          <fieldset className="maintenance-fields" disabled={busy}>
+            <Field label="仅处理早于多少天的记录">
+              <input
+                type="number"
+                min={1}
+                max={36500}
+                value={selection.olderThanDays}
+                onChange={(e) => change({ ...selection, olderThanDays: Number(e.target.value) })}
+              />
+            </Field>
+            <div className="maintenance-choices">
+              {CLEANUP_KINDS.map((kind) => (
+                <label key={kind}>
+                  <input
+                    type="checkbox"
+                    checked={selection.kinds.includes(kind)}
+                    onChange={(e) =>
+                      change({
+                        ...selection,
+                        kinds: e.target.checked
+                          ? [...selection.kinds, kind]
+                          : selection.kinds.filter((k) => k !== kind),
+                      })
+                    }
+                  />
+                  <span>{CLEANUP_LABELS[kind]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <p className="muted">
+            组题、资料与AI工作台草稿可能包含尚未发布的内容，仅在勾选后处理。文件会检查原题、资料、原文版本、历史卷面和教材候选题等全部引用。
+          </p>
+          <div className="form-actions">
             <button
               className="button"
-              onClick={() => document.getElementById('maintenance-backups')?.scrollIntoView()}
-            >
-              导出或恢复备份
-            </button>
-            <button className="button" disabled={busy || health.loading} onClick={refresh}>
-              <RefreshCw size={15} />
-              刷新
-            </button>
-            <button
-              className="button"
-              disabled={busy}
+              disabled={
+                busy ||
+                !selection.kinds.length ||
+                !Number.isInteger(selection.olderThanDays) ||
+                selection.olderThanDays < 1 ||
+                selection.olderThanDays > 36500
+              }
               onClick={() =>
                 void task(async () => {
-                  setChecked(await request<DataHealth>('/api/maintenance/health?integrity=true'));
+                  setConfirmed(false);
+                  setPreview(
+                    await send<CleanupPreview>(
+                      '/api/maintenance/cleanup-preview',
+                      'POST',
+                      selection,
+                    ),
+                  );
                 })
               }
             >
-              检查数据库
+              <Trash2 size={16} />
+              预览清理范围
             </button>
           </div>
-        </header>
-        {health.loading && !data ? (
-          <Loading />
-        ) : data ? (
-          <>
-            <div className="maintenance-metrics">
-              {[
-                ['题目', data.counts.questions],
-                ['题集', data.counts.papers],
-                ['学习资料', data.counts.documents],
-                ['作答记录', data.counts.attempts],
-                ['数据库', bytes(data.storage.databaseBytes)],
-                ['可整理空间', bytes(data.storage.freeBytes)],
-              ].map(([name, value]) => (
-                <div key={name}>
-                  <span>{name}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
-            </div>
-            <p className="muted">
-              最近检查 {localDate(data.checkedAt)}
-              {data.storage.integrity
-                ? ` · 一致性${data.storage.integrity.every((v) => v === 'ok') ? '正常' : '存在异常'}`
-                : ''}{' '}
-              · 未引用文件{data.unusedAssets}份，{bytes(data.unusedAssetBytes)}
-            </p>
-            {data.issues.map((issue, index) => (
-              <p key={index} className={`notice ${issue.level === 'warning' ? 'warning' : 'info'}`}>
-                {issue.message}
-                {issue.href && <a href={issue.href}>前往查看</a>}
-              </p>
-            ))}
-            {!data.issues.length && (
-              <p className="notice success">未发现附件引用或空间方面的维护提示。</p>
-            )}
-            <details>
-              <summary>高级维护与最近操作</summary>
-              <p className="muted">
-                索引重建用于修复搜索和引用索引；空间整理用于回收清理后的空闲页。维护期间请等待操作完成。
-              </p>
-              <div className="form-actions">
-                <button className="button" disabled={busy} onClick={() => setAction('reindex')}>
-                  重建搜索与引用索引
-                </button>
-                <button className="button" disabled={busy} onClick={() => setAction('compact')}>
-                  整理数据库空间
-                </button>
-              </div>
-              {data.operations.length ? (
-                <ol>
-                  {data.operations.map((op, i) => (
-                    <li key={i}>
-                      {localDate(op.at)} · {op.summary}
-                      {op.count ? `（${op.count}项）` : ''}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="muted">暂无维护操作。</p>
-              )}
-            </details>
-          </>
-        ) : health.error ? (
-          <ErrorNotice message={health.error} retry={refresh} />
-        ) : null}
-      </section>
-      <section className="card settings-section ui-stack">
-        <h2>清理旧数据</h2>
-        <p className="muted">
-          清理历史卷面与单题详细回答不会清空累计统计、错题、笔记或收藏。正在计时和考试中的草稿、教材任务关联记录及仍被引用的文件会保留。
-        </p>
-        <fieldset className="maintenance-fields" disabled={busy}>
-          <Field label="仅处理早于多少天的记录">
-            <input
-              type="number"
-              min={1}
-              max={36500}
-              value={selection.olderThanDays}
-              onChange={(e) => change({ ...selection, olderThanDays: Number(e.target.value) })}
-            />
-          </Field>
-          <div className="maintenance-choices">
-            {CLEANUP_KINDS.map((kind) => (
-              <label key={kind}>
-                <input
-                  type="checkbox"
-                  checked={selection.kinds.includes(kind)}
-                  onChange={(e) =>
-                    change({
-                      ...selection,
-                      kinds: e.target.checked
-                        ? [...selection.kinds, kind]
-                        : selection.kinds.filter((k) => k !== kind),
-                    })
-                  }
-                />
-                <span>{CLEANUP_LABELS[kind]}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <p className="muted">
-          组题、资料与AI工作台草稿可能包含尚未发布的内容，仅在勾选后处理。文件会检查原题、资料、原文版本、历史卷面和教材候选题等全部引用。
-        </p>
-        <div className="form-actions">
-          <button
-            className="button"
-            disabled={
-              busy ||
-              !selection.kinds.length ||
-              !Number.isInteger(selection.olderThanDays) ||
-              selection.olderThanDays < 1 ||
-              selection.olderThanDays > 36500
-            }
-            onClick={() =>
-              void task(async () => {
-                setConfirmed(false);
-                setPreview(
-                  await send<CleanupPreview>('/api/maintenance/cleanup-preview', 'POST', selection),
-                );
-              })
-            }
-          >
-            <Trash2 size={16} />
-            预览清理范围
-          </button>
-        </div>
-      </section>
+        </section>
+      )}
       {error && <ErrorNotice message={error} />}
-      <LearningReset onDone={refresh} />
+      {(view === 'reset' || view === 'all') && <LearningReset onDone={refresh} />}
       {preview && (
         <Modal
           title="确认清理旧数据"

@@ -1,0 +1,252 @@
+.domain-export {
+  display: grid;
+  gap: 1.15rem;
+  min-width: 0;
+}
+.domain-export h2,
+.domain-export h3,
+.domain-export p {
+  margin: 0;
+}
+.domain-export-heading p {
+  margin-top: 0.45rem;
+}
+.domain-export fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.domain-export legend {
+  margin-bottom: 0.65rem;
+  font-weight: 650;
+}
+.domain-export-purpose,
+.domain-export-formats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+.domain-export-choice {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 0.9rem;
+  background: var(--surface);
+  cursor: pointer;
+  min-width: 0;
+}
+.domain-export-choice input,
+.domain-export-domain input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 0.1rem 0 0;
+}
+.domain-export-choice span {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.domain-export-choice strong {
+  font-size: 0.94rem;
+}
+.domain-export-choice small {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.domain-export-choice.selected,
+.domain-export-domain.selected {
+  border-color: var(--green);
+  background: var(--theme-inset);
+}
+.domain-export-privacy {
+  font-size: 0.88rem;
+  line-height: 1.75;
+}
+.domain-export-scope {
+  display: grid;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+}
+.domain-export-advanced {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+}
+.domain-export-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.domain-export-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 240px));
+  gap: 0.75rem;
+  margin: 0.9rem 0 0.65rem;
+}
+.domain-export-domain-heading,
+.domain-export-selection-actions,
+.domain-export-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.domain-export-domain-heading {
+  justify-content: space-between;
+}
+.domain-export-domain-heading h3 {
+  font-size: 1rem;
+}
+.domain-export-domain-heading h3 span {
+  margin-left: 0.3rem;
+  font-size: 0.83rem;
+  font-weight: 400;
+}
+.domain-export-selection-actions .button {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.84rem;
+}
+.domain-export-domain-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.domain-export-domain {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.8rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  cursor: pointer;
+  background: var(--surface);
+}
+.domain-export-domain > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+.domain-export-domain small {
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.domain-export-preview {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--theme-inset);
+  min-width: 0;
+}
+.domain-export-preview h3 {
+  font-size: 1rem;
+}
+.domain-export-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.domain-export-metrics > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.65rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.domain-export-metrics strong {
+  font-size: 1.2rem;
+}
+.domain-export-metrics span {
+  font-size: 0.77rem;
+  color: var(--muted);
+}
+.domain-export-domain-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.domain-export-domain-summary li {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  font-size: 0.86rem;
+}
+.domain-export-domain-summary strong {
+  flex-shrink: 0;
+  font-weight: 550;
+}
+.domain-export-preview .muted,
+.domain-export-preview .notice {
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+.domain-export-notes {
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+.domain-export-notes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.domain-export-notes ul {
+  padding-left: 1.3rem;
+  margin: 0.6rem 0 0;
+}
+.domain-export-notes li + li {
+  margin-top: 0.35rem;
+}
+.domain-export-actions {
+  padding-top: 0.15rem;
+}
+.domain-export-work {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.domain-export > .pagination {
+  margin: 0;
+}
+@media (max-width: 850px) {
+  .domain-export-domain-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .domain-export-purpose,
+  .domain-export-formats,
+  .domain-export-filters,
+  .domain-export-domain-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .domain-export-domain-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .domain-export-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .domain-export-actions > .button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+  .domain-export-work {
+    width: 100%;
+    justify-content: center;
+  }
+  .domain-export-preview {
+    padding: 0.8rem;
+  }
+}

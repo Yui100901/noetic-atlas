@@ -298,7 +298,9 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 - `POST /api/sharing/export-document`：同一选择返回 ExportDocument，由网页／Android 共用渲染器生成含答案的 PDF 或 Markdown；普通题目选择单批最多500题，题集分享受封包大小和完整性校验。
 - `GET /api/papers/:id/export-document?mode=blank|answers`：空白卷或答案卷；`GET /api/attempts/:id/export-document?mode=blank|answers|completed`：已提交会话的快照卷。
 - `GET /api/papers/:id/export?answers=true|false`：Markdown 卷。网页下载转换托管图片为 data URI；PDF 中 PNG/JPEG 直嵌，GIF/WebP 使用首帧。
-- `GET /api/export`：完整 JSON；`POST /api/import`：`{data,mode:'merge'}`。迁移保留题目原审核状态，与新增题目导入区分；同 ID 内容不静默覆盖。
+- `POST /api/content-exports/preview`：传`{domainIds,purpose?,mode?,status?,collection?}`，返回领域题量目录、范围、去重题量、归属次数、空领域、分类／标签数量、预计题目字节及`fingerprint`。领域空数组只查询目录，不默认导出全部。`purpose=migration|share`，默认迁移；`mode=combined|per_domain`，默认合并。迁移默认`all/all`状态与属性，分享默认`published/general`。
+- `POST /api/content-exports`：相同范围加`expectedFingerprint`，返回`{filename,mimeType,dataBase64,byteLength,summary}`。合并返回一份JSON；按领域返回ZIP，内含独立可导入的JSON、SHA256清单及说明。每片最多500题，实际JSON字节小于80MiB（预留请求包装空间），ZIP最多128MiB，单次去重题量最多50000；超限明确拒绝。源题、依赖、范围变化返回409，重新预览；接口只读。
+- `GET /api/export`：完整 JSON；`POST /api/import`：`{data,mode:'merge'}`。迁移保留题目原审核状态，与新增题目导入区分；同 ID 内容不静默覆盖。仅接收无`format`的可信迁移封包，拒绝`learning-share`等专用格式，避免通过迁移绕过新增审核。
 - `GET /api/backup.sqlite`：可迁移 SQLite 下载副本，清除 AI 密钥，保留本机源库。JSON 备份／分享不包含 AI 凭据；附件较多时优先 SQLite。
 
 Android通过原生平台接口接收SQLite二进制进行完整恢复，不通过HTTP JSON传输。预览先检查原始文件头、完整性、版本、应用表结构及记录主键，再在隔离副本验证数据和引用，剥除输入触发器及派生缓存并由可信代码重建。确认绑定已校验文件、本机写入版本及磁盘基线；本机有活动考试时拒绝。替换前写入并回读独立原库副本，落盘失败回退原连接和原文件；成功后刷新应用，旧页面写入被拒绝。恢复后的AI密钥清除且AI关闭，需重新填写启用；原库私有副本仍含原配置，对外导出时脱敏。JSON完整备份包含`studyParts`、`learningResults`及`questionHistory`，与同包作答不一致的学习证据整批拒绝。合并时同ID保留本地记录，不用旧备份覆盖本地较新判题。

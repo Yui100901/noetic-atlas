@@ -48,7 +48,7 @@ try{
   let navigation=0;const go=async path=>{await page.goto(origin+'/?daily-ui='+ ++navigation+'#/'+path);await page.waitForLoadState('networkidle');};
   const noOverflow=async()=>assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow');
   const capture=async name=>{await noOverflow();await page.screenshot({path:resolve(output,name+'.png'),fullPage:true});};
-  await go('settings?tab=practice');await page.getByRole('heading',{name:'每题型默认分值',exact:true}).waitFor();await page.locator('.settings-points-disclosure > summary').click();
+  await go('settings?tab=practice');await page.getByRole('heading',{name:'每题型默认分值',exact:true}).waitFor();
   assert.equal(await page.getByLabel('多选默认分值',{exact:true}).inputValue(),'4');
   let overview=await api('/api/daily-push');assert.equal(overview.config.enabled,false);assert.equal(overview.today,null);
   await api('/api/daily-push/check','POST');assert.equal((await api('/api/daily-push')).today,null);
@@ -71,13 +71,13 @@ try{
 
   await go('settings?tab=daily');await page.getByRole('heading',{name:'每日推题与学习计划',exact:true}).waitFor();
   assert.equal(await page.getByLabel('复习题目标分值',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('新题目标分值',{exact:true}).inputValue(),'20');
-  await page.getByLabel('开启每日推题',{exact:true}).check();await page.getByRole('button',{name:'保存推题配置',exact:true}).click();
+  await page.getByLabel('开启每日推题',{exact:true}).check();await page.getByRole('button',{name:'保存系统配置',exact:true}).click();
   assert.equal((await api('/api/settings')).dailyPush.enabled,false,'missing scope must not save');
   await page.getByLabel('推题领域',{exact:true}).selectOption('daily-domain');await page.getByRole('checkbox',{name:'每日测试分类',exact:true}).check();
   // Save a future schedule so the set can be generated while the papers page
   // is already mounted, exercising its list invalidation after generation.
   await page.getByText('推题时间与时区',{exact:true}).click();await page.getByLabel('每日推题时间',{exact:true}).fill('23:59');
-  await page.getByRole('button',{name:'保存推题配置',exact:true}).click();await page.getByText('每日推题配置已保存',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'保存系统配置',exact:true}).click();await page.getByRole('region',{name:'系统配置保存操作',exact:true}).getByText('系统配置已保存',{exact:true}).waitFor();
   assert.equal((await api('/api/daily-push')).today,null);assert.equal(await recommendation().count(),0);await noStandaloneEntry();
   await go('');await dashboardDaily().getByText('查看每日推荐',{exact:true}).waitFor();
   assert.equal(await dashboardDaily().getAttribute('href'),'#/papers');
@@ -127,7 +127,7 @@ try{
   await capture('dashboard-daily-mobile');checks.push('390px总览快捷入口正常换行，按钮尺寸可点击且页面无溢出');
   await go('papers');await recommendation().waitFor();await compactMobileCard();await capture('recommendation-card-mobile');
   await go('settings?tab=daily');await capture('configuration-mobile');
-  await page.getByLabel('开启每日推题',{exact:true}).uncheck();await page.getByRole('button',{name:'保存推题配置',exact:true}).click();await page.getByText('每日推题配置已保存',{exact:true}).waitFor();
+  await page.getByLabel('开启每日推题',{exact:true}).uncheck();await page.getByRole('button',{name:'保存系统配置',exact:true}).click();await page.getByRole('region',{name:'系统配置保存操作',exact:true}).getByText('系统配置已保存',{exact:true}).waitFor();
   overview=await api('/api/daily-push');assert.equal(overview.config.enabled,false);assert.equal(overview.today.paperId,today.paperId);
   await go('papers');await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).waitFor();await compactMobileCard();await capture('disabled-existing-mobile');
   await page.getByRole('article',{name:'题集：2026-10-25 每日推荐',exact:true}).waitFor();assert.equal((await api('/api/papers/'+today.paperId)).scoring.totalPoints,52);

@@ -1,35 +1,315 @@
-/** Long settings forms: sticky save, dirty baseline and collapsed validation. */
+/** Shared configuration draft, stable category URLs and safe retention saves. */
 import assert from 'node:assert/strict';
-import {writeFile} from 'node:fs/promises';
-import {resolve} from 'node:path';
-import {setTimeout as delay} from 'node:timers/promises';
-import {startBrowserHarness} from './helpers/browser-harness.mjs';
+import { writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { startBrowserHarness } from './helpers/browser-harness.mjs';
 
-const setup=`const api=async(url,method='GET',payload)=>{const response=await app.inject({url,method,...(payload===undefined?{}:{payload})});assert.ok(response.statusCode<400,response.body);return response.json();};
+const setup = `const api=async(url,method='GET',payload)=>{const response=await app.inject({url,method,...(payload===undefined?{}:{payload})});assert.ok(response.statusCode<400,response.body);return response.json();};
 const original=await api('/api/settings');await api('/api/settings','PUT',{settings:{...original,dailyPush:{...original.dailyPush,newPoints:21}}});
 const q=await api('/api/questions','POST',{id:'SETTINGS-SAVE-Q',title:'隔离配置判断题',type:'true_false',stemMarkdown:'事务原子性保证整体提交或回滚。',correctAnswers:['true']});await api('/api/questions/review','POST',{ids:[q.id],action:'approve',confirmed:true,expectedUpdatedAt:{[q.id]:q.updatedAt}});
 const paper=await api('/api/papers','POST',{id:'SETTINGS-SAVE-PAPER',title:'清理确认测试题集',mode:'manual',questionIds:[q.id],scoring:{enabled:false}});for(let index=0;index<3;index++)await api('/api/papers/'+paper.id+'/attempts','POST',{});
 return {paperId:paper.id};`;
-let harness,page,folder;let errors=[],external=[];const checks=[];let discardDialog=false;
-try{
+let harness,
+  discardDialog = false;
+const checks = [];
+try {
+  harness = await startBrowserHarness({
+    name: 'settings-save-bar-ui',
+    setup,
+    onDialog: (dialog) => (discardDialog ? void dialog.dismiss() : void dialog.accept()),
+  });
+  const { page, origin, folder } = harness,
+    { paperId } = harness.state;
+  const api = async (path) => {
+    const r = await page.request.get(origin + path);
+    assert.ok(r.ok(), await r.text());
+    return r.json();
+  };
+  const bar = () => page.getByRole('region', { name: '系统配置保存操作', exact: true });
+  const save = () => bar().getByRole('button', { name: '保存系统配置', exact: true });
+  const discard = () => bar().getByRole('button', { name: '放弃全部配置修改', exact: true });
+  const tabs = () => page.getByRole('navigation', { name: '系统配置分区', exact: true });
+  const tab = (name) => tabs().getByRole('link', { name, exact: false }).click();
+  const sub = (name) =>
+    page.locator('.settings-subtabs').getByRole('link', { name, exact: true }).click();
+  const duration = () => page.getByLabel('考试模式默认时长（分钟）', { exact: true });
+  const maxDraft = () => page.getByLabel('每题集最多草稿数', { exact: true });
+  const clean = () => bar().getByText('系统配置已保存', { exact: true }).waitFor();
+  const wait = async (fn, label) => {
+    for (let i = 0; i < 150; i++) {
+      if (await fn()) return;
+      await delay(60);
+    }
+    assert.fail(label);
+  };
+  const barVisible = async () => {
+    const box = await bar().boundingBox();
+    assert.ok(
+      box && box.y >= 0 && box.y + box.height <= (await page.evaluate(() => innerHeight)) + 1,
+      JSON.stringify(box),
+    );
+  };
+  const capture = async (name) => {
+    assert.ok(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      'horizontal overflow',
+    );
+    await page.screenshot({ path: resolve(folder, name + '.png'), fullPage: true });
+  };
 
- harness=await startBrowserHarness({name:'settings-save-bar-ui',setup,onDialog:dialog=>discardDialog?void dialog.dismiss():void dialog.accept()});({page,folder,errors,external}=harness);const {origin,paperId}=harness.state;
- const api=async(url)=>{const response=await page.request.get(origin+url);assert.ok(response.ok(),await response.text());return response.json();};
- const bar=()=>page.getByRole('region',{name:'系统配置保存操作',exact:true});const save=()=>bar().getByRole('button',{name:'保存系统配置',exact:true});const discard=()=>bar().getByRole('button',{name:'放弃当前修改',exact:true});const duration=()=>page.getByLabel('考试模式默认时长（分钟）',{exact:true});
- const wait=async(fn,label)=>{for(let tick=0;tick<150;tick++){if(await fn())return;await delay(60);}assert.fail(label);};
- const barVisible=async()=>{const box=await bar().boundingBox();assert.ok(box&&box.y>=0&&box.y+box.height<=await page.evaluate(()=>innerHeight)+1,JSON.stringify(box));};
- const capture=async name=>{assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow');await page.screenshot({path:resolve(folder,name+'.png'),fullPage:true});};
- await page.goto(origin+'/#/settings');await save().waitFor();await barVisible();assert.equal(await page.getByRole('button',{name:'保存系统配置',exact:true}).count(),1);assert.equal(await page.locator('.settings-retention').getAttribute('open'),null);assert.equal(await page.locator('.settings-points-disclosure').getAttribute('open'),null);checks.push('低频保留与题型分值默认收起，首屏仅一个系统保存入口且持续可见');
- await duration().fill('90');await bar().getByText('有未保存的修改',{exact:true}).waitFor();assert.equal((await api('/api/settings')).examDurationMinutes,120);await discard().click();assert.equal(await duration().inputValue(),'120');await bar().getByText('系统配置已保存',{exact:true}).waitFor();assert.equal(await discard().isDisabled(),true);checks.push('未保存状态明确，放弃仅恢复已保存基线且不写入数据库');
- await page.locator('.settings-retention > summary').click();const maxDraft=page.getByLabel('每题集最多草稿数',{exact:true});await maxDraft.fill('0');await page.locator('.settings-retention > summary').click();await save().click();assert.equal(await page.locator('.settings-retention').getAttribute('open'),'');assert.equal(await maxDraft.evaluate(input=>document.activeElement===input),true);assert.equal((await api('/api/settings')).maxDraftsPerPaper,3);await maxDraft.fill('3');checks.push('收起的高级字段无效时自动展开并聚焦，不静默阻止保存或发送非法配置');
- await duration().fill('90');const failed=async route=>{if(route.request().method()!=='PUT')return route.continue();return route.fulfill({status:507,contentType:'application/json',body:JSON.stringify({error:{code:'QA_SAVE_FAILURE',message:'专项：配置保存失败'}})});};await page.route('**/api/settings',failed);await save().click();await page.getByText('专项：配置保存失败',{exact:true}).waitFor();assert.equal(await duration().inputValue(),'90');assert.equal((await api('/api/settings')).examDurationMinutes,120);await page.unroute('**/api/settings',failed);checks.push('保存失败保留输入与原基线，再保存仍使用原校验，不通过刷新丢弃编辑');
- let release,seen=false;const gate=new Promise(done=>release=done);const slow=async route=>{if(route.request().method()!=='PUT')return route.continue();seen=true;await gate;return route.continue();};await page.route('**/api/settings',slow);await save().click();await wait(()=>seen,'slow save started');assert.equal(await duration().isDisabled(),true);assert.equal(await discard().isDisabled(),true);await page.locator('.sidebar nav').getByRole('link',{name:'知识题库',exact:false}).click();assert.match(page.url(),/#\/settings/);release();await wait(async()=>(await api('/api/settings')).examDurationMinutes===90,'saved duration');await bar().getByText('系统配置已保存',{exact:true}).waitFor();await page.unroute('**/api/settings',slow);assert.equal(await duration().isDisabled(),false);checks.push('保存中禁修改和离开，成功更新保存基线并恢复控件');
- await page.getByRole('button',{name:'填入本页默认值',exact:true}).click();assert.equal(await duration().inputValue(),'120');assert.equal((await api('/api/settings')).examDurationMinutes,90);await discard().click();assert.equal(await duration().inputValue(),'90');assert.equal((await api('/api/settings')).dailyPush.newPoints,21);checks.push('填入本页默认值与放弃修改语义独立，填默认不立即写入或重置每日推题');
- await page.locator('.theme-option-pink').click();await wait(()=>page.locator('html').getAttribute('data-theme').then(value=>value==='pink'),'theme preview');await discard().click();await wait(()=>page.locator('html').getAttribute('data-theme').then(value=>value==='green'),'theme restored');checks.push('放弃当前修改也恢复主题预览，不污染已确认主题缓存');
- await duration().fill('80');const tabs=page.getByRole('navigation',{name:'系统配置分区',exact:true});await tabs.getByRole('button',{name:'AI辅助',exact:true}).click();await page.getByLabel('模型名称',{exact:true}).fill('未保存的独立AI字段');assert.equal(await bar().isVisible(),false);await tabs.getByRole('button',{name:'学习与练习',exact:true}).click();assert.equal(await duration().inputValue(),'80');await barVisible();await discard().click();await tabs.getByRole('button',{name:'AI辅助',exact:true}).click();assert.equal(await page.getByLabel('模型名称',{exact:true}).inputValue(),'未保存的独立AI字段');await tabs.getByRole('button',{name:'学习与练习',exact:true}).click();checks.push('切换分区保留各自本地输入，隐藏设置保存条不可见，不串改AI表单');
- await duration().fill('70');discardDialog=true;await page.locator('.sidebar nav').getByRole('link',{name:'知识题库',exact:false}).click();assert.match(page.url(),/#\/settings/);assert.equal(await duration().inputValue(),'70');discardDialog=false;await discard().click();checks.push('真正离开时可取消放弃确认并保留设置，内部切分区不增加确认');
- await maxDraft.fill('2');await save().click();const retention=page.getByRole('dialog',{name:'确认记录保留范围',exact:true});await retention.waitFor();assert.equal((await api('/api/attempts?paperId='+paperId)).length,3);assert.ok(await retention.locator('button').count());await retention.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await maxDraft.inputValue(),'2');await save().click();await retention.getByRole('button',{name:'确认保存并清理记录',exact:true}).click();await retention.waitFor({state:'hidden'});assert.equal((await api('/api/attempts?paperId='+paperId)).length,2);await bar().getByText('系统配置已保存',{exact:true}).waitFor();checks.push('降低保留上限仍须明确确认，取消不丢修改，确认后只按原规则裁剪');
- for(const width of [1440,390,320]){await page.setViewportSize({width,height:844});await page.evaluate(()=>scrollTo(0,0));await barVisible();await page.locator('.settings-points-disclosure').evaluate(details=>details.open=true);await page.locator('.settings-retention').evaluate(details=>details.open=true);await duration().scrollIntoViewIfNeeded();await barVisible();await page.getByLabel('单张图片上限（MiB）',{exact:true}).scrollIntoViewIfNeeded();await barVisible();await capture('settings-'+width);}
- checks.push('1440、390、320宽度首屏/页中/末字段均可保存，条不溢出且模态层高于操作条');assert.deepEqual(errors,[]);assert.deepEqual(external,[]);await writeFile(resolve(folder,'report.json'),JSON.stringify({passed:checks.length,checks,errors,external,isolated:true},null,2));console.log(JSON.stringify({passed:checks.length,checks}));
-}catch(error){await harness?.captureFailure(error,{checks});throw error;}
-finally{await harness?.close();}
+  await page.goto(origin + '/#/settings');
+  await save().waitFor();
+  await barVisible();
+  assert.equal(await tabs().getByRole('link').count(), 7);
+  assert.equal(await page.getByRole('button', { name: '保存系统配置', exact: true }).count(), 1);
+  assert.equal(await duration().isVisible(), false);
+  await tab('练习与计分');
+  await duration().fill('90');
+  await bar()
+    .getByText(/个分区有未保存修改/)
+    .waitFor();
+  assert.equal((await api('/api/settings')).examDurationMinutes, 120);
+  await discard().click();
+  assert.equal(await duration().inputValue(), '120');
+  await clean();
+  checks.push('七个用途分区只显示相关字段，一处系统保存入口，放弃修改恢复原基线而不写数据库');
+
+  await duration().fill('90');
+  await tab('复习与计划');
+  await sub('每日推荐与计划');
+  await page.getByLabel('新题目标分值', { exact: true }).fill('25');
+  await tab('外观与通用');
+  await page.locator('.theme-option-pink').click();
+  await tab('练习与计分');
+  assert.equal(await duration().inputValue(), '90');
+  await save().click();
+  await clean();
+  let settings = await api('/api/settings');
+  assert.equal(settings.examDurationMinutes, 90);
+  assert.equal(settings.dailyPush.newPoints, 25);
+  assert.equal(settings.theme, 'pink');
+  checks.push('跨分区的主题、考试与每日计划共用一份草稿和版本，一次保存全部成功且没有旧快照覆盖');
+
+  await tab('草稿与历史');
+  await sub('学习草稿与作答');
+  await maxDraft().fill('0');
+  await tab('练习与计分');
+  await save().click();
+  await page.waitForURL(/tab=retention&sub=learning/);
+  await maxDraft().waitFor();
+  await wait(
+    () => maxDraft().evaluate((input) => document.activeElement === input),
+    'invalid hidden field focused',
+  );
+  assert.equal((await api('/api/settings')).maxDraftsPerPaper, 3);
+  await maxDraft().fill('3');
+  checks.push('其他分区有无效输入时保存会自动定位该分区并聚焦，不发送非法配置或尝试聚焦隐藏字段');
+
+  await tab('练习与计分');
+  await duration().fill('80');
+  const failed = async (route) =>
+    route.request().method() === 'PUT'
+      ? route.fulfill({
+          status: 507,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: { code: 'QA_SAVE_FAILURE', message: '专项：配置保存失败' },
+          }),
+        })
+      : route.continue();
+  await page.route('**/api/settings', failed);
+  await save().click();
+  await page.getByText('专项：配置保存失败', { exact: true }).waitFor();
+  assert.equal(await duration().inputValue(), '80');
+  assert.equal((await api('/api/settings')).examDurationMinutes, 90);
+  await page.unroute('**/api/settings', failed);
+  let release,
+    seen = false;
+  const gate = new Promise((done) => (release = done));
+  const slow = async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    seen = true;
+    await gate;
+    return route.continue();
+  };
+  await page.route('**/api/settings', slow);
+  await save().click();
+  await wait(() => seen, 'save started');
+  assert.equal(await duration().isDisabled(), true);
+  await tab('外观与通用');
+  assert.match(page.url(), /tab=practice/);
+  release();
+  await clean();
+  await page.unroute('**/api/settings', slow);
+  assert.equal(await duration().isDisabled(), false);
+  checks.push('保存失败保留输入；保存中禁止修改与切换，成功后更新同一版本基线');
+
+  await page.getByRole('button', { name: '填入练习与计分默认值', exact: true }).click();
+  assert.equal(await duration().inputValue(), '120');
+  await tab('复习与计划');
+  await sub('每日推荐与计划');
+  assert.equal(await page.getByLabel('新题目标分值', { exact: true }).inputValue(), '25');
+  await discard().click();
+  await tab('外观与通用');
+  assert.equal(await page.locator('input[value="pink"][name="interface-theme"]').isChecked(), true);
+  await page.locator('.theme-option-dark').click();
+  await discard().click();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'pink');
+  checks.push('局部填默认值不重置隐藏的学习计划或主题；全局放弃恢复主题预览和最近保存值');
+
+  await tab('练习与计分');
+  await duration().fill('70');
+  await tab('AI 辅助');
+  await page.getByLabel('模型名称', { exact: true }).fill('未保存的独立AI字段');
+  assert.equal(await bar().isVisible(), false);
+  await tab('练习与计分');
+  assert.equal(await duration().inputValue(), '70');
+  await page.goBack();
+  await page.getByLabel('模型名称', { exact: true }).waitFor();
+  assert.equal(
+    await page.getByLabel('模型名称', { exact: true }).inputValue(),
+    '未保存的独立AI字段',
+  );
+  await tab('练习与计分');
+  discardDialog = true;
+  await page.locator('.sidebar nav').getByRole('link', { name: '知识题库', exact: false }).click();
+  assert.match(page.url(), /#\/settings/);
+  assert.equal(await duration().inputValue(), '70');
+  discardDialog = false;
+  await discard().click();
+  await tab('AI 辅助');
+  await page.getByRole('button', { name: '放弃 AI 修改', exact: true }).click();
+  checks.push('AI 与普通配置分别保存且互不丢输入；Back保留分类与编辑；真正离开可取消放弃确认');
+
+  await tab('练习与计分');
+  await duration().fill('65');
+  await tab('AI 辅助');
+  await page.getByLabel('模型名称', { exact: true }).fill('导入前尚未保存的模型');
+  await tab('数据与迁移');
+  await sub('配置迁移');
+  const bundle = await api('/api/settings/export');
+  bundle.system.examDurationMinutes = 45;
+  bundle.ai.model = '导入后的模型';
+  await page.getByLabel('选择配置JSON文件', { exact: true }).setInputFiles({
+    name: 'settings-qa.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(bundle)),
+  });
+  await page.getByRole('button', { name: '确认应用配置', exact: true }).click();
+  await page.getByText('配置导入完成', { exact: true }).waitFor();
+  await tab('练习与计分');
+  assert.equal(await duration().inputValue(), '65');
+  await save().click();
+  await page
+    .getByText(
+      '配置已在其他操作中更新，当前输入已保留。请先放弃当前配置修改以载入最新值，再重新编辑，避免覆盖刚导入的配置。',
+      { exact: true },
+    )
+    .waitFor();
+  assert.equal((await api('/api/settings')).examDurationMinutes, 45);
+  await discard().click();
+  assert.equal(await duration().inputValue(), '45');
+  await tab('AI 辅助');
+  await page
+    .getByText('AI 配置已更新，当前输入仍保留。请放弃 AI 修改以载入最新值，再重新编辑。', {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(
+    await page.getByLabel('模型名称', { exact: true }).inputValue(),
+    '导入前尚未保存的模型',
+  );
+  await page.getByRole('button', { name: '放弃 AI 修改', exact: true }).click();
+  assert.equal(await page.getByLabel('模型名称', { exact: true }).inputValue(), '导入后的模型');
+  checks.push('配置导入保留常规和AI未保存输入，旧版本阻止覆盖，显式放弃后载入导入值');
+
+  await tab('草稿与历史');
+  await sub('学习草稿与作答');
+  await maxDraft().fill('2');
+  await save().click();
+  const retention = page.getByRole('dialog', { name: '确认记录保留范围', exact: true });
+  await retention.waitFor();
+  assert.equal((await api('/api/attempts?paperId=' + paperId)).length, 3);
+  await retention.getByRole('button', { name: '取消', exact: true }).click();
+  assert.equal(await maxDraft().inputValue(), '2');
+  await save().click();
+  await retention.getByRole('button', { name: '确认保存并清理记录', exact: true }).click();
+  await retention.waitFor({ state: 'hidden' });
+  await clean();
+  assert.equal((await api('/api/attempts?paperId=' + paperId)).length, 2);
+  checks.push('降低上限先预览清理数量；取消不丢输入，确认后按原规则清理而不影响其他配置');
+
+  await page.reload();
+  await maxDraft().waitFor();
+  assert.equal(
+    await page
+      .locator('.settings-tabs a[aria-current=page]')
+      .innerText()
+      .then((value) => value.split('\n')[0]),
+    '草稿与历史',
+  );
+  assert.equal(
+    await page.locator('.settings-subtabs a[aria-current=page]').innerText(),
+    '学习草稿与作答',
+  );
+  checks.push('刷新恢复主分区和子分类的深链接位置');
+  await tab('外观与通用');
+  const autosave = page.getByLabel('编辑与作答自动保存等待（毫秒）', { exact: true });
+  await autosave.fill('1500');
+  await page.evaluate(() => {
+    location.hash = '#/settings?tab=missing';
+  });
+  await autosave.waitFor();
+  await wait(
+    async () => (await autosave.inputValue()) === '1000',
+    'unknown destination starts a fresh guard',
+  );
+  await autosave.fill('1600');
+  discardDialog = true;
+  await tab('练习与计分');
+  assert.match(page.url(), /tab=missing/);
+  assert.equal(await autosave.inputValue(), '1600');
+  await page.locator('.sidebar nav').getByRole('link', { name: '知识题库', exact: false }).click();
+  assert.match(page.url(), /tab=missing/);
+  assert.equal(await autosave.inputValue(), '1600');
+  discardDialog = false;
+  await discard().click();
+  checks.push('未知设置链接建立新的守卫，后续修改在离开及返回有效设置时均受保护');
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await tab('外观与通用');
+    await page.locator('.theme-option-dark').click();
+    await save().click();
+    await clean();
+    for (const name of ['练习与计分', '草稿与历史', '文件资源', 'AI 辅助', '数据与迁移']) {
+      await tab(name);
+      await capture('settings-' + width + '-' + name);
+    }
+    await tab('练习与计分');
+    await duration().scrollIntoViewIfNeeded();
+    await barVisible();
+  }
+  checks.push('桌面1440和手机390/320宽度的各分区暗色布局无横向溢出，长表单保存条持续可见');
+  harness.assertClean();
+  await writeFile(
+    resolve(folder, 'report.json'),
+    JSON.stringify(
+      {
+        passed: checks.length,
+        checks,
+        errors: harness.errors,
+        external: harness.external,
+        isolated: true,
+      },
+      null,
+      2,
+    ),
+  );
+  console.log(JSON.stringify({ passed: checks.length, checks }));
+} catch (error) {
+  await harness?.captureFailure(error, { checks });
+  throw error;
+} finally {
+  await harness?.close();
+}

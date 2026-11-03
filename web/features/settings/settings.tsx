@@ -1,78 +1,109 @@
-import { useEffect, useState, type FormEvent, type InvalidEvent } from 'react';
-import { Download, RotateCcw, Trash2 } from 'lucide-react';
-import type { AssetMetadata } from '../../../shared/assets/assets';
-import { DEFAULT_SETTINGS, type RetentionPreview, type SystemSettings } from '../../../shared/models/settings';
-import { typeLabels, type QuestionType } from '../../../shared/models/types';
-import { ApiError, idPath, localDate, send, useResource } from '../../shared/lib/api';
-import { DataPage } from './data';
-import { ErrorNotice, Field, Loading, Modal, PageHeader, Pagination, SearchBox, useApp } from '../../shared/ui/components';
-import { decodeAsset, fetchAsset } from '../../shared/media/asset-files';
-import { saveGeneratedFile } from '@platform';
-import '../../shared/media/media.css';
-import { AiSettingsForm } from '../ai/ai-settings';
-import {usePagination} from '../../shared/lib/pagination';
-import { DataMaintenance } from './maintenance';
-import { ThemePicker } from '../../shared/theme/theme-picker';
-import { applyTheme, savedTheme } from '../../shared/theme/theme';
-import './settings-layout.css';
-import { DailyPushSettingsForm } from '../daily-push/daily-settings';
-import { ReviewSchedulingSettings } from '../review-scheduler/review-settings';
-import { FormSaveBar } from '../../shared/ui/form-save-bar';
+import { useEffect, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
+import { PageHeader, useApp } from '../../shared/ui/components';
 import { useNavigationGuard } from '../../shared/lib/navigation-guard';
+import { AiSettingsForm, type AiSettingsStatus } from '../ai/ai-settings';
+import { LearningPlanHistory } from '../daily-push/learning-plan-history';
+import { AssetsManager } from './settings-assets';
+import { SystemSettingsForm, useSystemSettingsDraft } from './settings-form';
+import { DataPage } from './data';
+import { DataMaintenance } from './maintenance';
+import {
+  isSettingsNavigation,
+  readSettingsRoute,
+  settingsHref,
+  SETTINGS_SECTIONS,
+  settingsSubsections,
+} from './settings-navigation';
+import './settings-layout.css';
 
-type Tab = 'practice' | 'assets' | 'backup' | 'ai' | 'daily';
-export function SettingsPage({ initialTab = 'practice' }: { initialTab?: Tab }) {
-  const [tab, setTab] = useState<Tab>(initialTab),[visited,setVisited]=useState<Tab[]>([initialTab]);
-  const selectTab=(next:Tab)=>{setVisited(old=>old.includes(next)?old:[...old,next]);setTab(next);};
-  return <div className="settings-page"><PageHeader eyebrow="SYSTEM SETTINGS" title="让学习空间，适合自己的节奏。" description="主题外观、练习默认值、记录保留与文件限制。" /><nav className="settings-tabs" aria-label="系统配置分区">{([['practice','学习与练习'],['daily','每日推题'],['assets','文件资源'],['backup','数据维护与备份'],['ai','AI辅助']] as const).map(([value,label]) => <button className={`button ${tab === value ? 'selected' : ''}`} key={value} onClick={() => selectTab(value)} aria-controls={`settings-panel-${value}`} aria-current={tab === value ? 'page' : undefined}>{label}</button>)}</nav><p className="muted settings-session-note">切换分区会保留未保存内容，离开系统配置前请保存。导入配置或在其他页面修改后，请刷新查看最新值。</p><div className="settings-content">{visited.map(value=><div className="settings-panel ui-stack" id={`settings-panel-${value}`} key={value} hidden={value!==tab}>{value === 'practice' ? <SettingsForm /> : value === 'daily' ? <DailyPushSettingsForm /> : value === 'assets' ? <AssetsManager /> : value === 'ai' ? <AiSettingsForm /> : <><DataMaintenance /><section id="maintenance-backups"><DataPage embedded /></section></>}</div>)}</div></div>;
-}
-function SettingsForm() {
-  const resource = useResource<SystemSettings>('/api/settings'); const { reload, toast } = useApp();
-  const [form, setForm] = useState<SystemSettings>(structuredClone(DEFAULT_SETTINGS)); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [retention, setRetention] = useState<RetentionPreview | null>(null);
-  useEffect(() => { if (resource.data) setForm(resource.data); }, [resource.data]);
-  useEffect(() => { if (resource.data) applyTheme(form.theme); }, [form.theme, resource.data]);
-  useEffect(() => () => { applyTheme(savedTheme()); }, []);
-  const dirty = !!resource.data && JSON.stringify(form) !== JSON.stringify(resource.data);
-  useNavigationGuard({ pending: () => dirty, saving: () => busy, confirmLeave: () => window.confirm('系统配置有未保存修改，确定放弃修改并离开？'), onBusy: () => toast('系统配置正在保存，请稍后再离开。', true) });
-  const set = <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => { setForm(old => ({ ...old, [key]: value })); setRetention(null); };
-  const discard = () => { if (!resource.data || busy) return; setForm(structuredClone(resource.data)); setRetention(null); setError(''); };
-  const defaults = () => { setForm(old => ({ ...structuredClone(DEFAULT_SETTINGS), updatedAt: resource.data!.updatedAt, dailyPush: old.dailyPush })); setRetention(null); setError(''); };
-  // Opening every containing disclosure happens synchronously, before native
-  // validation attempts focus. Invalid advanced fields must remain reachable.
-  const invalid = (event: InvalidEvent<HTMLFormElement>) => {
-    const field = event.target as HTMLInputElement;
-    let parent = field.parentElement;
-    while (parent && parent !== event.currentTarget) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
-  };
-  const save = async (confirmed = false) => {
-    if (busy) return;
-    setBusy(true); setError('');
-    try {
-      const result = await send<{settings:SystemSettings;retention:RetentionPreview}>('/api/settings', 'PUT', { settings: form, ...(confirmed ? { confirmedRetention: true, expectedRetention: retention } : {}) });
-      resource.setData(result.settings); applyTheme(result.settings.theme, { persist: true }); setRetention(null); reload(); toast(result.retention.total ? `配置已保存，清理 ${result.retention.total} 份超限记录` : '系统配置已保存');
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'RETENTION_CONFIRMATION_REQUIRED') setRetention(err.details as RetentionPreview);
-      else { setRetention(null); setError((err as Error).message); }
-    } finally { setBusy(false); }
-  };
-  if (resource.loading) return <Loading />; if (resource.error) return <ErrorNotice message={resource.error} retry={resource.refresh} />;
-  const number = (key: keyof SystemSettings, label: string, min: number, max: number, hint?: string, step = 1) => <div className="settings-option"><Field label={label}><input required disabled={busy} type="number" inputMode="decimal" min={min} max={max} step={step} value={form[key] as number} onChange={e => set(key, Number(e.target.value) as never)} /></Field>{hint && <details className="settings-field-help"><summary aria-label={`${label}的说明`}>使用说明</summary><p>{hint}</p></details>}</div>;
-  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!event.currentTarget.reportValidity()) { setError('请检查标记的配置项后再保存。'); return; } void save(); };
-  return <><form className="settings-form ui-stack" id="system-settings-form" noValidate onSubmit={submit} onInvalidCapture={invalid}>
-    <fieldset className="settings-fields ui-stack" disabled={busy}>
-    <div className="settings-form-intro"><span className="muted">本页管理学习、外观与文件配置；每日推题与AI在各自分区设置。</span><button type="button" className="text-button" disabled={busy} onClick={defaults}><RotateCcw size={15} />填入本页默认值</button></div>
-    {error && <ErrorNotice message={error} />}
-    <section className="card settings-section settings-appearance"><h2>外观主题</h2><fieldset disabled={busy}><legend className="sr-only">界面主题</legend><ThemePicker value={form.theme} onChange={value => set('theme', value)} /></fieldset></section><div className="settings-sections-grid ui-grid"><details className="card settings-section settings-retention settings-advanced"><summary><h2>草稿与练习历史</h2><span className="muted">保留数量与清理规则 · 高级设置</span></summary><div className="form-grid">{number('maxDraftsPerPaper','每题集最多草稿数',1,100,'默认3；继续覆盖原草稿，新开超限时清理最旧未提交记录。')}{number('maxPaperDrafts','每个组题上下文最多草稿数',1,100,'默认3；新建组题与每个已有题集的编辑草稿分别保留，继续编辑覆盖同一草稿。')}{number('maxDocumentDrafts','每个资料编辑入口最多草稿数',1,100,'默认3；新建资料与每份已有资料的草稿分别保留，恢复后更新同一份草稿。')}{number('maxQuestionDrafts','每个题目编辑入口最多草稿数',1,100,'默认3；新题与各个已有题目的编辑草稿分别保留，继续草稿覆盖同一记录。')}{number('maxQuestionRevisions','每题最多内容修订版本',1,100,'默认20；保留最近内容版本供比较与恢复，调低上限前预览清理数量，不改变历史答卷。')}{number('maxQuickDrafts','随机自测最多草稿数',1,100,'随机自测独立管理，默认3。')}{number('maxHistoryPerPaper','每题集最多已提交整卷历史',0,10000,'默认0不限量。非0时仅保留最近提交的整卷记录。')}{number('maxQuickHistory','随机自测最多已提交整卷历史',0,10000,'默认0不限量，与具体题集分别计算。')}{number('maxQuestionHistory','每题最多完整作答历史',0,10000,'默认10。每题及每道组合小题独立计数，跨题集与随机自测合并保留最近实际填写并已提交的作答；0关闭单题详细历史，累计统计保留。')}</div><details className="settings-section-help"><summary>历史保留规则与清理说明</summary><p className="muted">整卷历史与单题历史分别保留：单题默认最近10次不限制整卷记录数量。清理整卷时，保留范围内的单题仍可查看当时题目、答案与判分；清理单题详细记录不减少累计作答统计，也不删除仍保留的整卷。调低上限若会清理现有记录，会先显示具体数量再确认。题目、题集、错题状态、收藏、笔记、掌握与复习安排继续保留。可先到数据与备份导出完整副本。</p></details></details>
-    <section className="card settings-section settings-defaults"><h2>新建与随机组题默认值</h2><div className="check-row"><label><input type="checkbox" checked={form.scoringEnabledByDefault} onChange={e => set('scoringEnabledByDefault', e.target.checked)} />新建题集默认启用计分</label></div><div className="form-grid">{number('examDurationMinutes','考试模式默认时长（分钟）',1,1440,'默认120分钟。每次开始考试前可单独调整。')}{number('randomQuestionCount','随机无分练习默认题量',1,500)}{number('randomTotalPoints','随机计分默认总分',0.01,10000,undefined,0.01)}{number('objectivePercent','客观题默认目标占比（%）',0,100,`主观目标 ${100 - form.objectivePercent}%，当前默认60%/40%。`,0.01)}</div><details className="settings-points-disclosure"><summary><h3>每题型默认分值</h3></summary><div className="form-grid settings-points-grid">{Object.entries(typeLabels).map(([type,label]) => <Field key={type} label={`${label}默认分值`} hint={type === 'group' ? '整组分值按各小题权重分配。' : undefined}><input required type="number" min="0.01" max="1000" step="0.01" value={form.pointsByType[type as QuestionType]} onChange={e => set('pointsByType', { ...form.pointsByType, [type]: Number(e.target.value) })} /></Field>)}</div></details><p className="muted">这些值用于新建与重置默认配置。已保存的卷面分值、已开始草稿及历史成绩不会改变。</p></section>
-    <ReviewSchedulingSettings value={form.reviewScheduling} onChange={value => set('reviewScheduling', value)} disabled={busy} />
-    <section className="card settings-section settings-review"><h2>自动保存与固定复习间隔</h2><div className="form-grid">{number('autosaveDebounceMs','编辑与作答自动保存等待（毫秒）',100,10000,'输入停止后等待此时长保存；离开页面仍尝试保存。')}{form.reviewIntervalsDays.map((days,index) => <Field key={index} label={`掌握${index} · ${['不会','需提示','能独立','能深入'][index]}的复习间隔（天）`}><input required type="number" min="0" max="3650" value={days} onChange={e => set('reviewIntervalsDays', form.reviewIntervalsDays.map((day,i) => i === index ? Number(e.target.value) : day) as SystemSettings['reviewIntervalsDays'])} /></Field>)}</div><p className="muted">0天表示当天复习。仅影响之后新记录的复习安排，已有日期可按题单独调整。</p></section>
-    <section className="card settings-section settings-files"><h2>文件上传</h2><div className="form-grid">{number('maxDocumentMiB','单份MD / PDF上限（MiB）',1,50,'默认20 MiB。')}{number('maxImageMiB','单张图片上限（MiB）',1,20,'默认5 MiB，支持PNG、JPEG、WebP和GIF。')}</div><p className="muted">新限制只影响后续上传；已有文件与历史插图继续保留。所有本地文件和配置随完整备份迁移。</p></section>
-    </div></fieldset><FormSaveBar form="system-settings-form" label="系统配置保存操作" dirty={dirty} busy={busy} saveLabel="保存系统配置" onDiscard={discard} status={<><strong>{busy ? '正在保存配置…' : error ? '保存未完成，请检查后重试' : dirty ? '有未保存的修改' : '系统配置已保存'}</strong><small>{dirty ? '放弃当前修改会恢复到最近保存值；填入本页默认值仍需保存。' : `最近保存 ${localDate(resource.data?.updatedAt)}`}</small></>} /></form>{retention && <Modal title="确认记录保留范围" onClose={() => !busy && setRetention(null)}><p>保存此配置将移除 <strong>{retention.drafts}份草稿</strong> 与 <strong>{retention.history}份已提交整卷历史</strong>，{retention.questionHistory ? <><strong>{retention.questionHistory}份单题详细记录</strong>，</> : null}{retention.authoring?<>与 <strong>{retention.authoring}份组题草稿</strong>，</>:null}{retention.documentDrafts?<>与 <strong>{retention.documentDrafts}份资料草稿</strong>，</>:null}{retention.questionDrafts?<>与 <strong>{retention.questionDrafts}份题目编辑草稿</strong>，</>:null}{retention.questionRevisions?<>与 <strong>{retention.questionRevisions}个题目修订版本</strong>，</>:null}{retention.focusDrafts?<>、<strong>{retention.focusDrafts}份专注复习草稿</strong></>:null}{retention.focusHistory?<>、<strong>{retention.focusHistory}份专注复习总结</strong></>:null}共{retention.total}份超限记录。</p><p>仅保留各自范围内最近记录。整卷与单题保留上限分别生效：整卷清理后，仍在单题保留范围内的完整作答可继续查看；单题详细记录清理后，累计作答统计和仍保留的整卷继续保留。该操作不能从当前库撤销；错题状态、复习安排及题目、题集、收藏、笔记、掌握记录继续保留。可先取消并导出备份。</p><div className="form-actions"><button className="button" disabled={busy} onClick={() => setRetention(null)}>取消</button><button className="button primary" disabled={busy} onClick={() => void save(true)}>确认保存并清理记录</button></div></Modal>}</>;
-}
-function AssetsManager() {
-  const resource = useResource<Array<AssetMetadata & { referenced: boolean }>>('/api/assets'); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const { toast } = useApp();
-  const [search,setSearch]=useState(''); const paging=usePagination((resource.data||[]).filter(asset=>`${asset.filename} ${asset.mimeType}`.toLowerCase().includes(search.toLowerCase())),search);
-  const download = async (asset: AssetMetadata) => { setBusy(true); setError(''); try { const data = await fetchAsset(asset.id); await saveGeneratedFile(data.filename, decodeAsset(data), data.mimeType); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } };
-  const remove = async (asset: AssetMetadata) => { if (!confirm(`永久删除未引用文件「${asset.filename}」？`)) return; setBusy(true); setError(''); try { await send(`/api/assets/${idPath(asset.id)}`, 'DELETE'); toast('未引用文件已删除'); resource.refresh(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } };
-  return <section className="card settings-section settings-assets ui-stack"><h2>本地文件资源</h2><p className="muted">上传图片与PDF保存在SQLite中。题目、资料及历史快照仍引用的文件受到删除保护；未引用上传可在此清理。</p><SearchBox value={search} onChange={setSearch} placeholder="搜索文件名称或格式"/>{error && <ErrorNotice message={error} />}{resource.loading ? <Loading /> : resource.error ? <ErrorNotice message={resource.error} retry={resource.refresh} /> : paging.total ? <><div className="table-scroll"><table><thead><tr><th>文件</th><th>大小 / 状态</th><th>操作</th></tr></thead><tbody>{paging.items.map(asset => <tr key={asset.id}><td><strong>{asset.filename}</strong><br /><small>{asset.mimeType}</small></td><td>{(asset.sizeBytes / 1024 / 1024).toFixed(2)} MiB<br />{asset.referenced ? '已引用，保留' : '未引用'}</td><td><div className="action-row"><button className="button" disabled={busy} onClick={() => void download(asset)}><Download size={14} />保存文件</button><button className="button danger-text" disabled={busy || asset.referenced} onClick={() => void remove(asset)}><Trash2 size={14} />删除</button></div></td></tr>)}</tbody></table></div><Pagination {...paging} label="文件资源"/></> : <p>暂无上传文件。可从资料库上传PDF，或在题目与资料编辑中插入图片。</p>}</section>;
+export function SettingsPage({ hash }: { hash: string }) {
+  const route = readSettingsRoute(hash),
+    draft = useSystemSettingsDraft(),
+    { bootstrap, toast } = useApp();
+  const [aiStatus, setAiStatus] = useState<AiSettingsStatus>({ dirty: false, busy: false });
+  const [visitedAi, setVisitedAi] = useState(route.tab === 'ai');
+  useEffect(() => {
+    if (route.tab === 'ai') setVisitedAi(true);
+  }, [route.tab]);
+  useNavigationGuard({
+    pending: () => draft.dirty || aiStatus.dirty,
+    saving: () => draft.busy || aiStatus.busy,
+    // Only two routes belonging to this preserved settings session may switch
+    // without confirmation. Unknown destinations use a fresh router boundary.
+    allowNavigation: (next) => isSettingsNavigation(hash) && isSettingsNavigation(next),
+    confirmLeave: () => window.confirm('系统配置有未保存修改，确定放弃修改并离开？'),
+    onBusy: () => toast('配置正在保存或测试，请稍后再离开。', true),
+  });
+  const section = SETTINGS_SECTIONS.find((item) => item.id === route.tab)!;
+  const subsections = settingsSubsections(route.tab);
+  return (
+    <div className="settings-page">
+      <PageHeader
+        eyebrow="SYSTEM SETTINGS"
+        title="系统配置"
+        description="按用途管理学习偏好、内容保留、AI 服务与数据。"
+      />
+      <div className="settings-shell">
+        <nav className="settings-tabs" aria-label="系统配置分区">
+          {SETTINGS_SECTIONS.map((item) => (
+            <a
+              key={item.id}
+              href={settingsHref(item.id)}
+              className={route.tab === item.id ? 'selected' : ''}
+              aria-current={route.tab === item.id ? 'page' : undefined}
+            >
+              <span>
+                <strong>{item.label}</strong>
+                <small>{item.description}</small>
+              </span>
+              <ChevronRight size={15} />
+            </a>
+          ))}
+        </nav>
+        <div className="settings-content ui-stack">
+          <div className="settings-category-heading">
+            <h2>{section.label}</h2>
+            <p className="muted">{section.description}</p>
+          </div>
+          {subsections.length > 0 && (
+            <nav className="settings-subtabs" aria-label={`${section.label}分类`}>
+              {subsections.map((item) => (
+                <a
+                  className={`button ${route.sub === item.id ? 'selected' : ''}`}
+                  key={item.id}
+                  href={settingsHref(route.tab, item.id)}
+                  aria-current={route.sub === item.id ? 'page' : undefined}
+                >
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+          )}
+          <SystemSettingsForm draft={draft} route={route} />
+          {route.tab === 'review' && route.sub === 'daily' && <LearningPlanHistory />}
+          {route.tab === 'assets' && route.sub === 'files' && <AssetsManager />}
+          {visitedAi && (
+            <div className="settings-panel" hidden={route.tab !== 'ai'}>
+              <AiSettingsForm
+                active={route.tab === 'ai'}
+                refreshToken={bootstrap.settings?.updatedAt}
+                onStatusChange={setAiStatus}
+              />
+            </div>
+          )}
+          {route.tab === 'backup' &&
+            (['content', 'backup', 'configuration'].includes(route.sub) ? (
+              <DataPage
+                key={route.sub}
+                embedded
+                mode={route.sub as 'content' | 'backup' | 'configuration'}
+              />
+            ) : (
+              <DataMaintenance key={route.sub} view={route.sub as 'health' | 'cleanup' | 'reset'} />
+            ))}
+        </div>
+      </div>
+    </div>
+  );
 }

@@ -70,7 +70,7 @@ Android 首次正式发布运行 `npm run android:signing:init` 创建本地签�
 
 检查与打包成功后，脚本自动生成新的 `artifacts/github/v版本-UTC运行时间-pid/` 待上传目录和发布说明，具体路径见 `artifacts/releases/release-report.json` 的 `uploadDirectory`。通常无需再运行 `release:prepare`；题库 ZIP 作为独立附件另行选择。首次推送、打标签和创建 Release 的步骤见[发布流程](./docs/发布与部署.md#首次发布到github)。
 
-`data/` 整个目录忽略，不提交 Git。配置在“系统配置 → 数据与备份”单独导出、预览导入，AI 密钥不会进入配置文件。发布完成后可先运行 `npm run release -- clean --dry-run` 查看实际清理计划，再运行 `npm run release -- clean`：将领域题库包校验归档至 `data/release-archives/domain-packs/`，删除可重建的软件发布与打包产物，保留工作数据、正式签名和工具链。三个脚本入口也支持 `clean`，无需安装构建依赖；原 `npm run release:clean` 仍可使用，详见[清理与归档](./docs/发布与部署.md#发布产物清理与题库归档)。
+`data/` 整个目录忽略，不提交 Git。配置在“系统配置 → 数据与迁移 → 配置迁移”单独导出、预览导入，AI 密钥不会进入配置文件。发布完成后可先运行 `npm run release -- clean --dry-run` 查看实际清理计划，再运行 `npm run release -- clean`：将领域题库包校验归档至 `data/release-archives/domain-packs/`，删除可重建的软件发布与打包产物，保留工作数据、正式签名和工具链。三个脚本入口也支持 `clean`，无需安装构建依赖；原 `npm run release:clean` 仍可使用，详见[清理与归档](./docs/发布与部署.md#发布产物清理与题库归档)。
 
 ## 文档
 

@@ -92,14 +92,13 @@ try {
   };
   const noOverflow = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '390px document overflow');
   const configure = async (changes, expectPruning = true) => {
-    await navigate('settings');
-    await page.locator('.settings-retention > summary').click();
+    await navigate('settings?tab=retention&sub=learning');
     for (const [label, value] of Object.entries(changes)) await page.getByLabel(label, { exact: true }).fill(String(value));
     const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/settings' && response.request().method() === 'PUT');
     await page.getByRole('button', { name: '保存系统配置', exact: true }).click(); const response = await saved;
     if (response.status() === 409) {
       const dialog = page.getByRole('dialog', { name: '确认记录保留范围', exact: true }); await dialog.waitFor();
-      if (Object.hasOwn(changes, '每题最多完整作答历史')) assert.match(await dialog.innerText(), /\d+份单题详细记录/);
+      if (Object.hasOwn(changes, '每题最多完整作答历史')) assert.match(await dialog.innerText(), /单题详细历史：\d+ 份/);
       const confirmed = page.waitForResponse(value => new URL(value.url()).pathname === '/api/settings' && value.request().method() === 'PUT');
       await dialog.getByRole('button', { name: '确认保存并清理记录', exact: true }).click(); assert.equal((await confirmed).status(), 200); await dialog.waitFor({ state: 'hidden' });
     } else { assert.equal(response.status(), 200); assert.equal(expectPruning, false, 'expected a concrete pruning confirmation'); }

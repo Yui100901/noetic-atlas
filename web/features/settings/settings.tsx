@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { PageHeader, useApp } from '../../shared/ui/components';
 import { useNavigationGuard } from '../../shared/lib/navigation-guard';
@@ -23,9 +23,28 @@ export function SettingsPage({ hash }: { hash: string }) {
     { bootstrap, toast } = useApp();
   const [aiStatus, setAiStatus] = useState<AiSettingsStatus>({ dirty: false, busy: false });
   const [visitedAi, setVisitedAi] = useState(route.tab === 'ai');
+  const subTabsRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (route.tab === 'ai') setVisitedAi(true);
   }, [route.tab]);
+  useEffect(() => {
+    const tabs = subTabsRef.current;
+    const selected = tabs?.querySelector<HTMLElement>('a[aria-current="page"]');
+    if (!tabs || !selected) return;
+    // Keep deep-linked and newly selected tabs visible without scrolling the
+    // page vertically, including after a narrow-screen resize or font load.
+    const reveal = () => {
+      const viewport = tabs.getBoundingClientRect(),
+        item = selected.getBoundingClientRect();
+      if (item.left < viewport.left) tabs.scrollLeft += item.left - viewport.left;
+      else if (item.right > viewport.right) tabs.scrollLeft += item.right - viewport.right;
+    };
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(tabs);
+    observer.observe(selected);
+    return () => observer.disconnect();
+  }, [route.tab, route.sub]);
   useNavigationGuard({
     pending: () => draft.dirty || aiStatus.dirty,
     saving: () => draft.busy || aiStatus.busy,
@@ -67,10 +86,10 @@ export function SettingsPage({ hash }: { hash: string }) {
             <p className="muted">{section.description}</p>
           </div>
           {subsections.length > 0 && (
-            <nav className="settings-subtabs" aria-label={`${section.label}分类`}>
+            <nav ref={subTabsRef} className="settings-subtabs" aria-label={`${section.label}分类`}>
               {subsections.map((item) => (
                 <a
-                  className={`button ${route.sub === item.id ? 'selected' : ''}`}
+                  className={route.sub === item.id ? 'selected' : undefined}
                   key={item.id}
                   href={settingsHref(route.tab, item.id)}
                   aria-current={route.sub === item.id ? 'page' : undefined}

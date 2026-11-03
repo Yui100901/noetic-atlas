@@ -45,8 +45,7 @@
   background: var(--theme-inset, #f5f7f1);
   color: var(--theme-text, #26352f);
 }
-.settings-tabs a.selected,
-.settings-subtabs a.selected {
+.settings-tabs a.selected {
   background: var(--theme-inset, #e6efdf);
   border-color: var(--theme-border, #abc09a);
   color: var(--theme-text, #26352f);
@@ -73,12 +72,40 @@
 }
 .settings-subtabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-bottom: 4px;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
 }
 .settings-subtabs a {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.settings-subtabs a:hover {
+  background: var(--theme-inset, #f5f7f1);
+  color: var(--theme-text, #26352f);
+}
+.settings-subtabs a.selected {
+  border-bottom-color: currentColor;
+  color: var(--theme-link, var(--green));
+  font-weight: 600;
+}
+.settings-subtabs a:focus-visible {
+  outline-offset: -3px;
 }
 .settings-category-heading {
   display: flex;
@@ -381,11 +408,10 @@
     font-size: 12px;
   }
   .settings-subtabs {
-    gap: 6px;
+    gap: 2px;
   }
   .settings-subtabs a {
-    min-height: 40px;
-    padding: 8px 10px;
+    padding-inline: 12px;
   }
   .settings-page .settings-section {
     padding: var(--space-4, 16px);

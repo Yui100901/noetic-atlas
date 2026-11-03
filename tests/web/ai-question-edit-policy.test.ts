@@ -98,3 +98,11 @@ test('unsafe patch boundaries and changed identities fail without changing the o
  const first=applied(base,base,good);assert.equal(undoAiQuestionEditSuggestion({...first.value,id:'Q2'},first.receipt).ok,false);
  assert.equal(undoAiQuestionEditSuggestion(first.value,{...first.receipt,fields:['status']} as unknown as AiQuestionEditReceipt).ok,false);assert.deepEqual(base,copy);assert.equal(({} as Record<string,unknown>).polluted,undefined);
 });
+
+
+test('rubric edits can be applied and undone while later answer changes invalidate stale rubric advice',()=>{
+ const base=question();const result=applied(base,base,suggestion('rubric',{gradingRequirements:'说明整体成功和整体回滚两个结果。'}));
+ assert.equal(result.value.gradingRequirements,'说明整体成功和整体回滚两个结果。');
+ const undone=undoAiQuestionEditSuggestion(result.value,result.receipt);assert.equal(undone.ok,true);if(undone.ok)assert.equal(undone.value.gradingRequirements,undefined);
+ const changed={...base,answerMarkdown:'后来修改的答案'};const denied=applyAiQuestionEditSuggestion(changed,base,suggestion('stale',{gradingRequirements:'基于旧答案的标准'}));assert.equal(denied.ok,false);if(!denied.ok)assert.equal(denied.code,'field_conflict');
+});

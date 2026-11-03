@@ -1,0 +1,128 @@
+.paper-full-preview {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.preview-summary {
+  display: grid;
+  gap: 8px;
+}
+.preview-summary h3,
+.preview-summary p {
+  margin: 0;
+}
+.preview-common-requirements {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.preview-question-list {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.preview-question-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  background: var(--theme-inset);
+  overflow-wrap: anywhere;
+}
+.preview-question-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.preview-question-card h3 {
+  margin: 5px 0 0;
+}
+.preview-question-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.preview-question-actions .button {
+  padding: 7px;
+  min-height: 34px;
+}
+.preview-rubric {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.preview-rubric-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.preview-original-rubric p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+  margin: 10px 0 0;
+}
+.preview-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.preview-footer .button {
+  flex-shrink: 0;
+}
+.paper-preview-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  margin: 18px 0;
+}
+.paper-preview-entry p {
+  margin: 5px 0 0;
+}
+.paper-preview-entry h3 {
+  margin: 0;
+}
+.preview-question-card .question-content-preview {
+  min-width: 0;
+}
+.preview-question-card .question-content-preview pre {
+  max-width: 100%;
+  overflow: auto;
+}
+@media (max-width: 760px) {
+  .preview-question-card {
+    padding: 14px;
+  }
+  .preview-question-card > header {
+    flex-wrap: wrap;
+  }
+  .preview-question-actions {
+    margin-left: auto;
+  }
+  .preview-rubric {
+    padding: 12px;
+  }
+  .preview-footer,
+  .paper-preview-entry {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .preview-footer .button {
+    width: 100%;
+  }
+  .paper-full-preview .pagination {
+    flex-wrap: wrap;
+  }
+}

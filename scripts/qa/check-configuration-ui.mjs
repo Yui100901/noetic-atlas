@@ -29,7 +29,7 @@ try {
   browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||(process.platform==='win32'?'msedge':undefined),headless:true});
   const context=await browser.newContext({viewport:{width:1360,height:940},acceptDownloads:true});
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(origin+'/#/settings');await page.getByRole('button',{name:'数据与备份',exact:true}).click();
+  await page.goto(origin+'/#/settings');await page.getByRole('button',{name:'数据维护与备份',exact:true}).click();
   const panel=page.getByRole('region',{name:'配置迁移'});await panel.waitFor();
   const exported=async()=>{
     const pending=page.waitForEvent('download');await panel.getByRole('button',{name:'导出配置',exact:true}).click();

@@ -5,7 +5,7 @@ import type { PaperDraft } from '../../../shared/practice/paper-drafts.js';
 import type { Question } from '../../../shared/models/types.js';
 import { Store, now, nextStamp } from '../../core/store.js';
 import { fail, parse, id, leafId, paperInputSchema, filtersSchema, answersSchema, scoreSchema } from '../../core/validation.js';
-import { attemptView, buildPaper, createAttempt, createQuickAttempt, saveAttempt, revealQuickAttempt, paperMarkdown, paperView, reviewAttempt, submitAttempt, syncAttempt, syncExams, getActiveExam, type StoredAttempt, type StoredPaper } from './service.js';
+import { attemptView, buildPaper, createAttempt, createQuickAttempt, saveAttempt, revealQuickAttempt, paperMarkdown, paperView, paperPreview, reviewAttempt, submitAttempt, syncAttempt, syncExams, getActiveExam, type StoredAttempt, type StoredPaper } from './service.js';
 import { getSettings } from '../settings/service.js';
 import { paginationFields } from '../../core/pagination.js';
 import { paperList, attemptList } from '../../core/read-models.js';
@@ -25,6 +25,7 @@ export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
     const query = parse(z.object({ ...paginationFields, archived: z.enum(['true', 'false']).optional(), organization: z.enum(['domain', 'other']).optional(), domainId: id.optional() }).strict(), request.query);
     return paperList(store,query);
   });
+  app.get('/api/papers/:id/preview', async request => { const query=parse(z.object({page:z.coerce.number().int().min(1).max(100000).optional(),pageSize:z.coerce.number().refine(value=>[5,10,20].includes(value)).optional()}).strict(),request.query); return paperPreview(store.require<StoredPaper>('papers',getId(request)),query); });
   app.get('/api/papers/:id', async request => {
     const query=parse(z.object({summary:z.enum(['true','false']).optional()}).strict(),request.query);
     return paperView(store.require<StoredPaper>('papers',getId(request)),query.summary==='true'?'summary':true);
@@ -37,7 +38,7 @@ export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
     return question;
   });
   app.post('/api/papers', async (request, reply) => { const paper = buildPaper(store, parse(paperInputSchema, request.body)); store.insert('papers', paper.id, paper); return reply.code(201).send(paperView(paper, true)); });
-  app.post('/api/papers/preview', readOnlyOperation, async request => paperView(buildPaper(store, parse(paperInputSchema, request.body)), true));
+  app.post('/api/papers/preview', readOnlyOperation, async request => {const input=parse(paperInputSchema,request.body);return paperPreview(buildPaper(store,input),{page:input.previewPage,pageSize:input.previewPageSize});});
   app.put('/api/papers/:id', async request => {
     const pid = getId(request); const old = store.require<StoredPaper>('papers', pid); const input = parse(paperInputSchema, request.body);
     if (input.id && input.id !== pid) fail(400, 'ID_IMMUTABLE', 'ID 不能在编辑时更换');

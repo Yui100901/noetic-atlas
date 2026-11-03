@@ -34,7 +34,7 @@ export function PaperQuestionPage({ paperId, questionId, context }: { paperId: s
         </nav>
       } />
       <p className="paper-reader-context muted">按本题集的顺序阅读；返回后保留原列表的搜索与分页。{paper.data.archived && ' 题集已归档，仍可阅读保存的内容。'}</p>
-      <QuestionSetQuestionViewer key={`${paperId}:${questionId}`} ref={viewer} paperId={paperId} questionId={questionId} presentation="page" />
+      <QuestionSetQuestionViewer key={`${paperId}:${questionId}`} ref={viewer} paperId={paperId} paperVersion={paper.data.version} gradingRequirements={paper.data.gradingRequirements} questionId={questionId} presentation="page" />
     </>}
   </article>;
 }

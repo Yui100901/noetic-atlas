@@ -78,7 +78,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerHttpSecurity(app, store);
 
   registerVocabularyRoutes(app,store);
-  app.get('/api/health', async () => ({ ok: true }));
+  app.get('/api/health', async () => ({ ok: true, application:'noetic-atlas' }));
   app.get('/api/taxonomy', async () => store.taxonomy());
   app.get('/api/bootstrap', async () => {
     const ai = getPublicAiSettings(store);

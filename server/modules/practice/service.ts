@@ -1,8 +1,10 @@
+import {forwardCardGradingTitle,reverseCardGradingRequirements,reverseCardGradingTitle} from '../../../shared/questions/directional-grading.js';
+import { applyQuestionRubrics, inheritedRubrics } from './grading-requirements.js';
 import {questionStemMarkdown} from '../../../shared/questions/blank-markers.js';
 import { randomInt } from 'node:crypto';
-import type { AnswerVerdict, Attempt, AttemptAnswer, ExamQuestion, Paper, PaperFilters, PaperPracticeKind, Question, ScoringInput, VocabularyDirection } from '../../../shared/models/types.js';
+import type { AnswerVerdict, Attempt, AttemptAnswer, ExamQuestion, Paper, PaperFilters, PaperPreview, PaperPracticeKind, Question, ScoringInput, VocabularyDirection } from '../../../shared/models/types.js';
 import { Store, makeId, now, nextStamp } from '../../core/store.js';
-import { fail } from '../../core/validation.js';
+import { fail, parse, gradingRequirementsSchema } from '../../core/validation.js';
 import { normalizeScoring, planScoredQuestions, cents, fromCents } from './scoring.js';
 import { getObjectiveCorrect, isSubjectiveType } from '../../../shared/questions/question-utils.js';
 import { distributeGroupPoints, flattenQuestions, validatePaperAnswers, type StoredLeafQuestion } from '../questions/structure.js';
@@ -39,22 +41,35 @@ export function paperView(p: StoredPaper, detail: boolean | 'summary' = false) {
   const expanded = expandPaper(p);
   return { ...paper, practiceKind, organization, domainId, scoring, answerCount: expanded.questions.length, questions: expanded.questions.map(q => {const view=examQuestion(q, expanded.scoring.questionPoints[q.id]);return detail==='summary'?{...view,stemMarkdown:'',options:[],blanks:undefined,groupStemMarkdown:undefined}:view;}) };
 }
+export function paperPreview(p: StoredPaper, options:{page?:number;pageSize?:number}={}): PaperPreview {
+  const previewPage=options.page||1,previewPageSize=options.pageSize||10;
+  const previewQuestions=p.snapshot.slice((previewPage-1)*previewPageSize,previewPage*previewPageSize);
+  const inheritedGradingRequirements=inheritedRubrics(previewQuestions);
+  for(const id of Object.keys(inheritedGradingRequirements))if(Object.hasOwn(p.inheritedGradingRequirements||{},id))inheritedGradingRequirements[id]=p.inheritedGradingRequirements![id]!;
+  return {...paperView(p,'summary'),previewQuestions:structuredClone(previewQuestions),previewPage,previewPageSize,previewTotal:p.snapshot.length,inheritedGradingRequirements,questionVersions:Object.fromEntries(p.snapshot.map(q=>[q.id,q.updatedAt||q.createdAt||'']))} as PaperPreview;
+}
 export function attemptView(a: StoredAttempt): Attempt {
+  // A rubric may reveal key answer points. Keep it with the stored snapshot,
+  // but expose it only after submission, just like reference answers.
+  const {gradingRequirements, ...visibleAttempt} = a;
   const scoring = normalizeScoring(a.questions, a.scoring);
   const subjective = a.questions.filter(q => isSubjectiveType(q.type));
   const gradedSubjectiveCount = scoring.enabled ? subjective.filter(q => a.answers[q.id]?.selfScore != null).length : 0;
   const pendingSubjectiveCount = scoring.enabled ? subjective.length - gradedSubjectiveCount : 0;
   const gradingStatus = !scoring.enabled ? 'not_applicable' : !pendingSubjectiveCount && a.status === 'submitted' ? 'complete' : gradedSubjectiveCount ? 'partial' : 'pending';
   const totalScore = scoring.enabled && a.status === 'submitted' && !pendingSubjectiveCount ? fromCents(cents(a.objectiveScore) + cents(a.subjectiveScore)) : null;
-  return { ...a, elapsedSeconds: attemptElapsedSeconds(a), answerStates: Object.fromEntries(a.questions.map(q => [q.id, answerState(q, a.answers[q.id], a.status === 'submitted', scoring.enabled ? scoring.questionPoints[q.id] : undefined)])), source: a.source || 'paper', updatedAt: a.updatedAt || a.startedAt, scoring, gradedSubjectiveCount, pendingSubjectiveCount, gradingStatus, totalScore, questions: a.questions.map(q => a.status === 'submitted' || (a.source === 'quick' && a.referenceViewedAt) ? { ...examQuestion(q, scoring.questionPoints[q.id]), blanks: q.blanks, answerMarkdown: q.answerMarkdown, explanationMarkdown: q.explanationMarkdown, correctAnswers: q.correctAnswers, sourceRefs: q.sourceRefs, vocabulary: q.vocabulary, concept: q.concept } : examQuestion(q, scoring.questionPoints[q.id])) };
+  return { ...visibleAttempt, ...(a.status === 'submitted' && gradingRequirements !== undefined ? {gradingRequirements} : {}), elapsedSeconds: attemptElapsedSeconds(a), answerStates: Object.fromEntries(a.questions.map(q => [q.id, answerState(q, a.answers[q.id], a.status === 'submitted', scoring.enabled ? scoring.questionPoints[q.id] : undefined)])), source: a.source || 'paper', updatedAt: a.updatedAt || a.startedAt, scoring, gradedSubjectiveCount, pendingSubjectiveCount, gradingStatus, totalScore, questions: a.questions.map(q => a.status === 'submitted' || (a.source === 'quick' && a.referenceViewedAt) ? { ...examQuestion(q, scoring.questionPoints[q.id]), blanks: q.blanks, answerMarkdown: q.answerMarkdown, explanationMarkdown: q.explanationMarkdown, correctAnswers: q.correctAnswers, sourceRefs: q.sourceRefs, gradingRequirements: q.gradingRequirements, vocabulary: q.vocabulary, concept: q.concept } : examQuestion(q, scoring.questionPoints[q.id])) };
 }
-export function buildPaper(store: Store, input: { id?: string; title: string; description: string; mode: 'manual' | 'random'; practiceKind?: PaperPracticeKind; organization?: 'domain' | 'other'; domainId?: string | null; questionIds?: string[]; filters?: PaperFilters | null; count?: number; scoring?: ScoringInput }, previous?: StoredPaper): StoredPaper {
+export function buildPaper(store: Store, input: { id?: string; title: string; description: string; gradingRequirements?: string; questionGradingRequirements?: Record<string,string>; previewQuestionIds?:string[]; expectedQuestionVersions?:Record<string,string>; previewPage?:number; previewPageSize?:number; mode: 'manual' | 'random'; practiceKind?: PaperPracticeKind; organization?: 'domain' | 'other'; domainId?: string | null; questionIds?: string[]; filters?: PaperFilters | null; count?: number; scoring?: ScoringInput }, previous?: StoredPaper): StoredPaper {
   if (input.id === QUICK_PAPER_ID) fail(400, 'RESERVED_PAPER_ID', '随机单题标识不能用作试卷ID');
   const organization = input.organization || 'other', domainId = organization === 'domain' ? input.domainId || null : null;
   if (organization === 'domain' && !domainId) fail(400, 'PAPER_DOMAIN_REQUIRED', '领域专项题集必须选择所属领域');
   if (domainId) store.require('domains', domainId);
   const settings = getSettings(store);
   const practiceKind = input.practiceKind || 'standard';
+  // Omission keeps an existing rubric; an explicit blank clears it. Rubrics
+  // are whole-set additions to the per-question standards below.
+  const gradingRequirements = parse(gradingRequirementsSchema, input.gradingRequirements ?? previous?.gradingRequirements ?? '');
   // Persist resolved defaults in every newly created snapshot. Subsequent
   // configuration changes do not recalculate a saved paper or old attempt.
   const scoringInput = input.scoring ? { ...input.scoring, objectivePercent: input.scoring.objectivePercent ?? settings.objectivePercent, pointsByType: { ...settings.pointsByType, ...input.scoring.pointsByType }, ...(input.mode === 'random' && input.scoring.enabled && input.scoring.totalPoints === undefined ? { totalPoints: settings.randomTotalPoints } : {}) } : { enabled: settings.scoringEnabledByDefault, objectivePercent: settings.objectivePercent, pointsByType: settings.pointsByType, ...(input.mode === 'random' && settings.scoringEnabledByDefault ? { totalPoints: settings.randomTotalPoints } : {}) };
@@ -69,6 +84,12 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
     });
   } else {
     const pool = store.questions(input.filters || {}).filter(question => practiceKind === 'concept' ? isConceptQuestion(question) : practiceKind !== 'vocabulary' || isVocabularyQuestion(question));
+    if(input.previewQuestionIds){
+      if(!input.expectedQuestionVersions)fail(400,'PREVIEW_VERSIONS_REQUIRED','保存锁定预览需要提供源题版本');
+      const poolById=new Map(pool.map(q=>[q.id,q]));
+      selected=input.previewQuestionIds.map(id=>poolById.get(id)||fail(409,'PAPER_PREVIEW_OUTDATED','预览题目已不符合当前筛选条件，请重新预览',{questionId:id}));
+      if(!scoringInput.enabled&&selected.length!==count)fail(400,'PAPER_PREVIEW_COUNT_MISMATCH','锁定预览题量与随机题量不一致，请转为手动调整或重新预览');
+    } else {
     // Unbiased Fisher–Yates; each eligible question is sampled at most once.
     for (let i = pool.length - 1; i > 0; i--) { const j = randomInt(0, i + 1); [pool[i], pool[j]] = [pool[j]!, pool[i]!]; }
     if (scoringInput.enabled) {
@@ -81,13 +102,22 @@ export function buildPaper(store: Store, input: { id?: string; title: string; de
       if (pool.length < count!) fail(422, 'INSUFFICIENT_QUESTIONS', '满足筛选条件的题目不足，未放宽筛选条件', { available: pool.length, requested: count });
       selected = pool.slice(0, count);
     }
+    }
   }
-  const snapshot = selected.map(q => { const { study: _study, partStudies: _parts, ...clean } = practiceKind === 'vocabulary' ? resolveVocabularyQuestion(store, q) : practiceKind === 'concept' ? resolveConceptQuestion(store, q) : q; return clean; });
+  if(input.expectedQuestionVersions){
+    const versions=input.expectedQuestionVersions;
+    if(Object.keys(versions).length!==selected.length||selected.some(q=>!Object.hasOwn(versions,q.id)||(q.updatedAt||q.createdAt||'')!==versions[q.id]))fail(409,'PAPER_PREVIEW_OUTDATED','原题在预览后已修改，请重新预览后再保存');
+  }
+  const sourceSnapshot = selected.map(q => { const { study: _study, partStudies: _parts, ...clean } = practiceKind === 'vocabulary' ? resolveVocabularyQuestion(store, q) : practiceKind === 'concept' ? resolveConceptQuestion(store, q) : q; return clean; });
+  const allInherited = inheritedRubrics(sourceSnapshot);
+  const questionGradingRequirements = input.questionGradingRequirements ?? Object.fromEntries(Object.entries(previous?.questionGradingRequirements||{}).filter(([id])=>Object.hasOwn(allInherited,id)));
+  const snapshot=applyQuestionRubrics(sourceSnapshot,questionGradingRequirements);
+  const inheritedGradingRequirements=Object.fromEntries(Object.keys(questionGradingRequirements).map(id=>[id,allInherited[id]!]));
   if (practiceKind === 'vocabulary') validateVocabularyPaperSnapshot(snapshot);
   if (practiceKind === 'concept') validateConceptPaperSnapshot(snapshot);
   validatePaperAnswers(snapshot,input.mode==='manual'?1_500_000:500);
   const scoring = normalizeScoring(snapshot, scoringInput);
-  return { ...(previous?.legacyBankId ? {legacyBankId:previous.legacyBankId}:{}), id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, mode: input.mode, practiceKind, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
+  return { ...(previous?.legacyBankId ? {legacyBankId:previous.legacyBankId}:{}), id: previous?.id || input.id || makeId('paper'), title: input.title, description: input.description, gradingRequirements, questionGradingRequirements, inheritedGradingRequirements, mode: input.mode, practiceKind, organization, domainId, questionIds: snapshot.map(q => q.id), questionCount: snapshot.length, filters: input.mode === 'random' ? input.filters || {} : null, scoring, archived: false, version: previous ? previous.version + 1 : 1, createdAt: previous?.createdAt || now(), updatedAt: now(), snapshot };
 }
 export function createAttempt(store: Store, paper: StoredPaper, options: { mode?: 'practice' | 'exam'; durationMinutes?: number; count?: number; selection?: 'ordered' | 'random'; vocabularyDirection?: VocabularyDirection } = {}): StoredAttempt {
   if (options.vocabularyDirection && !['vocabulary','concept'].includes(paper.practiceKind || 'standard')) fail(400, 'VOCABULARY_PAPER_REQUIRED', '请先将题集类型设置为词汇题集或概念题集，再选择双向练习方向');
@@ -122,7 +152,9 @@ export function createAttempt(store: Store, paper: StoredPaper, options: { mode?
     sessionPaper = { ...sessionPaper, snapshot: directed, scoring };
   }
   const { questions, scoring } = expandPaper(sessionPaper, 500), stamp = draftStamp(store, 'paper', paper.id), startedAt = now();
-  const a: StoredAttempt = { practiceKind: paper.practiceKind || 'standard', ...(vocabularyDirection ? { vocabularyDirection } : {}), ...(practiceMode === 'practice' ? { practiceTiming: initialPracticeTiming() } : {}), practiceMode, durationMinutes, deadlineAt: durationMinutes == null ? null : new Date(Date.parse(startedAt) + durationMinutes * 60000).toISOString(), elapsedSeconds: 0, autoSubmitted: false, id: makeId('attempt'), source: 'paper', paperId: paper.id, paperTitle: paper.title, paperVersion: paper.version, status: 'in_progress', questions: structuredClone(questions), scoring: structuredClone(scoring), answers: {}, objectiveScore: 0, objectiveMax: scoring.objectivePoints, subjectiveScore: 0, subjectiveMax: scoring.subjectivePoints, startedAt, updatedAt: stamp, submittedAt: null };
+  // Freeze the rubric alongside the questions: editing/deleting the set later
+  // must not change the standard of an already started practice or exam.
+  const a: StoredAttempt = { gradingRequirements: paper.gradingRequirements || '', practiceKind: paper.practiceKind || 'standard', ...(vocabularyDirection ? { vocabularyDirection } : {}), ...(practiceMode === 'practice' ? { practiceTiming: initialPracticeTiming() } : {}), practiceMode, durationMinutes, deadlineAt: durationMinutes == null ? null : new Date(Date.parse(startedAt) + durationMinutes * 60000).toISOString(), elapsedSeconds: 0, autoSubmitted: false, id: makeId('attempt'), source: 'paper', paperId: paper.id, paperTitle: paper.title, paperVersion: paper.version, status: 'in_progress', questions: structuredClone(questions), scoring: structuredClone(scoring), answers: {}, objectiveScore: 0, objectiveMax: scoring.objectivePoints, subjectiveScore: 0, subjectiveMax: scoring.subjectivePoints, startedAt, updatedAt: stamp, submittedAt: null };
   store.transaction(() => { store.insert('attempts', a.id, a); trimDrafts(store, a); }); return a;
 }
 /** Explicit POST synchronization is important for offline storage: successful writes
@@ -349,10 +381,10 @@ export function reviewAttempt(store: Store, attempt: StoredAttempt, scores: Reco
 }
 export function paperMarkdown(paper: StoredPaper, answers: boolean): string {
   const { questions, scoring } = expandPaper(paper);
-  return [`# ${paper.title}`, '', paper.description, '', `共 ${paper.questionCount} 道题 / ${questions.length} 个作答项；版本 ${paper.version}；${scoring.enabled ? `总分 ${scoring.totalPoints} 分，客观 ${scoring.objectivePoints} 分 / 主观 ${scoring.subjectivePoints} 分` : '本卷不计分'}。`, '', ...questions.flatMap((q, i) => [
+  return [`# ${paper.title}`, '', paper.description, '', ...(answers && paper.gradingRequirements ? ['## 主观题判题要求', '', paper.gradingRequirements, ''] : []), `共 ${paper.questionCount} 道题 / ${questions.length} 个作答项；版本 ${paper.version}；${scoring.enabled ? `总分 ${scoring.totalPoints} 分，客观 ${scoring.objectivePoints} 分 / 主观 ${scoring.subjectivePoints} 分` : '本卷不计分'}。`, '', ...questions.flatMap((q, i) => [
     ...(q.groupId && q.partIndex === 0 ? [`## 公共材料：${q.groupTitle}`, '', q.groupStemMarkdown || '', ''] : []),
     `## ${i + 1}. ${q.title}`, '', `题号：${q.id} · D${q.difficulty}/L${q.depth}/F${q.frequency}${scoring.enabled ? ` · ${scoring.questionPoints[q.id]} 分` : ' · 不计分'}`, '', questionStemMarkdown(q), '', ...q.options.map(o => `- ${o.key}. ${o.text}`), '',
     ...(q.blanks || []).map(b => `${b.label}：${answers ? b.answers.join(' / ') : '________________'}`), '',
-    `[定位原题与答案解析](#/questions/${encodeURIComponent(q.sourceQuestionId || q.id)})`, '', ...(answers ? ['### 参考答案', '', q.answerMarkdown || q.correctAnswers.join('、'), '', '### 解析', '', q.explanationMarkdown, ''] : []),
+    `[定位原题与答案解析](#/questions/${encodeURIComponent(q.sourceQuestionId || q.id)})`, '', ...(answers ? [...(q.gradingRequirements?[`### ${forwardCardGradingTitle(q)}`,'',q.gradingRequirements,'']:[]),...(reverseCardGradingRequirements(q)?[`### ${reverseCardGradingTitle(q)}`,'',reverseCardGradingRequirements(q),'']:[]),'### 参考答案', '', q.answerMarkdown || q.correctAnswers.join('、'), '', '### 解析', '', q.explanationMarkdown, ''] : []),
   ])].join('\n');
 }

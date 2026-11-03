@@ -2,6 +2,10 @@ import type { PaperFilters, PaperPracticeKind, QuestionType } from '../models/ty
 
 /** An authoring draft is independent of an answer attempt or a saved paper. */
 export interface PaperDraftState {
+  gradingRequirements?: string;
+  questionGradingRequirements?: Record<string,string>;
+  previewQuestionIds?: string[];
+  expectedQuestionVersions?: Record<string,string>;
   practiceKind?: PaperPracticeKind;
   title: string; description: string; mode: 'manual' | 'random';
   organization: 'domain' | 'other'; domainId: string;

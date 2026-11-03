@@ -12,10 +12,11 @@ test('AI in the production mobile WASM runtime persists and applies only confirm
   const sql=await initSqlJs({locateFile:()=>resolve('node_modules/sql.js/dist/sql-wasm.wasm')});
   let durable:Uint8Array|undefined,failSave=false,calls=0,invalidProvider=false;
   const recovery=new Map<string,Uint8Array>();
+  const materials:any[]=[];
   const storage={async load(){return durable?.slice();},async save(bytes:Uint8Array){if(failSave)throw new Error('disk full');durable=bytes.slice();},async createRecoveryBackup(bytes:Uint8Array){const id='edit-'+recovery.size;recovery.set(id,bytes.slice());return{id,byteLength:bytes.length,createdAt:new Date().toISOString()};},async loadRecoveryBackup(id:string){return recovery.get(id)!.slice();}};
   const seed={schemaVersion:1,generatedAt:new Date().toISOString(),domains:[],categories:[],tags:[],questions:[],documents:[],papers:[]};
   let runtime=await createLocalRuntime(sql,seed,storage);
-  const provider=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);assert.equal(req.headers.authorization,'Bearer mobile-test-key');const material=JSON.parse(body.messages[1].content);calls++;let result;
+  const provider=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);assert.equal(req.headers.authorization,'Bearer mobile-test-key');const material=JSON.parse(body.messages[1].content);materials.push(material.untrustedMaterial);calls++;let result;
     if(invalidProvider){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{invalid JSON'}}]}));return;}
     if(material.task.includes('至多20条可独立应用'))result={summary:'移动端逐条编辑建议',suggestions:[{id:'clarify',title:'说明回滚边界',reason:'补充失败后的整体结果。',confidence:'high',changes:{explanationMarkdown:'任一操作失败时，事务整体回滚。'}}],warnings:[]};
     else if(material.task.includes('逐项评价'))result={items:material.untrustedMaterial.items.map((item:any)=>({questionId:item.questionId,score:item.maxPoints===null?null:item.maxPoints/2,maxPoints:item.maxPoints,comment:'移动端评价：概念正确，可补充事务边界。',strengths:['概念明确'],improvements:['说明边界']}))};
@@ -80,4 +81,27 @@ test('AI in the production mobile WASM runtime persists and applies only confirm
     const confirmed=await runtime.previewRestore(bytes,'valid-edit.sqlite');await runtime.restore(confirmed.token);await runtime.close();runtime=await createLocalRuntime(sql,seed,storage);
     assert.equal((await api('/api/ai/runs/'+run.id)).result.suggestions[0].changes.explanationMarkdown,'任一操作失败时，事务整体回滚。');assert.deepEqual(await api('/api/questions/'+id),saved);
   });
+  await t.test('set grading rubrics survive native reopen and use attempt snapshots instead of newer set requirements',async()=>{
+    const rubric='允许等价表达，但必须说明整体提交或回滚。';
+    const source=await api(`/api/questions/${question.id}`);
+    await api(`/api/questions/${question.id}`,'PUT',{...source,gradingRequirements:'本题必须给出整体成功或整体失败两个结果。'});
+    const paper=await api('/api/papers','POST',{title:'手机判题要求',mode:'manual',questionIds:[question.id],gradingRequirements:rubric,scoring:{enabled:false}},201);
+    const attempt=await api(`/api/papers/${paper.id}/attempts`,'POST',undefined,201);
+    await api(`/api/papers/${paper.id}`,'PUT',{title:paper.title,mode:'manual',questionIds:[question.id],gradingRequirements:'要求定义、机制、案例完整。',scoring:{enabled:false}});
+    await api(`/api/attempts/${attempt.id}/submit`,'POST',{answers:{[question.id]:{value:'操作全部成功或全部回滚'}}});
+    await runtime.close();runtime=await createLocalRuntime(sql,seed,storage);
+    assert.equal((await api(`/api/attempts/${attempt.id}`)).gradingRequirements,rubric);
+    // A full database restore intentionally disables AI; re-enable the local
+    // mock provider without using any operator configuration.
+    const {hasKey:_hasKey,...settings}=await api('/api/ai/settings');
+    await api('/api/ai/settings','PUT',{...settings,enabled:true,baseUrl:`http://127.0.0.1:${port}/v1`,model:'mobile-local-test',key:'mobile-test-key'});
+    const run=await api('/api/ai/grade','POST',{attemptId:attempt.id});
+    assert.equal(materials.at(-1).gradingRequirements,rubric);assert.equal(run.result.gradingRequirements,rubric);
+    assert.equal(materials.at(-1).items[0].gradingRequirements,'本题必须给出整体成功或整体失败两个结果。');
+    assert.equal(run.result.items[0].gradingRequirements,'本题必须给出整体成功或整体失败两个结果。');
+    assert.equal((await api(`/api/questions/${question.id}`)).gradingRequirements,'本题必须给出整体成功或整体失败两个结果。');
+    const bytes=new Uint8Array(await(await runtime.fetch('/api/backup.sqlite')).arrayBuffer());
+    const preview=await runtime.previewRestore(bytes,'rubric-native.sqlite');assert.ok(preview.counts.attempts>0);
+  });
+
 });

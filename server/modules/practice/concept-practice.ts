@@ -22,6 +22,6 @@ export function forwardConceptQuestion(question: Question): Question {
 export function reverseConceptQuestion(question: Question): Question {
   if (!isConceptQuestion(question)) fail(400, 'CONCEPT_CARD_REQUIRED', '概念缺少安全独立定义，不能进行逆向练习');
   const value = question.concept!;
-  return { ...question, title: '看描述想概念', type: 'fill_blank', stemMarkdown: `根据以下独立描述回忆对应概念。\n\n${value.meaningPrompt}\n\n请填写概念名称；答案按本卡所列主词与别称核对。`, options: [], correctAnswers: [], parts: undefined,
+  return { ...question, title: '看描述想概念', type: 'fill_blank', gradingRequirements:undefined, stemMarkdown: `根据以下独立描述回忆对应概念。\n\n${value.meaningPrompt}\n\n请填写概念名称；答案按本卡所列主词与别称核对。`, options: [], correctAnswers: [], parts: undefined,
     blanks: [{ id: 'concept', label: '概念名称', answers: [...value.acceptedAnswers], caseSensitive: false, trim: true }], answerMarkdown: `**目标概念**：${value.term}\n\n${question.answerMarkdown}` };
 }

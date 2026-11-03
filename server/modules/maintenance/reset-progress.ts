@@ -7,7 +7,7 @@ import type { StoredAttempt } from '../practice/service.js';
 import { freezePracticeTiming } from '../practice/practice-timing.js';
 import { focusSummary } from '../focus-review/service.js';
 
-/** Tombstones retain provenance, including two-way directions, without loading
+/** Tombstones retain provenance, directions and the historical rubric without loading
  * or copying any old question/answer/scoring snapshots. */
 export function markResultReset(store: Store, id: string) {
   const db = store.database,
@@ -42,6 +42,7 @@ export function markResultReset(store: Store, id: string) {
     source: a.source === 'quick' ? 'quick' : 'paper',
     paperId: a.paperId,
     paperTitle: a.paperTitle,
+    ...(a.gradingRequirements === undefined ? {} : { gradingRequirements: a.gradingRequirements }),
     paperVersion: a.paperVersion,
     status: 'submitted',
     startedAt: a.startedAt,
@@ -92,9 +93,24 @@ export function resetAllProgress(store: Store) {
     'reviews',
     'review_cards',
     'review_events',
-    'learning_results',
   ] as const)
     db.run(db.query.deleteFrom(table));
+  // Recent single-question detail can outlive its whole attempt. Preserve an
+  // actual rubric without retaining otherwise disposable legacy summaries;
+  // retained attempts below recreate their ordinary reset markers as before.
+  for (const row of db.all(
+    db.query
+      .selectFrom('learning_results')
+      .select('id')
+      .select(
+        db.expressions
+          .field<string | null>('data', 'gradingRequirements')
+          .as('gradingRequirements'),
+      ),
+  )) {
+    if (row.gradingRequirements?.trim()) markResultReset(store, row.id);
+    else db.deleteRecord('learning_results', row.id);
+  }
   for (const row of db.all(db.query.selectFrom('question_history').select('id')))
     store.put('question_history', row.id, {
       ...store.require<any>('question_history', row.id),

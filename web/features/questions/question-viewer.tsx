@@ -1,11 +1,12 @@
+import {QuestionReading} from './question-reading';
+import {AiQuestionTools} from '../ai/ai-components';
 import {QuestionCitations} from '../library/question-citations';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { BookOpen, Bookmark, ChevronDown, Star } from 'lucide-react';
+import { Bookmark, Star } from 'lucide-react';
 import type { Question, StudyState } from '../../../shared/models/types';
 import { idPath, localDate, send, useResource } from '../../shared/lib/api';
-import { ErrorNotice, Field, Loading, QuestionMeta, Tags, useApp } from '../../shared/ui/components';
-import { QuestionContent, SourceNoticeScope, questionNoticeContents } from '../../shared/ui/content-notices';
-import { QuestionStructuredBody } from './question-structure';
+import { ErrorNotice, Field, Loading, useApp } from '../../shared/ui/components';
+import { QuestionContent } from '../../shared/ui/content-notices';
 import { QuestionHistory, QuestionStatistics } from './question-history';
 import { matchesQuestionSnapshot, snapshotVocabulary, snapshotConcept } from './question-viewer-state';
 import './question-viewer.css';
@@ -29,7 +30,7 @@ export interface QuestionViewerHandle { confirmLeave: () => boolean; savePending
 
 /** Read immutable content from the set, and bind only learning state to the
  * original question. An edited/deleted original never replaces this snapshot. */
-export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: QuestionSnapshot; onStudyChange?: () => void; contentSource?: 'snapshot' | 'current'; studyOnly?: boolean; reviewDirection?: ReviewDirection; presentation?: 'embedded' | 'page' }>(function QuestionViewer({ question, onStudyChange, contentSource = 'snapshot', studyOnly = false, reviewDirection, presentation = 'embedded' }, ref) {
+export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: QuestionSnapshot; onStudyChange?: () => void; contentSource?: 'snapshot' | 'current'; studyOnly?: boolean; reviewDirection?: ReviewDirection; presentation?: 'embedded' | 'page'; gradingRequirements?:string; paperSource?:{paperId:string;paperVersion:number} }>(function QuestionViewer({ question, onStudyChange, contentSource = 'snapshot', studyOnly = false, reviewDirection, presentation = 'embedded',paperSource,gradingRequirements }, ref) {
   const sourceId = question.sourceQuestionId || question.id;
   const partId = question.partId;
   const source = useResource<Question>(`/api/questions/${idPath(sourceId)}`);
@@ -69,8 +70,6 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
   const readingVocabulary = snapshotVocabulary(question, source.error ? undefined : source.data || undefined);
   const readingConcept = snapshotConcept(question, source.error ? undefined : source.data || undefined);
   const reverse = reviewDirection === 'meaning_to_word' && !!(readingVocabulary || readingConcept);
-  const recallPrompt = readingConcept?.meaningPrompt || readingVocabulary?.meaningPrompt || '';
-  const recallTarget = readingConcept?.term || readingVocabulary?.headword || '';
   return <div className={`question-viewer${presentation === 'page' ? ' question-viewer-page' : ''}`} onClickCapture={event => {
     if (presentation === 'page') return;
     const link = (event.target as HTMLElement).closest('a');
@@ -80,17 +79,8 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
       <div className="question-viewer-main">
         {live && (!reverse || answerOpen) && <div className="question-viewer-feedback"><ReportQuestionAction questionId={sourceId} partId={partId} disabled={busy} snapshotDifferent={contentSource === 'snapshot' && !sameContent} /><SimilarQuestionsLauncher disabled={busy} archived={source.data?.status === 'archived'} onOpen={setSimilarMode} /></div>}
         {live && (!reverse || answerOpen) && similarMode && <SimilarQuestionsPanel key={`${sourceId}:${partId || ''}:${similarMode}`} questionId={sourceId} partId={partId} initialMode={similarMode} snapshotDifferent={contentSource === 'snapshot' && !sameContent} onClose={() => setSimilarMode(null)} />}
-        {!studyOnly && <SourceNoticeScope mathEnabled={question.mathEnabled} contents={questionNoticeContents(question)}>
-          <section className={`question-viewer-reading question-body${presentation === 'page' ? ' card' : ''}`}>
-            {reverse ? <span className="badge">{readingConcept ? '概念逆向复习' : '词汇逆向复习'}</span> : <QuestionMeta question={question} />}{presentation !== 'page' && <h3 className="question-viewer-title">{reverse ? (readingConcept ? '看描述想概念' : '看释义想词') : question.title}</h3>}
-            {question.groupStemMarkdown && <section className="group-material"><span className="section-label">共用材料 · {question.groupTitle}</span><QuestionContent mathEnabled={question.groupMathEnabled??question.mathEnabled}>{question.groupStemMarkdown}</QuestionContent></section>}
-            <QuestionContent questionType={question.type}>{reverse ? recallPrompt : question.stemMarkdown}</QuestionContent>
-            {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
-            {!reverse && <><QuestionStructuredBody question={{...question,vocabulary:readingVocabulary}} />{!question.vocabulary && readingVocabulary && <p className="muted">读音补充来自当前词卡；题目正文仍为题集快照。</p>}<Tags ids={question.tagIds} max={30} /></>}
-            <div className="answer-toggle"><button type="button" className={'button ' + (answerOpen ? '' : 'primary')} aria-expanded={answerOpen} onClick={() => setAnswerOpen(value => !value)}><BookOpen size={17} />{answerOpen ? '收起参考答案' : '展开答案与解析'}<ChevronDown size={15} className={answerOpen ? 'rotated' : ''} /></button></div>
-            {answerOpen && <div className="answer-content"><div className="section-label">参考答案{question.correctAnswers.length ? ' · ' + question.correctAnswers.map(value => value === 'true' ? '对' : value === 'false' ? '错' : value).join('、') : ''}</div>{reverse && <><p><strong>{readingConcept ? '目标概念：' : '目标词语：'}</strong>{recallTarget}</p><QuestionStructuredBody question={{ ...question, vocabulary: readingVocabulary }} /></>}<QuestionStructuredBody question={question} showAnswers /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><div className="section-label">解析 · 追问 · 误区</div><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</div>}
-          </section>
-        </SourceNoticeScope>}
+        {!studyOnly&&<QuestionReading question={question} answerOpen={answerOpen} onToggle={()=>setAnswerOpen(v=>!v)} title={presentation!=='page'} className={`question-viewer-reading question-body${presentation==='page'?' card':''}`} reverse={reverse} vocabulary={readingVocabulary} concept={readingConcept}/>}
+        {!studyOnly&&live&&(contentSource==='current'||!!paperSource||sameContent)&&(!reverse||answerOpen)&&<AiQuestionTools question={question} sourceQuestionId={sourceId} partId={partId} paperSource={paperSource} gradingRequirements={gradingRequirements} sourceVersion={source.data?.updatedAt||source.data?.createdAt||''} onUpdated={()=>{source.refresh();onStudyChange?.();}} beforeAppendNote={async()=>{if(busy)throw new Error('学习记录正在保存，请稍后再追加');if(dirty&&!await updateStudy({notes,notesMathEnabled}))throw new Error('笔记保存失败，尚未追加AI说明');}}/>}
         {(!reverse || answerOpen) && <QuestionHistory questionId={sourceId} partId={partId} aggregate={question.type === 'group'} beforeOpenReview={() => presentation === 'page' || !busy && (!dirty || confirm('学习笔记尚未保存，确定离开这道题并打开整卷复盘？'))} />}
         {source.loading ? <Loading text="正在读取学习记录…" /> : !live ? <div className="notice info">{contentSource === 'current' ? '当前原题已删除或暂时无法读取，仍展示打开窗口时读取的内容；关闭窗口刷新后重新确认。' : '原题已删除或暂时无法读取，仍可查看题集保存的完整题目与解析。'}当前无法保存原题学习记录。{source.error && <button type="button" className="button" onClick={source.refresh}>重试学习记录</button>}</div> : <>
           {(!reverse || answerOpen) && <section className="card question-viewer-notes">
@@ -101,7 +91,7 @@ export const QuestionViewer = forwardRef<QuestionViewerHandle, { question: Quest
           {partId !== undefined && source.data && <LegacyGroupStudy question={source.data} />}
           {contentSource === 'snapshot' && !sameContent && !question.groupStemMarkdown && <p className="muted">原题内容已修改，此处继续展示题集保存时的内容。学习记录仍与原题共用。</p>}
         </>}
-    {!studyOnly && (!reverse || answerOpen) && <><p className="muted">{contentSource === 'current' ? '当前展示原题内容；学习记录同步到对应原题或小题。' : '题集保留保存时的内容；AI 解析可在知识题库中针对当前原题使用。'}</p>
+    {!studyOnly && (!reverse || answerOpen) && <><p className="muted">{contentSource === 'current' ? '当前展示原题内容；学习记录同步到对应原题或小题。' : '题集保留保存时的内容；AI分析也使用本次阅读的题集版本。'}</p>
     <QuestionCitations question={question.documentLinks===undefined&&sameContent&&source.data?.documentLinks?{...question,documentLinks:source.data.documentLinks}:question}/><section className="card sources-card"><details><summary>资料来源与常见度依据</summary><p>{question.frequency ? `F${question.frequency} 常见度：` : '常见度未标注：'}{question.frequencyBasis || '经验估计，非统计频率'}{question.frequencyScope && <><br />适用范围：{question.frequencyScope}</>}</p>{question.sourceRefs.length ? <ul>{question.sourceRefs.map((sourceRef, index) => <li key={index}>{/^https?:\/\//i.test(sourceRef.url) ? <a href={sourceRef.url} target="_blank" rel="noopener noreferrer">{sourceRef.label || sourceRef.url}</a> : <span>{sourceRef.label || sourceRef.url}</span>}</li>)}</ul> : <p className="muted">尚未添加参考资料。</p>}</details></section></>}
       </div>
       <aside className="question-viewer-aside">
@@ -142,9 +132,9 @@ export const GroupStudyTools = forwardRef<QuestionViewerHandle, { question: Ques
   return <section className="group-study-tools"><Field label="选择小题学习记录"><select value={part.id} onChange={event => { if (viewer.current?.confirmLeave() !== false) setPartId(event.target.value); }}>{question.parts!.map((item, index) => <option key={item.id} value={item.id}>小题 {index + 1} · {item.title}</option>)}</select></Field><QuestionViewer key={part.id} ref={viewer} question={leaf} contentSource="current" studyOnly presentation="page" onStudyChange={onStudyChange} /></section>;
 });
 
-export const QuestionSetQuestionViewer = forwardRef<QuestionViewerHandle, { paperId: string; questionId: string; presentation?: 'embedded' | 'page' }>(function QuestionSetQuestionViewer({ paperId, questionId, presentation }, ref) {
+export const QuestionSetQuestionViewer = forwardRef<QuestionViewerHandle, { paperId: string; questionId: string; paperVersion:number; gradingRequirements?:string; presentation?: 'embedded' | 'page' }>(function QuestionSetQuestionViewer({ paperId, questionId, paperVersion,gradingRequirements,presentation }, ref) {
   const { data, loading, error, refresh } = useResource<QuestionSnapshot>(`/api/papers/${idPath(paperId)}/questions/${idPath(questionId)}`);
   if (loading) return <Loading text="正在读取题集中的题目…" />;
   if (error || !data) return <ErrorNotice message={error || '题集中的题目不存在'} retry={refresh} />;
-  return <QuestionViewer ref={ref} question={data} presentation={presentation} />;
+  return <QuestionViewer ref={ref} question={data} paperSource={{paperId,paperVersion}} gradingRequirements={gradingRequirements} presentation={presentation} />;
 });

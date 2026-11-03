@@ -1,3 +1,6 @@
+import {DirectionalGradingRequirements} from './question-grading';
+import { PaperGradingRequirements } from '../papers/grading-requirements';
+import { isSubjectiveType } from '../../../shared/questions/question-utils';
 import { useState } from 'react';
 import { ChevronDown, History, RefreshCw } from 'lucide-react';
 import type { AttemptAnswer, VocabularyDirection } from '../../../shared/models/types';
@@ -13,6 +16,7 @@ import './question-history.css';
 
 type Verdict = 'correct' | 'partial' | 'incorrect' | 'ungraded';
 interface QuestionHistoryItem {
+  gradingRequirements?: string;
   vocabularyDirection?: VocabularyDirection;
   id: string; attemptId: string; source: 'paper' | 'quick';
   paperId: string; paperTitle: string; paperVersion: number; submittedAt: string;
@@ -96,6 +100,8 @@ function QuestionHistoryRecord({ item, beforeOpenReview }: { item: QuestionHisto
         <QuestionContent questionType={question.type}>{question.stemMarkdown}</QuestionContent>
         {!!question.options.length && <div className="read-options">{question.options.map(option => <div key={option.key}><strong>{option.key}</strong><QuestionContent>{option.text}</QuestionContent></div>)}</div>}
         <section className="question-history-user-answer"><h4>我的作答</h4>{question.type === 'fill_blank' && Array.isArray(item.answer.value) ? <ol>{values.map((value, index) => <li key={index}><span className="muted">{question.blanks?.[index]?.label || `第${index + 1}空`}：</span><span className="question-history-answer-text">{value || '（此空未填写）'}</span></li>)}</ol> : <div className="question-history-answer-text"><Markdown mathEnabled={!!item.answer.mathEnabled}>{values.map(value => answerText(value, question)).join('、')}</Markdown></div>}<p className="muted">判定：{verdictLabels[item.verdict]} · {score}{item.answer.mastery != null ? ` · 掌握自评 ${item.answer.mastery}/3` : ''}</p></section>
+        <DirectionalGradingRequirements question={question} direction={item.vocabularyDirection||(question.type==='fill_blank'?'meaning_to_word':'word_to_meaning')} historical mathEnabled={question.mathEnabled}/>
+        {isSubjectiveType(question.type)&&<PaperGradingRequirements value={item.gradingRequirements} title="当时的全卷补充判题要求"/>}
         <section className="question-history-reference"><h4>当时的参考答案{question.correctAnswers.length ? ` · ${question.correctAnswers.map(value => answerText(value, question)).join('、')}` : ''}</h4><BlankAnswerSummary blanks={question.blanks} /><QuestionContent>{question.answerMarkdown}</QuestionContent>{question.explanationMarkdown && <><h4>当时的解析</h4><QuestionContent>{question.explanationMarkdown}</QuestionContent></>}</section>
       </SourceNoticeScope>
       <div className="question-history-record-footer"><span className="muted">来源：{source} · 提交于 {localDate(item.submittedAt)}</span>{item.historyAvailable ? <a className="text-button" data-question-history-review="true" href={href('attempts', item.attemptId)} onClick={event => { if (beforeOpenReview?.() === false) event.preventDefault(); }}>打开整卷复盘 →</a> : <span className="muted">整卷历史已清理，本题完整作答仍保留。</span>}</div>

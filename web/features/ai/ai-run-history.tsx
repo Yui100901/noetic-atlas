@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import type { AiRun } from '../../../shared/ai/ai';
 import type { Paged } from '../../../shared/utils/pagination';
@@ -17,14 +17,28 @@ export function AiRunHistory() {
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(20);
   const resource = useResource<Paged<AiRun>>(`/api/ai/runs?page=${page}&pageSize=${pageSize}${kind ? `&kind=${kind}` : ''}${status ? `&status=${status}` : ''}${questionId ? `&questionId=${idPath(questionId)}` : ''}`);
   const [selected, setSelected] = useState<AiRun | null>(null), [error, setError] = useState('');
+  const [loadingId, setLoadingId] = useState('');
+  const detailVersion = useRef(0), detailRequest = useRef<AbortController | null>(null);
+  const closeDetail = () => {
+    ++detailVersion.current; detailRequest.current?.abort(); detailRequest.current = null;
+    setLoadingId(''); setSelected(null);
+  };
   const view = async (id: string) => {
-    setError('');
-    try { setSelected(await request<AiRun>(`/api/ai/runs/${idPath(id)}`)); }
-    catch (reason) { setError(aiFailureMessage(reason)); }
+    // Only the latest selection may open the dialog or report a read failure.
+    const version = ++detailVersion.current, controller = new AbortController();
+    detailRequest.current?.abort(); detailRequest.current = controller;
+    const current = () => !controller.signal.aborted && detailVersion.current === version;
+    setError(''); setLoadingId(id);
+    try {
+      const run = await request<AiRun>(`/api/ai/runs/${idPath(id)}`, { signal: controller.signal });
+      if (current()) setSelected(run);
+    } catch (reason) { if (current()) setError(aiFailureMessage(reason)); }
+    finally { if (current()) { setLoadingId(''); detailRequest.current = null; } }
   };
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
     const id = params.get('run'); if (id) void view(id);
+    return () => { ++detailVersion.current; detailRequest.current?.abort(); };
   }, []);
   return <section className="card ai-tools form-stack">
     <div className="list-toolbar"><h2>处理记录</h2><div className="ai-history-filters">
@@ -34,12 +48,12 @@ export function AiRunHistory() {
     </div></div>
     {questionId && <div className="list-toolbar"><span className="muted">仅显示题目 {questionId} 的处理记录</span><button className="button" onClick={() => { setQuestionId(''); setPage(1); }}>查看全部题目记录</button></div>}
     <p className="muted">保留成功、失败和取消记录。失败记录说明出错阶段与可用诊断；不会产生可应用的评分或待审题。大文件任务的每次分块处理分别留有记录。</p>
-    {error && <ErrorNotice message={error} />}
+    {error && <ErrorNotice message={error} />}{loadingId && <p role="status">正在读取AI处理记录…</p>}
     {resource.loading ? <Loading /> : resource.error ? <ErrorNotice message={resource.error} retry={resource.refresh} /> : resource.data?.items.length ? <div className="ai-history-list">{resource.data.items.map(run => <article className="ai-history-item" key={run.id}>
-      <div className="list-toolbar"><div><div className="ai-history-title"><strong>{kindLabels[run.kind] || run.kind}</strong><span className={`badge ai-run-status-${run.status}`}>{statusLabels[run.status] || run.status}</span></div><p className="muted">{run.model} · {localDate(run.createdAt)}{run.batchId ? ` · 分块 ${run.batchId}` : ''}</p>{run.status !== 'completed' && <p className="ai-failure-message"><AlertCircle size={15} />{run.failure.message}</p>}</div><button className="button" onClick={() => void view(run.id)}>{run.status === 'completed' ? '查看结果' : '查看失败详情'}</button></div>
+      <div className="list-toolbar"><div><div className="ai-history-title"><strong>{kindLabels[run.kind] || run.kind}</strong><span className={`badge ai-run-status-${run.status}`}>{statusLabels[run.status] || run.status}</span></div><p className="muted">{run.model} · {localDate(run.createdAt)}{run.batchId ? ` · 分块 ${run.batchId}` : ''}</p>{run.status !== 'completed' && <p className="ai-failure-message"><AlertCircle size={15} />{run.failure.message}</p>}</div><button className="button" disabled={loadingId === run.id} onClick={() => void view(run.id)}>{loadingId === run.id ? '正在读取…' : run.status === 'completed' ? '查看结果' : '查看失败详情'}</button></div>
     </article>)}</div> : <Empty title="还没有符合条件的AI处理记录" />}
     <Pagination page={page} pageSize={pageSize} total={resource.data?.total || 0} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} label="AI记录" />
-    {selected && <Modal title={selected.status === 'completed' ? 'AI处理结果' : 'AI处理失败详情'} wide onClose={() => setSelected(null)}>
+    {selected && <Modal title={selected.status === 'completed' ? 'AI处理结果' : 'AI处理失败详情'} wide onClose={closeDetail}>
       <div className="ai-tools form-stack">
         {selected.status === 'completed' ? selected.kind === 'grade' ? <AiGradeResultView run={selected as AiRunView<AiGradeResult>} /> : <><AiRunHeading run={selected} title={kindLabels[selected.kind] || selected.kind} /><pre className="ai-history-result">{JSON.stringify(selected.result, null, 2)}</pre></> : <div className="notice error"><AlertCircle size={18} /><div><strong>{selected.failure.message}</strong><p>错误码：{selected.failure.code} · 阶段：{selected.failure.stage}</p><p>{selected.failure.recommendation || (selected.failure.retryable ? '本次错误允许重试；请检查具体原因后重新发起。' : '请先修改输入、配置或来源条件，再重新发起。')}</p>{selected.failure.jsonLocation && <p>JSON错误位置：{selected.failure.jsonLocation.line ? `第${selected.failure.jsonLocation.line}行` : ''}{selected.failure.jsonLocation.column ? `，第${selected.failure.jsonLocation.column}列` : ''}{selected.failure.jsonLocation.offset !== undefined ? `（偏移${selected.failure.jsonLocation.offset}）` : ''}</p>}{selected.failure.validationIssues?.length ? <ul>{selected.failure.validationIssues.map((issue, index) => <li key={index}>{issue.path || '输出根节点'}：{issue.message}（{issue.rule}）</li>)}</ul> : null}</div></div>}
         {selected.jobId && <a className="button" href={`#/ai?tab=documents&job=${idPath(selected.jobId)}`}>打开所属教材任务{selected.batchId ? ` · ${selected.batchId}` : ''}</a>}

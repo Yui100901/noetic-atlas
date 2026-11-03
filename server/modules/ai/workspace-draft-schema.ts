@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AI_WORKSPACE_DRAFT_KINDS, AI_WORKSPACE_DRAFT_MAX_BYTES, type AiWorkspaceDraftKind } from '../../../shared/ai/workspace-drafts.js';
-import { id, types, documentCitationSchema } from '../../core/validation.js';
+import { id, types, documentCitationSchema, gradingRequirementsSchema, questionGradingRequirementsSchema, questionVersionsSchema } from '../../core/validation.js';
 import { aiImportResultOutputSchema, aiPaperPlanOutputSchema } from './schema.js';
 import { aiDiagnosticsSchema } from './audit-schema.js';
 
@@ -14,7 +14,7 @@ const filters=z.object({domainId:text,categoryId:text,tagIds:strings,tagMode:z.e
 const section=z.object({text,sourceName:text,label:text,pageStart:numeric.optional(),pageEnd:numeric.optional(),sourceCitation:documentCitationSchema.optional()}).strict();
 const local=z.object({sections:z.array(section).max(2000),sourceName:text,characters:numeric,bytes:numeric,files:numeric,pages:numeric,warnings:strings}).strict();
 const states:Record<AiWorkspaceDraftKind,z.ZodType>={
- paper:z.object({prompt:text,count:text,manualCount:z.boolean(),filters,run:z.object({...runBase,kind:z.literal('paper_plan'),result:planResult}).strict().nullable(),ids:strings,title:text,description:text,organization:z.enum(['domain','other']),domainId:text,enabled:z.boolean(),points:z.record(z.string(),numeric),manualIds:text,open:strings}).partial().strict(),
+ paper:z.object({prompt:text,count:text,manualCount:z.boolean(),filters,run:z.object({...runBase,kind:z.literal('paper_plan'),result:planResult}).strict().nullable(),ids:strings,title:text,description:text,gradingRequirements:gradingRequirementsSchema.optional(),questionGradingRequirements:questionGradingRequirementsSchema.optional(),expectedQuestionVersions:questionVersionsSchema.optional(),organization:z.enum(['domain','other']),domainId:text,enabled:z.boolean(),points:z.record(z.string(),numeric),manualIds:text,open:strings}).partial().strict(),
  import:z.object({text,sourceName:text,message:text,count:numeric,categoryIds:strings,tagIds:strings,mode:z.enum(['extract','generate']),requirements:text,sourceUrl:text,questionTypes:strings,difficulty:text,run:z.object({...runBase,kind:z.literal('import'),result:aiImportResultOutputSchema}).strict().nullable(),json:text,selected:indexes}).partial().strict(),
  documents:z.object({saveSources:z.boolean().optional(),local:local.nullable(),sourceName:text,sourceUrl:text,requirements:text,first:text,last:text,perBlock:numeric,maximum:numeric,mode:z.enum(['extract','generate']),types:strings,difficulty:text,categoryIds:strings,tagIds:strings,jobId:id.nullable(),page:numeric,pageSize:numeric}).partial().strict(),
  'document-job':z.object({selected:strings,search:text,onlyFailed:z.boolean(),expanded:text,edits:z.record(z.string(),z.object({json:text,selected:indexes,baseQuestions:text.optional(),baseRunId:id.nullable().optional()}).strict()),page:numeric,pageSize:numeric}).partial().strict(),

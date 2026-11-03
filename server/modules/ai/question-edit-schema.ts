@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {blankSchema,id,questionSchema} from '../../core/validation.js';
+import {blankSchema,id,questionSchema,gradingRequirementsSchema} from '../../core/validation.js';
 
 const ids=z.array(id).max(500).refine(values=>new Set(values).size===values.length,'引用不能重复');
 export const aiQuestionEditChangesSchema=z.object({
@@ -7,6 +7,7 @@ export const aiQuestionEditChangesSchema=z.object({
  title:z.string().trim().min(1).max(300).optional(),
  stemMarkdown:z.string().min(1).max(500_000).optional(),
  answerMarkdown:z.string().max(500_000).optional(),explanationMarkdown:z.string().max(500_000).optional(),
+ gradingRequirements:gradingRequirementsSchema.optional(),
  options:z.array(z.object({key:z.string().min(1).max(20),text:z.string().max(500_000)}).strict()).max(26).optional(),
  correctAnswers:z.array(z.string().max(20)).max(26).optional(),blanks:z.array(blankSchema).max(30).optional(),
  categoryIds:ids.optional(),tagIds:ids.optional(),

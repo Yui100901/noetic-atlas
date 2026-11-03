@@ -218,6 +218,10 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.focus-resume-item[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: wait;
+}
 .focus-history {
   margin-block: 18px;
 }

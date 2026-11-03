@@ -1,3 +1,5 @@
+import { applyQuestionRubrics, inheritedRubrics, validateStoredRubrics } from '../practice/grading-requirements.js';
+import { flattenQuestions } from '../questions/structure.js';
 import { readOnlyOperation } from '../../http/operation.js';
 import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
@@ -7,7 +9,7 @@ import type { Category, Domain, Question, Tag } from '../../../shared/models/typ
 import type { SharePackage, SharePreview, ShareSelection } from '../../../shared/models/sharing.js';
 import { type AssetRecord } from '../../../shared/assets/assets.js';
 import { Store, makeId, now, type Table } from '../../core/store.js';
-import { id, parse, fail, domainSchema, categorySchema, tagSchema, questionSchema, questionBankSchema, storedScoringSchema, filtersSchema, types } from '../../core/validation.js';
+import { id, parse, fail, domainSchema, categorySchema, tagSchema, questionSchema, questionBankSchema, storedScoringSchema, filtersSchema, types, gradingRequirementsSchema, questionGradingRequirementsSchema } from '../../core/validation.js';
 import { assetRecordSchema, validateAssetRecord } from '../assets/schema.js';
 import { collectAssetReferences, validateAssetReferences } from '../assets/service.js';
 import { type StoredPaper, QUICK_PAPER_ID } from '../practice/service.js';
@@ -28,16 +30,18 @@ function shareFilters(raw:Record<string,unknown>={}) {
   return parse(shareFiltersSchema,input);
 }
 const shareQuestion = questionSchema.safeExtend({ id });
-const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), mode: z.enum(['manual','random']), practiceKind: z.enum(['standard','vocabulary','concept']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000), questionCount: z.number().int().min(0).max(50000), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).max(50000), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
+const paperSchema = z.object({ id, title: z.string().min(1).max(300), description: z.string().max(500000), gradingRequirements: gradingRequirementsSchema.optional(), questionGradingRequirements:questionGradingRequirementsSchema.optional(), inheritedGradingRequirements:questionGradingRequirementsSchema.optional(), mode: z.enum(['manual','random']), practiceKind: z.enum(['standard','vocabulary','concept']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000), questionCount: z.number().int().min(0).max(50000), archived: z.boolean(), version: z.number().int().min(1), createdAt: z.string().datetime({offset:true}), updatedAt: z.string().datetime({offset:true}), scoring: storedScoringSchema.optional(), snapshot: z.array(shareQuestion).max(50000), organization: z.enum(['domain','other']).optional(), domainId: id.nullable().optional(), filters: z.null().default(null) }).strict();
 const packageSchema = z.object({ format: z.literal('learning-share'), schemaVersion: z.literal(1), exportedAt: z.string().datetime({offset:true}), title: z.string().min(1).max(300), domains: z.array(domainSchema.extend({id})).max(10000), categories: z.array(categorySchema.extend({id})).max(50000), tags: z.array(tagSchema.extend({id})).max(50000), assets: z.array(assetRecordSchema).max(10000), questions: z.array(shareQuestion).max(50000), papers: z.array(paperSchema).max(100), questionBanks: z.array(questionBankSchema.safeExtend({id})).max(100).default([]) }).strict();
 const cleanQuestion = (question: Question): Question => { const { study: _study, ...record } = question; return { ...record, sourceDocument: null, sourceAnchor: null, ...(record.documentLinks?{documentLinks:record.documentLinks.map(link=>({...link,documentId:null,versionId:null}))}:{}) }; };
 function canonical(value: unknown): string { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, entry]) => entry !== undefined).sort(([a],[b]) => a.localeCompare(b)).map(([key,entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(',')}}`; return JSON.stringify(value); }
 function fingerprint(store: Store) { return createHash('sha256').update(canonical(['domains','categories','tags','assets','questions','papers','question_banks'].map(table => store.all(table as Table)))).digest('hex'); }
 function semantic(value: any, table: Table) {
   const { id: _id, createdAt: _created, updatedAt: _updated, study: _study, ...record } = value;
-  if (table === 'questions') { delete record.status; record.sourceDocument = null; record.sourceAnchor = null; if(record.documentLinks)record.documentLinks=record.documentLinks.map((link:any)=>({...link,documentId:null,versionId:null})); }
+  if (table === 'questions') { if(!record.gradingRequirements)delete record.gradingRequirements; if(record.parts)record.parts=record.parts.map((part:any)=>{const clean={...part};if(!clean.gradingRequirements)delete clean.gradingRequirements;return clean;});delete record.status; record.sourceDocument = null; record.sourceAnchor = null; if(record.documentLinks)record.documentLinks=record.documentLinks.map((link:any)=>({...link,documentId:null,versionId:null})); }
   if (table === 'papers') {
     record.practiceKind ||= 'standard';
+    record.questionGradingRequirements ||= {};record.inheritedGradingRequirements ||= {};
+    record.gradingRequirements ||= ''; // Omitted and empty rubrics have the same semantics.
     // Archive/review/version transitions belong to the recipient. Reimporting
     // the same frozen paper must not undo them or create another copy.
     delete record.archived; delete record.version;
@@ -131,7 +135,7 @@ export function exportShare(store: Store, selection: ShareSelection): SharePacka
   if (selection.kind === 'paper') {
     const paper = store.require<StoredPaper>('papers', selection.id || fail(400, 'SHARE_SELECTION_REQUIRED', '请选择题集'));
     const snapshot = paper.snapshot.map(question => cleanQuestion(paper.practiceKind === 'vocabulary' ? resolveVocabularyQuestion(store, question) : paper.practiceKind === 'concept' ? resolveConceptQuestion(store, question) : question));
-    papers = [{ ...paper, filters: null, snapshot }]; questions = snapshot; title = paper.title;
+    papers = [{ ...paper, filters: null, snapshot }]; questions = applyQuestionRubrics(snapshot,paper.inheritedGradingRequirements||{}); title = paper.title;
   } else {
     questions = selection.ids?.length ? selection.ids.map(qid => cleanQuestion(store.require<Question>('questions', qid))) : store.questions(shareFilters(selection.filters)).map(cleanQuestion);
     title = questions.length === 1 ? questions[0]!.title : `分享题目（${questions.length}道）`;
@@ -232,20 +236,30 @@ export function planShareImport(store: Store, raw: unknown) {
   for (const paper of data.papers) {
     if (paper.id === QUICK_PAPER_ID) fail(400,'RESERVED_PAPER_ID','分享题集ID无效');
     if (paper.questionIds.length !== paper.snapshot.length || paper.snapshot.some((question,index)=>question.id !== paper.questionIds[index]) || paper.questionCount !== paper.questionIds.length) fail(400,'INVALID_SNAPSHOT','分享题集快照快照与题号不一致');
-    for (const question of paper.snapshot) if (semantic(question,'questions') !== semantic(sourceQuestions.get(question.id) || fail(400,'INCOMPLETE_SHARE','题集快照快照题目未包含在分享包中'),'questions')) fail(400,'INVALID_SNAPSHOT','题集快照快照和分享题目内容不一致');
-    const snapshot = paper.snapshot.map(question=>{
+    validateStoredRubrics(paper as any);
+    const sourceRoots=paper.snapshot.map(question=>sourceQuestions.get(question.id)||fail(400,'INCOMPLETE_SHARE','题集快照题目未包含在分享包中'));
+    const originalStandards=inheritedRubrics(sourceRoots as Question[]);
+    for(const [qid,value] of Object.entries(paper.inheritedGradingRequirements||{}))if(originalStandards[qid]!==value)fail(400,'INVALID_QUESTION_RUBRIC','分享包的原题标准与题集基线不一致',{questionId:qid});
+    const effective=applyQuestionRubrics(sourceRoots as Question[],paper.questionGradingRequirements||{});
+    for(let index=0;index<paper.snapshot.length;index++)if(semantic(paper.snapshot[index],'questions')!==semantic(effective[index],'questions'))fail(400,'INVALID_SNAPSHOT','题集快照与分享原题或覆盖要求不一致');
+    const leafRoots=new Map(flattenQuestions(paper.snapshot as Question[]).map(q=>[q.id,{root:q.sourceQuestionId||q.id,partId:q.partId}]));
+    const remapRubrics=(values:Record<string,string>={})=>Object.fromEntries(Object.entries(values).map(([qid,value])=>{const source=leafRoots.get(qid)||fail(400,'INVALID_QUESTION_RUBRIC','逐题要求引用无效');const text=mapQuestionLinks(rewrite(value),qid=>{if(sourceQuestionIds.has(qid))return questionRoute(ref('questions',qid));detachedQuestionLinks=true;return `#/questions?search=${encodeURIComponent(qid)}`;});return [ref('questions',source.root)+(source.partId?`::${source.partId}`:''),text];}));
+    const questionGradingRequirements=remapRubrics(paper.questionGradingRequirements),inheritedGradingRequirements=remapRubrics(paper.inheritedGradingRequirements);
+
+    const sourceSnapshot = paper.snapshot.map(question=>{
       const target=ref('questions',question.id),resolved=staged.get('questions')?.get(target)||store.require<Question>('questions',target);
       // The source snapshot was checked above. Reuse the exact transformed
       // content (including remapped links) and the recipient's review state.
       return {...resolved,id:target};
     }) as Question[];
+    const snapshot=applyQuestionRubrics(sourceSnapshot,questionGradingRequirements);
     const questionPoints = paper.scoring ? Object.fromEntries(Object.entries(paper.scoring.questionPoints).map(([qid,points])=>[ref('questions',qid),points])) : undefined;
     const scoring = normalizeScoring(snapshot,paper.scoring ? {...paper.scoring,questionPoints} : undefined); validatePaperAnswers(snapshot, 1_500_000);
     if (paper.practiceKind === 'vocabulary') validateVocabularyPaperSnapshot(snapshot);
     if (paper.practiceKind === 'concept') validateConceptPaperSnapshot(snapshot);
     const pendingQuestions = snapshot.some(question => store.get<Question>('questions',question.id)?.status !== 'published');
     const domainId = paper.domainId ? ref('domains',paper.domainId) : null; if (paper.organization === 'domain' && !domainId) fail(400,'PAPER_DOMAIN_REQUIRED','领域专项题集缺少领域');if((paper.organization||'other')==='other'&&domainId)fail(400,'PAPER_DOMAIN_MISMATCH','其他题集不能指定领域');
-    assign('papers',paper,{...paper, snapshot, scoring,questionIds:snapshot.map(question=>question.id), mode:'manual',filters:null,archived:paper.archived||pendingQuestions,organization:paper.organization || 'other',domainId,createdAt:now(),updatedAt:now()});
+    assign('papers',paper,{...paper, snapshot, scoring,questionGradingRequirements,inheritedGradingRequirements,questionIds:snapshot.map(question=>question.id), mode:'manual',filters:null,archived:paper.archived||pendingQuestions,organization:paper.organization || 'other',domainId,createdAt:now(),updatedAt:now()});
   }
   // Validate against a read-only merged view. Preview has exactly the same
   // dependency and media checks as import, without touching SQLite rows.

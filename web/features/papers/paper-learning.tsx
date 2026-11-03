@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, Clock3 } from 'lucide-react';
 import type { ContextLearningSummary } from '../../../shared/practice/context-learning';
+import type { PaperPracticeKind } from '../../../shared/models/types';
 import { idPath, useResource } from '../../shared/lib/api';
 import type { ListPage } from '../../shared/lib/pagination';
 import { Empty, ErrorNotice, Loading, Pagination } from '../../shared/ui/components';
@@ -19,7 +20,7 @@ const tabs = [
 
 /** Keep the question browser mounted so switching to a set's history does not
  * reset its current search/page. No extra global learning-record destination. */
-export function PaperLearningWorkspace({ paperId, initialTab = 'content', children }: { paperId: string; initialTab?: string; children: ReactNode }) {
+export function PaperLearningWorkspace({ paperId, practiceKind, initialTab = 'content', children }: { paperId: string; practiceKind?: PaperPracticeKind; initialTab?: string; children: ReactNode }) {
   const [tab, setTab] = useState(tabs.some(item => item.id === initialTab) ? initialTab : 'content');
   const contentsHref = useRef(paperContentsHref(paperId, readPaperContentsContext(new URLSearchParams(window.location.hash.split('?')[1]))));
   const changeTab = (next: typeof tabs[number]['id']) => {
@@ -35,7 +36,7 @@ export function PaperLearningWorkspace({ paperId, initialTab = 'content', childr
       {tabs.map(item => <button key={item.id} id={`set-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`set-panel-${item.id}`} className={tab === item.id ? 'selected' : ''} onClick={() => changeTab(item.id)}>{item.label}</button>)}
     </div>
     <div id="set-panel-content" role="tabpanel" aria-labelledby="set-tab-content" hidden={tab !== 'content'}>{children}</div>
-    {tab !== 'content' && <div id={`set-panel-${tab}`} role="tabpanel" aria-labelledby={`set-tab-${tab}`}><ContextLearningPanel key={`${paperId}:${tab}`} source="paper" paperId={paperId} initialTab={tab} showTabs={false} /></div>}
+    {tab !== 'content' && <div id={`set-panel-${tab}`} role="tabpanel" aria-labelledby={`set-tab-${tab}`}><ContextLearningPanel key={`${paperId}:${tab}`} source="paper" paperId={paperId} practiceKind={practiceKind} initialTab={tab} showTabs={false} /></div>}
   </section>;
 }
 

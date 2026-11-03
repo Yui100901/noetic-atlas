@@ -1,3 +1,4 @@
+import {isSubjectiveType} from '../../../shared/questions/question-utils';
 import {AI_QUESTION_EDIT_FIELDS,type AiQuestionEditChanges,type AiQuestionEditField,type AiQuestionEditSuggestion} from '../../../shared/ai/question-edit';
 import type {QuestionInput,QuestionPart,QuestionType} from '../../../shared/models/types';
 
@@ -14,7 +15,7 @@ export interface AiQuestionEditReceipt {
 export type AiQuestionEditApplyResult={ok:true;value:QuestionInput;receipt:AiQuestionEditReceipt;message:string}|AiQuestionEditFailure;
 export type AiQuestionEditUndoResult={ok:true;value:QuestionInput;message:string}|AiQuestionEditFailure;
 
-const labels:Record<AiQuestionEditField,string>={mathEnabled:'公式排版',title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签'};
+const labels:Record<AiQuestionEditField,string>={mathEnabled:'公式排版',title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',gradingRequirements:'判题要求',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签'};
 const gradingFields:AiQuestionEditField[]=['options','correctAnswers','blanks'];
 const taxonomyFields:AiQuestionEditField[]=['categoryIds','tagIds'];
 const allowed=new Set<string>(AI_QUESTION_EDIT_FIELDS);
@@ -36,7 +37,7 @@ function target(question:QuestionInput,partId?:string):Target|null {
 const field=(value:Target,key:AiQuestionEditField):unknown=>(value as unknown as Record<string,unknown>)[key];
 function failure(code:AiQuestionEditFailureCode,message:string,fields?:AiQuestionEditField[]):AiQuestionEditFailure{return{ok:false,code,message,...(fields?.length?{fields}:{})};}
 function conflicts(message:string,fields:AiQuestionEditField[]):AiQuestionEditFailure{return failure('field_conflict',`${message}（${fields.map(key=>labels[key]).join('、')}）。请保留当前编辑内容并重新分析。`,fields);}
-function guardsFor(fields:AiQuestionEditField[]):AiQuestionEditField[]{return[...new Set([...fields,...(fields.some(key=>gradingFields.includes(key))?gradingFields:[]),...(fields.some(key=>taxonomyFields.includes(key))?taxonomyFields:[])])];}
+function guardsFor(fields:AiQuestionEditField[]):AiQuestionEditField[]{return[...new Set([...fields,...(fields.includes('gradingRequirements')?['stemMarkdown','answerMarkdown','explanationMarkdown'] as AiQuestionEditField[]:[]),...(fields.some(key=>gradingFields.includes(key))?gradingFields:[]),...(fields.some(key=>taxonomyFields.includes(key))?taxonomyFields:[])])];}
 
 /** The provider already validates full question structure. Here we enforce
  * the editable boundary and JSON field shapes without a second question schema. */
@@ -45,7 +46,7 @@ function validChanges(value:unknown,partId?:string):value is AiQuestionEditChang
  const fields=Object.keys(value);if(!fields.length||fields.some(key=>!allowed.has(key)))return false;
  for(const key of fields as AiQuestionEditField[]){
   const item=value[key];
-  if(['title','stemMarkdown','answerMarkdown','explanationMarkdown'].includes(key)){if(typeof item!=='string')return false;}
+  if(['title','stemMarkdown','answerMarkdown','explanationMarkdown','gradingRequirements'].includes(key)){if(typeof item!=='string'||key==='gradingRequirements'&&item.length>10000)return false;}
   else if(key==='categoryIds'||key==='tagIds'||key==='correctAnswers'){if(partId&&key!=='correctAnswers'||!Array.isArray(item)||item.some(value=>typeof value!=='string'))return false;}
   else if(key==='options'){if(!Array.isArray(item)||item.some(value=>!plain(value)||Object.keys(value).some(key=>!['key','text'].includes(key))||typeof value.key!=='string'||typeof value.text!=='string'))return false;}
   else if(key==='blanks'){
@@ -76,6 +77,7 @@ export function applyAiQuestionEditSuggestion(current:QuestionInput,baseline:Que
   if(!suggestion||typeof suggestion.id!=='string'||!suggestion.id||suggestion.partId!==undefined&&(typeof suggestion.partId!=='string'||!suggestion.partId)||!validChanges(suggestion.changes,suggestion.partId))return failure('invalid_suggestion','建议包含不支持的修改字段或无效内容，未应用任何修改。');
   const baseTarget=target(baseline,suggestion.partId);
   if(!baseTarget)return failure('part_missing','分析快照中没有这个小题，请重新分析。');
+  if(suggestion.changes.gradingRequirements?.trim()&&!isSubjectiveType(baseTarget.type))return failure('invalid_suggestion','只有主观题可填写判题要求。');
   const blocked=identity(current,baseline.id,baseline.type,suggestion.partId,baseTarget.type);if(blocked)return blocked;
   const currentTarget=target(current,suggestion.partId)!;
   // Ignore model no-ops rather than claiming ownership of untouched fields.

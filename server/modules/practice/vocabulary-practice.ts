@@ -35,5 +35,5 @@ export function reverseVocabularyQuestion(question: Question): Question {
   const vocabulary=question.vocabulary;
   if(!vocabulary||question.type==='group')fail(400,'VOCABULARY_REQUIRED','本题没有可用的结构化词汇信息');
   if(!vocabularyPromptIsSafe(vocabulary!))fail(400,'VOCABULARY_HINT_UNSAFE','本词卡的独立释义提示不足或含答案，请先修订释义提示');
-  return {...question,title:'看释义想单词',type:'fill_blank',stemMarkdown:`根据以下独立释义回忆原词卡中的词语。\n\n${vocabulary!.meaningPrompt}\n\n请填写词语。核对采用本卡收录的词形，其他同义表达可在解析中自行辨析。`,options:[],correctAnswers:[],parts:undefined,blanks:[{id:'word',label:'词语',answers:[...vocabulary!.acceptedAnswers],caseSensitive:false,trim:true}],answerMarkdown:`**目标词语**：${vocabulary!.headword}\n\n${question.answerMarkdown}`,vocabulary};
+  return {...question,title:'看释义想单词',type:'fill_blank',gradingRequirements:undefined,stemMarkdown:`根据以下独立释义回忆原词卡中的词语。\n\n${vocabulary!.meaningPrompt}\n\n请填写词语。核对采用本卡收录的词形，其他同义表达可在解析中自行辨析。`,options:[],correctAnswers:[],parts:undefined,blanks:[{id:'word',label:'词语',answers:[...vocabulary!.acceptedAnswers],caseSensitive:false,trim:true}],answerMarkdown:`**目标词语**：${vocabulary!.headword}\n\n${question.answerMarkdown}`,vocabulary};
 }

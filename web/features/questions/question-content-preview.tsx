@@ -1,3 +1,4 @@
+import { DirectionalGradingRequirements } from './question-grading';
 import { MathScope } from '../../shared/math/math-context';
 import { typeLabels, type QuestionType } from '../../../shared/models/types';
 import {
@@ -17,7 +18,13 @@ const records = (value: unknown) => (Array.isArray(value) ? value.map(object) : 
 
 /** Import previews are not trusted saved questions. Render incomplete JSON
  * defensively, including structured answers; persistence still validates it. */
-export function QuestionContentPreview({ question }: { question: unknown }) {
+export function QuestionContentPreview({
+  question,
+  showGradingRequirements = true,
+}: {
+  question: unknown;
+  showGradingRequirements?: boolean;
+}) {
   const root = object(question);
   const parts = records(root.parts);
   const notices = {
@@ -97,6 +104,12 @@ export function QuestionContentPreview({ question }: { question: unknown }) {
             )}
             <QuestionContent>{text(item.answerMarkdown)}</QuestionContent>
             {!hasAnswer && <p className="muted">尚未填写参考答案，请在导入前核对。</p>}
+            {showGradingRequirements && (
+              <DirectionalGradingRequirements
+                question={item}
+                mathEnabled={item.mathEnabled === true || root.mathEnabled === true}
+              />
+            )}
           </section>
         )}
         {type === 'group' && text(item.answerMarkdown) && (

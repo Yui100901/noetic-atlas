@@ -1,3 +1,4 @@
+import { reverseCardGradingRequirements } from '../../../shared/questions/directional-grading.js';
 import {literalMathMarkdown} from '../../../shared/math/markdown.js';
 import {questionStemMarkdown} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
@@ -27,7 +28,9 @@ function questionDocument(question: StoredLeafQuestion, number: number, document
   Object.assign(q, {...(question.mathEnabled!==undefined?{mathEnabled:question.mathEnabled}:{}),...(question.groupMathEnabled!==undefined?{groupMathEnabled:question.groupMathEnabled}:{}), sourceQuestionId: question.sourceQuestionId || question.id, groupId: question.groupId, groupTitle: question.groupTitle, groupStemMarkdown: question.groupStemMarkdown, partId: question.partId, partIndex: question.partIndex, blanks: question.blanks?.map(({ answers: _answers, ...blank }) => blank) });
   if (document.mode === 'blank') return q;
   q.blanks = question.blanks;
-  Object.assign(q, { answerMarkdown: [vocabularyPronunciationMarkdown(question.vocabulary), question.answerMarkdown].filter(Boolean).join('\n\n'), explanationMarkdown: question.explanationMarkdown, correctAnswers: question.correctAnswers, sourceRefs: question.sourceRefs });
+  const reverseRules=reverseCardGradingRequirements(question);
+  if(reverseRules){if(attempt)q.gradingDirection=attempt.vocabularyDirection||(question.type==='fill_blank'?'meaning_to_word':'word_to_meaning');if(!attempt||q.gradingDirection==='meaning_to_word')q.reverseGradingRequirements=reverseRules;}
+  Object.assign(q, { gradingRequirements:question.gradingRequirements, answerMarkdown: [vocabularyPronunciationMarkdown(question.vocabulary), question.answerMarkdown].filter(Boolean).join('\n\n'), explanationMarkdown: question.explanationMarkdown, correctAnswers: question.correctAnswers, sourceRefs: question.sourceRefs });
   if (document.mode === 'completed' && attempt) {
     const answer = attempt.answers[question.id]; q.userAnswer = answer?.value ?? '';if(answer?.mathEnabled!==undefined)q.answerMathEnabled=answer.mathEnabled;
     q.correct = isSubjectiveType(question.type) ? null : isCorrect(question, answer);
@@ -40,7 +43,7 @@ function questionDocument(question: StoredLeafQuestion, number: number, document
 
 export function paperExportDocument(paper: StoredPaper, mode: 'blank' | 'answers'): ExportDocument {
   const expanded = expandPaper(paper);
-  const document: ExportDocument = { version: 1, mode, title: paper.title, description: paper.description, filename: exportFilename(paper.title, mode), paperId: paper.id, paperVersion: paper.version, generatedAt: now(), snapshotCreatedAt: paper.updatedAt, scoring: expanded.scoring, questions: [], markdown: '' };
+  const document: ExportDocument = { version: 1, mode, title: paper.title, description: paper.description, ...(mode !== 'blank' && paper.gradingRequirements ? {gradingRequirements:paper.gradingRequirements} : {}), filename: exportFilename(paper.title, mode), paperId: paper.id, paperVersion: paper.version, generatedAt: now(), snapshotCreatedAt: paper.updatedAt, scoring: expanded.scoring, questions: [], markdown: '' };
   document.questions = expanded.questions.map((q, index) => questionDocument(q, index + 1, document));
   if(document.questions.some(q=>q.mathEnabled||q.groupMathEnabled||q.answerMathEnabled))document.mathEnabled=true;
   document.markdown = exportMarkdown(document); return document;
@@ -49,7 +52,7 @@ export function paperExportDocument(paper: StoredPaper, mode: 'blank' | 'answers
 export function attemptExportDocument(attempt: StoredAttempt, mode: ExportMode = 'completed'): ExportDocument {
   if (attempt.status !== 'submitted') fail(409, 'NOT_SUBMITTED', '请先交卷，再导出完成卷或本次练习的答案');
   const view = attemptView(attempt);
-  const document: ExportDocument = { version: 1, mode, title: attempt.paperTitle, description: [attempt.vocabularyDirection === 'meaning_to_word' ? '词汇逆向练习：看释义想单词。' : attempt.vocabularyDirection === 'word_to_meaning' ? '词汇顺向练习：看单词想释义。' : '', '基于本次练习的历史题目、分值和作答快照导出。'].filter(Boolean).join(' '), filename: exportFilename(attempt.paperTitle, mode), paperId: attempt.paperId, paperVersion: attempt.paperVersion, attemptId: attempt.id, generatedAt: now(), snapshotCreatedAt: attempt.startedAt, submittedAt: attempt.submittedAt, scoring: view.scoring!, questions: [], markdown: '' };
+  const document: ExportDocument = { version: 1, mode, title: attempt.paperTitle, ...(mode !== 'blank' && attempt.gradingRequirements ? {gradingRequirements:attempt.gradingRequirements} : {}), description: [attempt.vocabularyDirection === 'meaning_to_word' ? attempt.practiceKind==='concept'?'概念逆向练习：看描述想概念。':'词汇逆向练习：看释义想单词。' : attempt.vocabularyDirection === 'word_to_meaning' ? attempt.practiceKind==='concept'?'概念顺向练习：看概念想含义。':'词汇顺向练习：看单词想释义。' : '', '基于本次练习的历史题目、分值和作答快照导出。'].filter(Boolean).join(' '), filename: exportFilename(attempt.paperTitle, mode), paperId: attempt.paperId, paperVersion: attempt.paperVersion, attemptId: attempt.id, generatedAt: now(), snapshotCreatedAt: attempt.startedAt, submittedAt: attempt.submittedAt, scoring: view.scoring!, questions: [], markdown: '' };
   if (mode === 'completed') document.summary = { objectiveScore: view.objectiveScore, objectiveMax: view.objectiveMax, subjectiveScore: view.subjectiveScore, subjectiveMax: view.subjectiveMax, pendingSubjectiveCount: view.pendingSubjectiveCount ?? 0, totalScore: view.totalScore ?? null, correctObjectiveCount: attempt.questions.filter(q => !isSubjectiveType(q.type) && isCorrect(q, attempt.answers[q.id])).length, objectiveCount: attempt.questions.filter(q => !isSubjectiveType(q.type)).length };
   document.questions = attempt.questions.map((q, index) => questionDocument(q, index + 1, document, attempt));
   if(document.questions.some(q=>q.mathEnabled||q.groupMathEnabled||q.answerMathEnabled))document.mathEnabled=true;
@@ -70,6 +73,7 @@ export function exportMarkdown(document: ExportDocument): string {
     return literal(result.markdown,enabled);
   };
   const lines = [`# ${literal(plain(document.title))}`, '', `**${exportModeLabels[document.mode]}** · v${document.paperVersion} · ${document.questions.length} 题`, '', literal(document.description), '', document.scoring.enabled ? `卷面总分：${points(document.scoring.totalPoints)} 分` : '无分练习：不计算分数。', `导出时间：${document.generatedAt}`, `题目快照时间：${document.snapshotCreatedAt}`];
+  if (document.mode !== 'blank' && document.gradingRequirements) lines.push('', '## 主观题判题要求', '', literal(document.gradingRequirements), '');
   if (document.mode === 'blank') lines.push('', '姓名：________________　日期：________________', '', '请在每题的答题区作答。');
   if (document.mode === 'completed' && document.summary) {
     const s = document.summary;
@@ -90,6 +94,8 @@ export function exportMarkdown(document: ExportDocument): string {
       if (!isSubjectiveType(q.type)) lines.push(`判定：${q.correct ? '正确' : '错误或未作答'}${q.points === null ? '（无分练习）' : `；得分 ${points(q.earnedPoints ?? 0)} / ${points(q.points)} 分`}`, '');
       else lines.push(q.points === null ? '阅卷：无分练习，请对照参考答案复盘。' : q.grading === 'pending' ? `阅卷：待阅（本题 ${points(q.points)} 分），当前不计入最终总分。` : `人工阅卷：${points(q.earnedPoints ?? 0)} / ${points(q.points)} 分`, '');
     }
+    if(q.gradingRequirements&&q.gradingDirection!=='meaning_to_word')lines.push(q.reverseGradingRequirements||q.gradingDirection==='word_to_meaning'?'### 正向判题标准：看词语／概念写释义':'### 本题判题要求','',literal(q.gradingRequirements),'');
+    if(q.reverseGradingRequirements&&q.gradingDirection!=='word_to_meaning')lines.push('### 逆向判题规则：看释义／描述写词语或概念','',literal(q.reverseGradingRequirements),'');
     lines.push('### 参考答案', '');
     if (q.blanks?.length) lines.push(...q.blanks.map((b, i) => `${i + 1}. ${literal(b.label,q.mathEnabled)}：${literal(b.answers?.join(' / ') || '',q.mathEnabled)}（${b.caseSensitive ? '区分' : '不区分'}大小写；${b.trim ? '忽略' : '保留'}首尾空白）`), '');
     if (q.correctAnswers?.length) lines.push(`正确选项：${q.correctAnswers.map(value => q.type === 'true_false' ? labelValue(value) : value).join('、')}`, '');

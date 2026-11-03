@@ -45,3 +45,10 @@ test('legacy wordlist may display matching current pronunciation without rewriti
   const historical={...snapshot,vocabulary:{...vocabulary,pronunciations:[{...vocabulary.pronunciations[0]!,ipa:'/historical/'}]}};
   assert.equal(snapshotVocabulary(historical,current)!.pronunciations[0]!.ipa,'/historical/');
 });
+
+
+test('a changed source rubric cannot silently supplement a historical snapshot without source provenance',()=>{
+ const snapshot={...question(),type:'short_answer' as const,options:[],correctAnswers:[]};
+ assert.equal(matchesQuestionSnapshot(snapshot,{...snapshot,gradingRequirements:'新增的原题标准'}),false);
+ assert.equal(matchesQuestionSnapshot(snapshot,{...snapshot,gradingRequirements:''}),true);
+});

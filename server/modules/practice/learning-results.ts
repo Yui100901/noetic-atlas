@@ -1,7 +1,7 @@
 import { recordPlanEvidence } from '../learning-plans/progress.js';
 import { z } from 'zod';
 import type { Store } from '../../core/store.js';
-import { fail, id, leafId, parse, snapshotQuestionSchema, types } from '../../core/validation.js';
+import { fail, id, leafId, parse, snapshotQuestionSchema, types, gradingRequirementsSchema } from '../../core/validation.js';
 import type { StoredAttempt } from './service.js';
 import type { StoredLeafQuestion } from '../questions/structure.js';
 import { normalizeScoring } from './scoring.js';
@@ -19,7 +19,7 @@ const itemSchema = z.object({
 /** Independent learning evidence deliberately excludes answers, correct-question
  * bodies and whole-paper scores. Wrong leaves retain their own reading material. */
 export const learningResultSchema = z.object({
-  id, source: z.enum(['paper', 'quick']), paperId: id, paperTitle: z.string().max(300),
+  id, source: z.enum(['paper', 'quick']), paperId: id, paperTitle: z.string().max(300), gradingRequirements: gradingRequirementsSchema.optional(),
   practiceKind: z.enum(['standard','vocabulary','concept']).optional(), vocabularyDirection: z.enum(['word_to_meaning', 'meaning_to_word']).optional(),
   paperVersion: z.number().int().positive(), status: z.literal('submitted'),
   startedAt: stamp, submittedAt: stamp, updatedAt: stamp,
@@ -56,6 +56,7 @@ export function validateLearningResult(store: Store, input: unknown, importedAtt
     const expected = parse(learningResultSchema, resultFromAttempt(importedAttempt));
     // Old compact evidence omitted direction. Recover only from its retained
     // attempt, never from a paper whose current purpose may have changed.
+    if (result.gradingRequirements === undefined && expected.gradingRequirements !== undefined) result = { ...result, gradingRequirements: expected.gradingRequirements };
     if (result.practiceKind === undefined && expected.practiceKind !== undefined) result = { ...result, practiceKind: expected.practiceKind };
     if (result.vocabularyDirection === undefined && expected.vocabularyDirection !== undefined) result = { ...result, vocabularyDirection: expected.vocabularyDirection };
     if(!result.reset)result={...result,...(result.elapsedSeconds===undefined&&expected.elapsedSeconds!==undefined?{elapsedSeconds:expected.elapsedSeconds}:{}),items:result.items.map(item=>{const prior=expected.items.find(value=>value.id===item.id&&value.sourceQuestionId===item.sourceQuestionId);return {...item,...(item.answered===undefined?{answered:prior?.answered,...(item.judgment==='incorrect'&&prior?.judgment==='partial'?{judgment:'partial' as const}:{})}:{}),...(item.type===undefined&&prior?.type?{type:prior.type}:{}),...(item.categoryIds===undefined&&prior?.categoryIds?{categoryIds:prior.categoryIds}:{}),...(item.tagIds===undefined&&prior?.tagIds?{tagIds:prior.tagIds}:{}),...(item.difficulty===undefined&&prior?.difficulty!==undefined?{difficulty:prior.difficulty}:{})};})};
@@ -80,7 +81,7 @@ export function resultFromAttempt(attempt: StoredAttempt): LearningResult {
     if (judgment?.wrong) { const { study: _state, partStudies: _parts, ...snapshot } = q; questions.push(snapshot); }
     return { id: q.id, answered:isAnswerPresent(answer), type:q.type as Exclude<typeof q.type,'group'>,categoryIds:[...q.categoryIds],tagIds:[...q.tagIds],...(q.difficulty===undefined?{}:{difficulty:q.difficulty}), ...(q.sourceQuestionId ? { sourceQuestionId: q.sourceQuestionId } : {}), ...(q.partId ? { partId: q.partId } : {}), ...(judgment ? { judgment: judgment.wrong ? judgment.verdict||judgment.answerState! : 'correct' as const } : {}) };
   });
-  return { id: attempt.id, historyIndexed:true, ...(attempt.practiceKind ? {practiceKind:attempt.practiceKind} : {}), source: attempt.source || 'paper', paperId: attempt.paperId, paperTitle: attempt.paperTitle, paperVersion: attempt.paperVersion, ...(attempt.vocabularyDirection ? { vocabularyDirection: attempt.vocabularyDirection } : {}), ...(attempt.elapsedSeconds===undefined?{}:{elapsedSeconds:attempt.elapsedSeconds}), status: 'submitted', startedAt: attempt.startedAt, submittedAt: attempt.submittedAt!, updatedAt: attempt.updatedAt || attempt.submittedAt || attempt.startedAt, items, questions };
+  return { id: attempt.id, ...(attempt.gradingRequirements !== undefined ? {gradingRequirements:attempt.gradingRequirements} : {}), historyIndexed:true, ...(attempt.practiceKind ? {practiceKind:attempt.practiceKind} : {}), source: attempt.source || 'paper', paperId: attempt.paperId, paperTitle: attempt.paperTitle, paperVersion: attempt.paperVersion, ...(attempt.vocabularyDirection ? { vocabularyDirection: attempt.vocabularyDirection } : {}), ...(attempt.elapsedSeconds===undefined?{}:{elapsedSeconds:attempt.elapsedSeconds}), status: 'submitted', startedAt: attempt.startedAt, submittedAt: attempt.submittedAt!, updatedAt: attempt.updatedAt || attempt.submittedAt || attempt.startedAt, items, questions };
 }
 
 /** Call inside the same transaction as submit/grade and BEFORE history pruning. */

@@ -25,6 +25,21 @@ test('AI drafts save unfinished inputs and JSON without invoking the model or pu
  assert.equal(draft.id,old.id);assert.notEqual(draft.updatedAt,old.updatedAt);assert.equal((await api(`/api/ai/workspace-drafts/${draft.id}`)).state.text,'更新内容');
  assert.deepEqual(await api('/api/ai/runs'),[]);assert.equal((await api('/api/questions')).total,0);assert.equal((await api('/api/papers')).length,0);
 });
+test('AI paper drafts retain optional grading requirements, allow explicit clearing and enforce the shared limit',async t=>{
+ const {api,create}=await fixture(t),requirements='理解核心概念即可；允许等价表达。\n遗漏非关键细节可判部分正确。';
+ const draft=await create('paper',{prompt:'基础主观题复习',gradingRequirements:requirements});
+ assert.equal((await api(`/api/ai/workspace-drafts/${draft.id}`)).state.gradingRequirements,requirements);
+ const cleared=await api(`/api/ai/workspace-drafts/${draft.id}`,'PUT',{expectedUpdatedAt:draft.updatedAt,state:{...draft.state,gradingRequirements:''}});
+ assert.equal((await api(`/api/ai/workspace-drafts/${draft.id}`)).state.gradingRequirements,'');
+ assert.equal(cleared.id,draft.id);
+ const bounded=await create('paper',{gradingRequirements:'要'.repeat(10000)});
+ assert.equal(bounded.state.gradingRequirements.length,10000);
+ await api('/api/ai/workspace-drafts','POST',{kind:'paper',state:{gradingRequirements:'要'.repeat(10001)}},400);
+ assert.deepEqual(await api('/api/ai/runs'),[]);
+ assert.equal((await api('/api/questions')).total,0);
+ assert.equal((await api('/api/papers')).length,0);
+});
+
 test('AI draft stale writes and deletion cannot overwrite another tab, and deleted drafts cannot revive',async t=>{
  const {api,create}=await fixture(t),first=await create();
  const newer=await api(`/api/ai/workspace-drafts/${first.id}`,'PUT',{expectedUpdatedAt:first.updatedAt,state:{prompt:'另一个页面'}});
@@ -98,4 +113,13 @@ test('content sharing and clean-release validation never include private AI work
  store.put('ai_workspace_drafts','private',{id:'private',kind:'paper',contextId:null,state:{prompt:'NEVER_EXPORT_AI_DRAFT'},createdAt:stamp,updatedAt:stamp});
  const shared=exportShare(store,{kind:'questions',ids:['public-q']});assert.equal(JSON.stringify(shared).includes('NEVER_EXPORT_AI_DRAFT'),false);assert.equal(Object.hasOwn(shared,'aiWorkspaceDrafts'),false);
  for(const key of ['aiWorkspaceDrafts','ai_workspace_drafts'])assert.throws(()=>validatePublicData({...createEmptyPublicData(),[key]:[{state:{prompt:'private'}}]}));
+});
+
+
+test('AI paper drafts round-trip per-question overrides including deliberate blank and preview source versions',async t=>{
+ const {api,create}=await fixture(t);
+ const state={prompt:'按原题标准组题',questionGradingRequirements:{Q:'覆盖标准','G::part':''},expectedQuestionVersions:{Q:stamp,G:stamp}};
+ const draft=await create('paper',state);assert.deepEqual((await api(`/api/ai/workspace-drafts/${draft.id}`)).state,state);
+ await api('/api/ai/workspace-drafts','POST',{kind:'paper',contextId:null,state:{questionGradingRequirements:{Q:'长'.repeat(10001)}}},400);
+ assert.deepEqual(await api('/api/ai/runs'),[]);
 });

@@ -1,3 +1,4 @@
+import { readingSourceSchema } from './reading-source.js';
 import { z } from 'zod';
 import { AI_RUN_KINDS, type AiRunKind } from '../../../shared/ai/ai.js';
 import { id, leafId, types } from '../../core/validation.js';
@@ -23,6 +24,7 @@ const leafIds = z
 /** Persisted application context, never provider input or a public API field. */
 export const aiRunContextSchema = z
   .object({
+    readingSource: readingSourceSchema.optional(),
     questionVersions: z.record(id, z.string()),
     sourceByItem: z.record(leafId, id),
     attemptVersion: z.string().optional(),
@@ -75,6 +77,7 @@ export const completedAiResultSchemas = {
 
 export const completedAiRunMetadataSchema = z
   .object({
+    readingSource: readingSourceSchema.optional(),
     mathEnabled: z.boolean().optional(),
     id,
     kind: z.enum(AI_RUN_KINDS.filter((kind) => kind !== 'connection_test')),

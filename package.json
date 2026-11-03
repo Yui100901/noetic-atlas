@@ -39,7 +39,8 @@
     "windows:smoke": "node scripts/qa/check-windows.mjs",
     "format": "node scripts/format.mjs --write",
     "format:check": "node scripts/format.mjs --check",
-    "check": "npm run format:check && npm run typecheck && npm run mobile:typecheck && npm run docs:check"
+    "check": "npm run format:check && npm run typecheck && npm run mobile:typecheck && npm run docs:check",
+    "postbuild": "node scripts/build/start-cache.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

@@ -28,7 +28,7 @@ try {
   const paper = await api('/api/papers', 'POST', { title: '保存边界专项', mode: 'manual', questionIds: ['S1'], scoring: { enabled: false } });
   const draft = await api('/api/papers/' + paper.id + '/attempts', 'POST', {});
   const attempt = id => api('/api/attempts/' + id);
-  const show = async id => { await page.goto(origin + '/#/attempts/' + id); await page.locator('#exam-1 textarea').waitFor(); };
+  const show = async id => { await page.goto(origin + '/#/attempts/' + id); await page.locator('#exam-1').waitFor(); await page.locator('#exam-1 textarea').waitFor({ state: 'attached' }); };
   const answerInput = () => page.locator('#exam-1 textarea');
   const sideQuestions = () => page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /^知识题库/ });
   const failAnswer = async route => route.request().method() === 'PUT' ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'QA_SAVE_FAILED', message: '专项：回答保存失败' } }) }) : route.continue();

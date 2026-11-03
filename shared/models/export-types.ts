@@ -1,8 +1,10 @@
-import type { PaperScoring, QuestionType, Option, SourceRef, BlankSpec } from './types.js';
+import type { PaperScoring, QuestionType, Option, SourceRef, BlankSpec, VocabularyDirection } from './types.js';
 
 export type ExportMode = 'blank' | 'answers' | 'completed';
 export const exportModeLabels: Record<ExportMode, string> = { blank: '空白卷', answers: '附答案卷', completed: '完成卷' };
 export interface ExportQuestion {
+  reverseGradingRequirements?: string; gradingDirection?: VocabularyDirection;
+  gradingRequirements?:string;
   mathEnabled?:boolean; groupMathEnabled?:boolean; answerMathEnabled?:boolean;
   id: string; number: number; title: string; type: QuestionType; stemMarkdown: string;
   options: Option[]; difficulty: number; depth: number; frequency: number; points: number | null;
@@ -12,6 +14,7 @@ export interface ExportQuestion {
   grading?: 'correct' | 'incorrect' | 'pending' | 'graded' | 'unscored';
 }
 export interface ExportDocument {
+  gradingRequirements?: string;
   mathEnabled?:boolean;
   version: 1; mode: ExportMode; title: string; description: string; filename: string;
   paperId: string; paperVersion: number; attemptId?: string; generatedAt: string;

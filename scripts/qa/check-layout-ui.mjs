@@ -45,6 +45,7 @@ staging.put('papers',paper.id,paper);
 const draft=createAttempt(staging,paper);saveAttempt(staging,draft,{});
 const completed=createAttempt(staging,paper);submitAttempt(staging,completed,{'LAYOUT-0':{value:'false'},'LAYOUT-1':{value:'隔离性限制事务之间的干扰。'}});
 staging.putStudy({...staging.study('LAYOUT-0'),favorite:true,notes:'注意隔离级别与数据库实现的区别。'});
+staging.put('settings','system',{...structuredClone(DEFAULT_SETTINGS),updatedAt:stamp,dailyPush:{...DEFAULT_SETTINGS.dailyPush,enabled:true,timeZone:'Asia/Shanghai',goals:[{id:'layout-goal',name:'基础概念每日复习',enabled:true,domainId:'layout-domain',categoryIds:['layout-child'],tagIds:[],tagMode:'all',weekdays:[1,2,3,4,5,6,7],priority:3,weight:1,reviewPoints:0,newPoints:3,mode:'practice',direction:'default'}]}});
 const data=exportData(staging);staging.db.close();
 const app=await buildApp({databasePath:':memory:',seedPath:'no-layout-seed',staticRoot:'dist/web',dailyPushScheduler:false,logger:false});
 const imported=await app.inject({url:'/api/import',method:'POST',payload:{mode:'merge',data}});assert.equal(imported.statusCode,200,imported.body);
@@ -53,13 +54,17 @@ const feedback=await app.inject({url:'/api/question-feedback',method:'POST',payl
 const pdf=await PDFDocument.create();pdf.addPage([400,600]);const bytes=Buffer.from(await pdf.save());
 const asset=await app.inject({url:'/api/assets',method:'POST',payload:{filename:'Layout.pdf',mimeType:'application/pdf',dataBase64:bytes.toString('base64')}});assert.equal(asset.statusCode,201,asset.body);
 const pdfDoc=await app.inject({url:'/api/documents',method:'POST',payload:{title:'PDF排版检查',kind:'书籍',format:'pdf',assetId:asset.json().id,domainIds:['layout-domain']}});assert.equal(pdfDoc.statusCode,201,pdfDoc.body);
+const docVersion=(await app.inject('/api/documents/'+doc.json().id)).json().contentVersion;
+const pdfVersion=(await app.inject('/api/documents/'+pdfDoc.json().id)).json().contentVersion;
+const focus=await app.inject({url:'/api/focus-sessions',method:'POST',payload:{paperId:paper.id,scope:'all',count:3}});assert.equal(focus.statusCode,201,focus.body);
+const daily=await app.inject({url:'/api/daily-push/check',method:'POST',payload:{}});assert.equal(daily.statusCode,200,daily.body);assert.ok(daily.json().overview.plan?.id,daily.body);
 await app.inject({url:'/api/ai/settings',method:'PUT',payload:{enabled:true,baseUrl:'http://127.0.0.1:9',model:'layout-local',supportsImages:false,sendImages:false,maxTokens:16384,timeoutSeconds:30}});
 const empty=await buildApp({databasePath:':memory:',seedPath:'no-empty-layout-seed',staticRoot:'dist/web',dailyPushScheduler:false,logger:false});
 const emptyOrigin=await empty.listen({host:'127.0.0.1',port:0});
 const wrong=(await app.inject('/api/learning/global/questions?kind=wrong&page=1&pageSize=20')).json();
 const readerKey=wrong.items[0].key;
 const origin=await app.listen({host:'127.0.0.1',port:0});
-console.log('LAYOUT_READY '+JSON.stringify({origin,emptyOrigin,readerKey,pdfDocumentId:pdfDoc.json().id,issueId:feedback.json().qualityIssueId,paperId:paper.id,documentId:doc.json().id,draftId:draft.id,submittedId:completed.id}));`;
+console.log('LAYOUT_READY '+JSON.stringify({origin,emptyOrigin,readerKey,pdfDocumentId:pdfDoc.json().id,issueId:feedback.json().qualityIssueId,paperId:paper.id,documentId:doc.json().id,docVersion,pdfVersion,focusId:focus.json().id,planId:daily.json().overview.plan.id,draftId:draft.id,submittedId:completed.id}));`;
 const server = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', fixture], { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
 let stdout = '', stderr = '', browser, page;
 server.stdout.on('data', value => stdout += value);
@@ -148,7 +153,7 @@ try {
     ['sharing', 'sharing'], ['ai', 'ai?tab=paper'],
   ];
   if(full)routes.push(
-    ['question-new','questions/new'],['question-study','questions/LAYOUT-1?answer=1'],
+    ['question-new','questions/new'],['question-study','questions/LAYOUT-1?answer=1'],['vocabulary-reference','vocabulary/transaction'],
     ['quality','content-quality'],['quality-editor','questions/LAYOUT-0/edit?returnTo='+encodeURIComponent('#/content-quality')+'&issueId='+state.issueId],
     ['feedback-redirect','question-feedback?questionId=LAYOUT-0'],
     ['paper-manual','papers/new/manual'],['paper-reading','papers/'+state.paperId+'/questions/LAYOUT-0'],
@@ -157,17 +162,31 @@ try {
     ['learning-reader','learning-reader?scope=global&kind=wrong&item='+encodeURIComponent(state.readerKey)+'&page=1&pageSize=20'],
     ['quick-history','quick?tab=history'],['quick-drafts','quick?tab=drafts'],
     ['document-new','documents/new'],['document-pdf','documents/'+state.pdfDocumentId],
+    ['document-source','documents/'+state.documentId+'/source?version='+state.docVersion+'&start=0&end=20'],
+    ['pdf-source','documents/'+state.pdfDocumentId+'/source?version='+state.pdfVersion+'&page=1'],
+    ['focus-review','focus-review/'+state.focusId],['daily-plan','daily-plan/'+state.planId],
     ['ai-import','ai?tab=import'],['ai-documents','ai?tab=documents'],['ai-history','ai?tab=history'],
     ['analytics-day','analytics?mode=day'],['analytics-month','analytics?mode=month'],['analytics-custom','analytics?mode=custom'],['analytics-year','analytics?mode=year'],['handbook','help']
   );
   if(full)for(const id of ['CHOICE','MULTI','FILL','GROUP','CONCEPT','WORD'])routes.push(['question-'+id.toLowerCase(),'questions/LAYOUT-'+id],['editor-'+id.toLowerCase(),'questions/LAYOUT-'+id+'/edit']);
+  // Verify interactive selectors before the expensive multi-width scan.
+  await go('questions/LAYOUT-0');
+  await page.getByRole('button', { name: '展开答案与解析', exact: true }).click();
+  await page.locator('#reference-answer').waitFor();
+  await geometry('question-expanded-answer');
+  await go('papers/' + state.paperId);
+  await page.getByLabel(/^查看题目：/).first().click();
+  await page.waitForURL(/#\/papers\/[^/]+\/questions\//); assert.equal(await page.getByRole('dialog').count(), 0);
+  await page.locator('.question-viewer').waitFor(); await geometry('paper-question-page'); await capture('paper-question-page');
+  await page.getByRole('link', { name: /^返回题集(?:\s|$)/ }).click();
+  checks.push('展开解析和题集独立看题页面可用，操作栏、分隔及滚动边界保持正常');
   for (const width of [1440, 1024, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     for (const [name, route] of routes) {
       await go(route);
       if (width <= 390) await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.documentElement.style.colorScheme = 'dark'; });
       await geometry(name + '-' + width);
-      if ((width === 1440 || width === 390) && (full?['overview','settings','settings-backup','paper-detail','papers','paper-editor','question-detail','question-editor','document-editor','documents','taxonomy','quality','handbook','ai-import','sharing']:['settings','settings-backup','paper-detail','paper-editor','question-detail','document-editor','taxonomy']).includes(name)) await capture(name + '-' + width);
+      if ((width === 1440 || width === 390) && (full?['overview','settings','settings-backup','paper-detail','papers','paper-editor','question-detail','question-editor','document-editor','documents','taxonomy','quality','handbook','ai-import','sharing','document-source','pdf-source','focus-review','daily-plan']:['settings','settings-backup','paper-detail','paper-editor','question-detail','document-editor','taxonomy']).includes(name)) await capture(name + '-' + width);
     }
   }
   checks.push(routes.length+'个页面/状态在1440、1024、390、320宽度检查横向溢出、卡片/操作间距与重复头部动作');
@@ -188,20 +207,10 @@ try {
   await page.getByRole('button', { name: '保存系统配置', exact: true }).click();
   for (let index = 0; index < 30 && (await api('/api/settings')).examDurationMinutes !== 90; index++) await delay(100);
   assert.equal((await api('/api/settings')).examDurationMinutes, 90);
-  await page.getByRole('button', { name: '数据与备份', exact: true }).click();
+  await page.getByRole('button', { name: '数据维护与备份', exact: true }).click();
   await page.getByRole('heading', { name: '完整 JSON 备份', exact: true }).waitFor();
   await geometry('settings-backup-tab-click');
   checks.push('设置保存及分区切换通过真实按钮操作，复用样式未影响表单与导航');
-  await go('questions/LAYOUT-0');
-  await page.getByRole('button', { name: /我想过了，展开答案/ }).click();
-  await page.locator('.answer-content').waitFor();
-  await geometry('question-expanded-answer');
-  await go('papers/' + state.paperId);
-  await page.getByLabel(/^查看题目：/).first().click();
-  await page.waitForURL(/#\/papers\/[^/]+\/questions\//); assert.equal(await page.getByRole('dialog').count(), 0);
-  await page.locator('.question-viewer').waitFor(); await geometry('paper-question-page'); await capture('paper-question-page');
-  await page.getByRole('link', { name: /^返回题集(?:\s|$)/ }).click();
-  checks.push('展开解析和题集独立看题页面可用，操作栏、分隔及滚动边界保持正常');
   assert.deepEqual(errors, [], 'browser errors'); assert.deepEqual(externalRequests, [], 'unexpected external request');
   const report = { passed: checks.length, checks, samples: samples.length, findings, errors, externalRequests, baseline, full, routes:routes.length, isolated: true, databasePath: ':memory:' };
   await writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2));

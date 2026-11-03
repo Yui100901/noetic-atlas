@@ -14,7 +14,7 @@ export interface AiPaperPlanRetrieval { availableCount: number; matchedCount: nu
 export interface AiPaperPlanResult { title: string; description: string; items: AiPaperPlanItem[]; requestedCount: number; candidateCount: number; candidates: { id: string; title: string; type: string }[]; retrieval?: AiPaperPlanRetrieval }
 export interface AiExplanation { explanationMarkdown: string; followUpsMarkdown: string; pitfallsMarkdown: string }
 export type AiGradeVerdict = 'correct' | 'partial' | 'incorrect';
-export interface AiGradeItem { questionId: string; verdict: AiGradeVerdict; score: number | null; maxPoints: number | null; comment: string; strengths: string[]; improvements: string[]; requiresRegrade?: true }
+export interface AiGradeItem { gradingRequirements?: string; questionId: string; verdict: AiGradeVerdict; score: number | null; maxPoints: number | null; comment: string; strengths: string[]; improvements: string[]; requiresRegrade?: true }
 export interface AiGradeResult { items: AiGradeItem[]; gradingRequirements?: string }
 export const AI_GRADE_VERDICT_LABELS: Record<AiGradeVerdict, string> = { correct: '正确', partial: '部分正确', incorrect: '错误' };
 export function aiScoreVerdict(score: number, maxPoints: number): AiGradeVerdict { return score === maxPoints ? 'correct' : score === 0 ? 'incorrect' : 'partial'; }
@@ -43,7 +43,9 @@ export interface AiFailure {
   code: string; message: string; stage: string; retryable: boolean; recommendation: string; statusCode?: number;
   jsonLocation?: { offset?: number; line?: number; column?: number }; validationIssues?: AiValidationIssue[];
 }
+export interface AiReadingSource {questionId:string;questionVersion:string;partId?:string;paperId?:string;paperVersion?:number}
 export interface AiRunBase {
+  readingSource?:AiReadingSource;
   mathEnabled?:boolean;
   id: string; kind: AiRunKind; createdAt: string; model: string; warnings: string[];
   questionIds: string[]; attemptId?: string; appliedAt?: string; jobId?: string; batchId?: string; feedbackId?: string; diagnostics?: AiDiagnostics;

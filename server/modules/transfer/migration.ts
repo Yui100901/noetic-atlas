@@ -1,3 +1,4 @@
+import { validateStoredRubrics } from '../practice/grading-requirements.js';
 import {migrateFeedbackQualityIssues} from '../content-quality/feedback-links.js';
 import {retireMissingSourceIssues,retireMissingExplanationIssues} from '../content-quality/maintenance.js';
 import {qualityScanSchema,qualityIssueSchema} from '../content-quality/schema.js';
@@ -5,7 +6,7 @@ import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-marke
 import { z } from 'zod';
 import type { Category, Question } from '../../../shared/models/types.js';
 import { Store, makeId, now, tables, type Table } from '../../core/store.js';
-import { categorySchema, domainSchema, tagSchema, questionSchema, snapshotQuestionSchema, questionBankSchema, documentSchema, filtersSchema, answersSchema, storedScoringSchema, id, parse, fail, moneySchema } from '../../core/validation.js';
+import { categorySchema, domainSchema, tagSchema, questionSchema, snapshotQuestionSchema, questionBankSchema, documentSchema, filtersSchema, answersSchema, storedScoringSchema, id, parse, fail, moneySchema, gradingRequirementsSchema, questionGradingRequirementsSchema } from '../../core/validation.js';
 import { QUICK_PAPER_ID, validateAttemptSnapshot, type StoredAttempt, type StoredPaper } from '../practice/service.js';
 import { normalizeScoring } from '../practice/scoring.js';
 import { validatePaperAnswers } from '../questions/structure.js';
@@ -39,12 +40,12 @@ import { validateFocusSession } from '../focus-review/service.js';
 const datetime = z.string().datetime({ offset: true });
 const snapshotQuestion = snapshotQuestionSchema.refine(q => Boolean(q.id), '快照题目必须有题号');
 const paperSchema = z.object({
-  id, title: z.string().min(1).max(300), description: z.string().max(500000).default(''), mode: z.enum(['manual', 'random']), practiceKind: z.enum(['standard','vocabulary','concept']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000).refine(a => new Set(a).size === a.length, '题集题号不能重复'), filters: filtersSchema.nullable().default(null),
+  id, title: z.string().min(1).max(300), description: z.string().max(500000).default(''), gradingRequirements: gradingRequirementsSchema.optional(), questionGradingRequirements:questionGradingRequirementsSchema.optional(), inheritedGradingRequirements:questionGradingRequirementsSchema.optional(), mode: z.enum(['manual', 'random']), practiceKind: z.enum(['standard','vocabulary','concept']).optional(), legacyBankId: id.optional(), questionIds: z.array(id).max(50000).refine(a => new Set(a).size === a.length, '题集题号不能重复'), filters: filtersSchema.nullable().default(null),
   archived: z.boolean().default(false), version: z.number().int().min(1).default(1), createdAt: datetime.optional(), updatedAt: datetime.optional(), snapshot: z.array(snapshotQuestion).max(50000).optional(), scoring: storedScoringSchema.optional(),
   organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null),
 });
 const attemptSchema = z.object({
-  id, paperId: id, paperTitle: z.string().max(300), paperVersion: z.number().int().min(1), source: z.enum(['paper','quick']).default('paper'), updatedAt: datetime.optional(), referenceViewedAt: datetime.nullable().optional(), status: z.enum(['in_progress', 'submitted']), questions: z.array(snapshotQuestion).min(1).max(500), answers: answersSchema,
+  id, paperId: id, paperTitle: z.string().max(300), gradingRequirements: gradingRequirementsSchema.optional(), paperVersion: z.number().int().min(1), source: z.enum(['paper','quick']).default('paper'), updatedAt: datetime.optional(), referenceViewedAt: datetime.nullable().optional(), status: z.enum(['in_progress', 'submitted']), questions: z.array(snapshotQuestion).min(1).max(500), answers: answersSchema,
   objectiveScore: moneySchema, objectiveMax: moneySchema, subjectiveScore: moneySchema, subjectiveMax: moneySchema, startedAt: datetime, submittedAt: datetime.nullable(), scoring: storedScoringSchema.optional(),
   learningDayId:id.optional(),learningGoalId:id.optional(),
   practiceKind: z.enum(['standard','vocabulary','concept']).optional(), vocabularyDirection: z.enum(['word_to_meaning','meaning_to_word']).optional(),
@@ -142,6 +143,7 @@ export function importData(store: Store, raw: unknown) {
       const snapshot = p.snapshot || p.questionIds.map(qid => store.require<Question>('questions', qid));
       if (snapshot.length !== p.questionIds.length || snapshot.some((q, i) => q.id !== p.questionIds[i])) fail(400, 'INVALID_SNAPSHOT', '题集快照必须与题号及顺序一致');
       validatePaperAnswers(snapshot as Question[], 1_500_000);
+      validateStoredRubrics({...p,snapshot:snapshot as Question[]});
       if (p.practiceKind === 'vocabulary') validateVocabularyPaperSnapshot(snapshot as Question[], true);
       if (p.practiceKind === 'concept') validateConceptPaperSnapshot(snapshot as Question[]);
       for (const qid of p.questionIds) store.require('questions', qid);

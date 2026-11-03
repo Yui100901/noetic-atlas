@@ -32,20 +32,21 @@ export function questionHistory(store:Store,questionId:string,query:{partId?:str
   let selection=db.query.selectFrom('question_history as h').leftJoin('attempts as a',join=>join.onRef('a.id','=',field<string>('h.data','attemptId'))).leftJoin('learning_results as r',join=>join.onRef('r.id','=',field<string>('h.data','attemptId'))).where(field('h.data','questionId'),'=',questionId);
   if(query.partId!==undefined)selection=selection.where(field('h.data','partId'),'=',query.partId);
   const total=limit===0?0:Number(db.one(selection.select(eb=>eb.fn.countAll<number>().as('total')))?.total||0);
-  const rows=total?db.all(selection.select(['h.data','a.id as retainedId']).select(field<number|null>('r.data','reset').as('reset')).orderBy(field('h.data','submittedAt'),'desc').orderBy('h.id','desc').limit(query.pageSize).offset((query.page-1)*query.pageSize)):[];
-  const entries=rows.map(row=>{const record=JSON.parse(row.data) as QuestionHistoryRecord;return {record,historyAvailable:!!row.retainedId,beforeReset:!!row.reset||!!record.beforeReset};});
+  const rows=total?db.all(selection.select(['h.data','a.id as retainedId']).select([field<number|null>('r.data','reset').as('reset'),field<string|null>('r.data','gradingRequirements').as('gradingRequirements')]).orderBy(field('h.data','submittedAt'),'desc').orderBy('h.id','desc').limit(query.pageSize).offset((query.page-1)*query.pageSize)):[];
+  const entries=rows.map(row=>{const record=JSON.parse(row.data) as QuestionHistoryRecord;return {record,historyAvailable:!!row.retainedId,beforeReset:!!row.reset||!!record.beforeReset,gradingRequirements:row.gradingRequirements};});
   const references=entries.filter(entry=>entry.historyAvailable),attemptIds=[...new Set(references.map(entry=>entry.record.attemptId))];
   const raw=attemptIds.length?db.all(db.query.selectFrom('attempts').select('id').select([
     db.expressions.selectedLearningQuestions('data',references.map(({record})=>({sourceId:record.questionId,id:record.leafId}))).as('questions'),
     db.expressions.selectedAttemptAnswers('data',references.map(({record})=>record.leafId)).as('answers'),
     field<VocabularyDirection | null>('data','vocabularyDirection').as('vocabularyDirection'),
+    field<string | null>('data','gradingRequirements').as('gradingRequirements'),
   ]).where(db.expressions.idInJson('id',attemptIds))):[];
-  const attempts=new Map(raw.map(row=>[row.id,{vocabularyDirection:row.vocabularyDirection||undefined,questions:new Map((JSON.parse(row.questions) as StoredLeafQuestion[]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q])),answers:JSON.parse(row.answers) as Record<string,AttemptAnswer>}]));
-  const items=entries.map(({record,historyAvailable,beforeReset})=>{
+  const attempts=new Map(raw.map(row=>[row.id,{gradingRequirements:row.gradingRequirements,vocabularyDirection:row.vocabularyDirection||undefined,questions:new Map((JSON.parse(row.questions) as StoredLeafQuestion[]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q])),answers:JSON.parse(row.answers) as Record<string,AttemptAnswer>}]));
+  const items=entries.map(({record,historyAvailable,beforeReset,gradingRequirements})=>{
     const source=attempts.get(record.attemptId),question=source?.questions.get(learningQuestionKey(record.questionId,record.leafId))||record.detail?.question,answer=source?.answers[record.leafId]||record.detail?.answer;
     if(!question||!answer)throw new Error('单题历史引用不完整，请从有效备份恢复');
     const vocabularyDirection=record.vocabularyDirection||source?.vocabularyDirection;
-    return {id:record.id,attemptId:record.attemptId,source:record.source,paperId:record.paperId,paperTitle:record.paperTitle,paperVersion:record.paperVersion,...(vocabularyDirection?{vocabularyDirection}:{}),submittedAt:record.submittedAt,historyAvailable,question,answer,verdict:record.verdict,points:record.points,score:record.score,...(beforeReset?{beforeReset:true}:{})};
+    return {id:record.id,attemptId:record.attemptId,source:record.source,paperId:record.paperId,paperTitle:record.paperTitle,paperVersion:record.paperVersion,...((gradingRequirements??source?.gradingRequirements) != null ? {gradingRequirements:gradingRequirements??source?.gradingRequirements} : {}),...(vocabularyDirection?{vocabularyDirection}:{}),submittedAt:record.submittedAt,historyAvailable,question,answer,verdict:record.verdict,points:record.points,score:record.score,...(beforeReset?{beforeReset:true}:{})};
   });
   return {...(query.summary==='false'?{}:{summary:questionStatistics(store,questionId,query.partId)}),retention:{limit,available:total},items,total,page:query.page,pageSize:query.pageSize};
 }

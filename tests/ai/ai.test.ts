@@ -431,3 +431,119 @@ test('AI paper plan verifies selected source versions when provider returns and 
   assert.equal((await f.api('/api/ai/paper-plan','POST',{prompt:'复习事务',count:1},409)).error.code,'AI_QUESTION_VERSION_CONFLICT');
   assert.equal((await f.api('/api/ai/runs?status=completed')).length,0);await f.api('/api/ai/runs?page=0&pageSize=10','GET',undefined,400);await f.api('/api/ai/runs?pageSize=15','GET',undefined,400);
 });
+
+
+test('set AI explanation reads saved content and binds notes to a separately edited live source', async t=>{
+ const f=await fixture(t);await f.enable();const original=f.store.require<any>('questions','S1');
+ const paper=buildPaper(f.store,{title:'快照来源',description:'',mode:'manual',questionIds:['S1']});f.store.put('papers',paper.id,paper);
+ f.store.put('questions','S1',{...original,stemMarkdown:'修改后的题干',answerMarkdown:'修改后的答案',updatedAt:nextStamp(original.updatedAt)});
+ const run=await f.api('/api/ai/explain','POST',{questionId:'S1',paperId:paper.id,paperVersion:paper.version});
+ assert.equal(f.requests.at(-1).input.untrustedMaterial.question.stemMarkdown,original.stemMarkdown);
+ assert.equal(run.readingSource.paperId,paper.id);assert.equal(run.readingSource.paperVersion,paper.version);
+ await f.api(`/api/ai/runs/${run.id}/apply`,'POST',{confirmed:true,appendNotes:true});assert.match(f.store.study('S1').notes,/AI 辅助解析/);assert.match(f.store.study('S1').notes,/题集保存/);
+ const current=await f.api('/api/ai/explain','POST',{questionId:'S1'});assert.equal(current.readingSource.paperId,undefined);assert.equal(f.requests.at(-1).input.untrustedMaterial.question.stemMarkdown,'修改后的题干');
+});
+test('set AI rejects obsolete versions and membership before sending model input',async t=>{
+ const f=await fixture(t);await f.enable();const paper=buildPaper(f.store,{title:'来源校验',description:'',mode:'manual',questionIds:['S1']});f.store.put('papers',paper.id,paper);
+ await f.api('/api/ai/explain','POST',{questionId:'S1',paperId:paper.id,paperVersion:paper.version+1},409);
+ await f.api('/api/ai/explain','POST',{questionId:'S2',paperId:paper.id,paperVersion:paper.version},404);
+ await f.api('/api/ai/explain','POST',{questionId:'S1',paperId:paper.id},400);assert.equal(f.requests.length,0);
+ f.customize(()=>{f.store.put('papers',paper.id,{...paper,version:paper.version+1});return{explanationMarkdown:'内容',followUpsMarkdown:'',pitfallsMarkdown:''};});
+ const stale=await f.api('/api/ai/explain','POST',{questionId:'S1',paperId:paper.id,paperVersion:paper.version},409);assert.equal(stale.error.code,'AI_PAPER_VERSION_CONFLICT');
+});
+test('standalone subjective part evaluation retains group material and targets only part notes',async t=>{
+ const f=await fixture(t);await f.enable();const original=f.store.require<any>('questions','S1');const group={...original,id:'G',type:'group',stemMarkdown:'共用材料',parts:[{id:'p',title:'解释',type:'short_answer',stemMarkdown:'解释材料',options:[],correctAnswers:[],answerMarkdown:'材料答案',explanationMarkdown:''}]};f.store.put('questions','G',group);
+ const paper=buildPaper(f.store,{title:'小题评价',description:'',mode:'manual',questionIds:['G']});f.store.put('papers',paper.id,paper);
+ f.customize((material)=>({items:material.items.map((i:any)=>({questionId:i.questionId,verdict:'partial',score:null,maxPoints:null,comment:'缺少论据',strengths:['识别材料'],improvements:['补充依据']}))}));
+ const run=await f.api('/api/ai/grade','POST',{questionId:'G',partId:'p',paperId:paper.id,paperVersion:paper.version,answer:'我的解释'});
+ assert.equal(f.requests.at(-1).input.untrustedMaterial.items[0].question.groupStemMarkdown,'共用材料');assert.equal(run.result.items[0].questionId,'G::p');
+ f.store.putStudy({...f.store.study('G','p'),notes:'原有笔记'});await f.api(`/api/ai/runs/${run.id}/apply`,'POST',{confirmed:true,appendNotes:true});assert.match(f.store.study('G','p').notes,/原有笔记[\s\S]*AI 作答评价/);assert.equal(f.store.study('G').notes,'');assert.equal(f.store.all('attempts').length,0);
+});
+
+
+test('AI grades every subjective item with the attempt rubric frozen before later set edits', async t => {
+  const f = await fixture(t); await f.enable();
+  const paper = buildPaper(f.store, {title:'宽松复习', description:'', mode:'manual', questionIds:['S1','S2','O1'], gradingRequirements:'说明核心含义即可，允许等价表达。', scoring:{enabled:false}});
+  f.store.put('papers',paper.id,paper);
+  const started = createAttempt(f.store,paper);
+  const revised = buildPaper(f.store, {title:paper.title,description:'',mode:'manual',questionIds:paper.questionIds,gradingRequirements:'必须准确给出定义及两个边界案例。',scoring:{enabled:false}},paper);
+  f.store.put('papers',paper.id,revised);
+  const attempt = submitAttempt(f.store,started,{S1:{value:'全部成功或者失败'},S2:{value:'原子操作'},O1:{value:'true'}});
+  const run = await f.api('/api/ai/grade','POST',{attemptId:attempt.id});
+  assert.equal(f.requests.at(-1).input.untrustedMaterial.gradingRequirements,paper.gradingRequirements);
+  assert.deepEqual(f.requests.at(-1).input.untrustedMaterial.items.map((i:any)=>i.questionId),['S1','S2']);
+  assert.equal(run.result.gradingRequirements,paper.gradingRequirements);
+  await f.api(`/api/ai/runs/${run.id}/apply`,'POST',{confirmed:true,appendNotes:true});
+  assert.match(f.store.study('S1').notes,/说明核心含义即可/);
+  assert.equal('gradingRequirements' in f.store.require<any>('questions','S1'),false);
+  assert.equal(f.store.require<StoredAttempt>('attempts',attempt.id).gradingRequirements,paper.gradingRequirements);
+});
+
+test('AI rubric overrides are per evaluation and explicit empty cancels inheritance', async t => {
+  const f = await fixture(t); await f.enable();
+  const paper=buildPaper(f.store,{title:'题集要求',description:'',mode:'manual',questionIds:['S1'],gradingRequirements:'要求覆盖回滚边界。',scoring:{enabled:false}});f.store.put('papers',paper.id,paper);
+  const attempt=submitAttempt(f.store,createAttempt(f.store,paper),{S1:{value:'全部提交或回滚'}});
+  const adjusted=await f.api('/api/ai/grade','POST',{attemptId:attempt.id,gradingRequirements:'  仅本次：解释清楚即可。  '});
+  assert.equal(adjusted.result.gradingRequirements,'仅本次：解释清楚即可。');
+  const empty=await f.api(`/api/attempts/${attempt.id}/ai-review`,'POST',{gradingRequirements:'  '});
+  assert.equal(f.requests.at(-1).input.untrustedMaterial.gradingRequirements,'');
+  assert.equal(empty.result.gradingRequirements,undefined);
+  assert.equal(f.store.require<StoredAttempt>('attempts',attempt.id).gradingRequirements,paper.gradingRequirements);
+  assert.equal(f.store.require<any>('papers',paper.id).gradingRequirements,paper.gradingRequirements);
+  const inherited=await f.api(`/api/attempts/${attempt.id}/ai-review`,'POST',{});
+  assert.equal(inherited.result.gradingRequirements,paper.gradingRequirements);
+  // A legacy answer without a rubric must never borrow a newer set's rubric.
+  const legacy={...f.store.require<StoredAttempt>('attempts',attempt.id)};delete legacy.gradingRequirements;f.store.put('attempts',legacy.id,legacy);
+  const old=await f.api('/api/ai/grade','POST',{attemptId:attempt.id});assert.equal(old.result.gradingRequirements,undefined);
+});
+
+test('set reader AI inherits each sets rubric while the same bank question remains neutral', async t => {
+  const f=await fixture(t);await f.enable();
+  const make=(title:string,gradingRequirements:string)=>{const p=buildPaper(f.store,{title,description:'',mode:'manual',questionIds:['S1'],gradingRequirements,scoring:{enabled:false}});f.store.put('papers',p.id,p);return p;};
+  const loose=make('入门','概念基本正确即可。'),strict=make('进阶','定义、机制和边界必须完整。');
+  for(const paper of [loose,strict]){
+    const run=await f.api('/api/ai/grade','POST',{questionId:'S1',paperId:paper.id,paperVersion:paper.version,answer:'全部提交或回滚'});
+    assert.equal(run.result.gradingRequirements,paper.gradingRequirements);
+    assert.equal(f.requests.at(-1).input.untrustedMaterial.gradingRequirements,paper.gradingRequirements);
+  }
+  const bank=await f.api('/api/ai/grade','POST',{questionId:'S1',answer:'全部提交或回滚'});
+  assert.equal(f.requests.at(-1).input.untrustedMaterial.gradingRequirements,'');assert.equal(bank.result.gradingRequirements,undefined);
+  const cleared=await f.api('/api/ai/grade','POST',{questionId:'S1',paperId:strict.id,paperVersion:strict.version,answer:'全部提交或回滚',gradingRequirements:''});
+  assert.equal(cleared.result.gradingRequirements,undefined);assert.equal(f.store.require<any>('papers',strict.id).gradingRequirements,strict.gradingRequirements);
+});
+
+test('AI recommended sets retain user rubrics after confirmed creation',async t=>{
+  const f=await fixture(t);await f.enable();
+  f.customize(()=>({title:'事务练习',description:'复习事务',items:[{questionId:'S1',reason:'检验基础概念'}]}));
+  const plan=await f.api('/api/ai/paper-plan','POST',{prompt:'事务基础',count:1});
+  const saved=await f.api(`/api/ai/runs/${plan.id}/paper`,'POST',{confirmed:true,title:'自选标准',description:'',questionIds:['S1'],gradingRequirements:'  接受合理同义表达。  ',scoring:{enabled:false}},201);
+  assert.equal(saved.paper.gradingRequirements,'接受合理同义表达。');
+  assert.equal(createAttempt(f.store,f.store.require<any>('papers',saved.paper.id)).gradingRequirements,'接受合理同义表达。');
+});
+
+
+test('AI grading uses per-item snapshot rubrics together with optional whole-set additions',async t=>{
+ const f=await fixture(t);await f.enable();
+ f.store.put('questions','S1',{...f.store.require<any>('questions','S1'),gradingRequirements:'必须说明全部提交或全部回滚。'});
+ f.store.put('questions','S2',{...f.store.require<any>('questions','S2'),gradingRequirements:'必须给出转账失败的具体例子。'});
+ const paper=buildPaper(f.store,{title:'逐题标准',description:'',mode:'manual',questionIds:['S1','S2'],questionGradingRequirements:{S1:'能说明整体性即可。'},gradingRequirements:'允许口语化表述。',scoring:{enabled:false}});f.store.put('papers',paper.id,paper);
+ const attempt=submitAttempt(f.store,createAttempt(f.store,paper),{S1:{value:'一起提交或回滚'},S2:{value:'转账要么都成功要么都失败'}});
+ f.store.put('questions','S1',{...f.store.require<any>('questions','S1'),gradingRequirements:'修改后的原题要求'});
+ const run=await f.api('/api/ai/grade','POST',{attemptId:attempt.id});
+ const material=f.requests.at(-1).input.untrustedMaterial;
+ assert.equal(material.gradingRequirements,'允许口语化表述。');assert.equal(material.items[0].gradingRequirements,'能说明整体性即可。');assert.equal(material.items[1].gradingRequirements,'必须给出转账失败的具体例子。');
+ assert.equal(run.result.items[0].gradingRequirements,'能说明整体性即可。');
+ await f.api(`/api/ai/runs/${run.id}/apply`,'POST',{confirmed:true,appendNotes:true});assert.match(f.store.study('S1').notes,/能说明整体性即可/);
+ const override=await f.api('/api/ai/grade','POST',{attemptId:attempt.id,gradingRequirements:''});assert.equal(override.result.gradingRequirements,undefined);assert.equal(override.result.items[0].gradingRequirements,'能说明整体性即可。');
+ const bank=await f.api('/api/ai/grade','POST',{questionId:'S1',answer:'一起完成'});assert.equal(bank.result.items[0].gradingRequirements,'修改后的原题要求');
+});
+
+test('AI subjective group parts carry independent rubrics and provider echoes cannot replace them',async t=>{
+ const f=await fixture(t);await f.enable();const base=f.store.require<any>('questions','S1');
+ f.store.put('questions','GROUP-R',{...base,id:'GROUP-R',type:'group',gradingRequirements:undefined,parts:[{id:'a',title:'解释',type:'short_answer',stemMarkdown:'说明原子性',answerMarkdown:'全部完成或回滚',explanationMarkdown:'',options:[],correctAnswers:[],gradingRequirements:'须说明整体成功和整体失败两个结果。'},{id:'b',title:'举例',type:'essay',stemMarkdown:'举例',answerMarkdown:'转账失败回滚',explanationMarkdown:'',options:[],correctAnswers:[],gradingRequirements:'须描述失败并撤销已完成步骤。'}]});
+ const paper=buildPaper(f.store,{title:'子题标准',description:'',mode:'manual',questionIds:['GROUP-R'],questionGradingRequirements:{'GROUP-R::a':''},scoring:{enabled:false}});f.store.put('papers',paper.id,paper);
+ f.customize(material=>({items:material.items.map((item:any)=>({questionId:item.questionId,verdict:'partial',score:null,maxPoints:null,comment:'核对要点',strengths:[],improvements:[],gradingRequirements:'伪造的模型标准'}))}));
+ const cleared=await f.api('/api/ai/grade','POST',{questionId:'GROUP-R',partId:'a',paperId:paper.id,paperVersion:paper.version,answer:'整体提交'});assert.equal(cleared.result.items[0].gradingRequirements,undefined);
+ const inherited=await f.api('/api/ai/grade','POST',{questionId:'GROUP-R',partId:'b',paperId:paper.id,paperVersion:paper.version,answer:'转账回滚'});assert.equal(inherited.result.items[0].gradingRequirements,'须描述失败并撤销已完成步骤。');
+ assert.equal(f.store.require<any>('questions','GROUP-R').parts[0].gradingRequirements,'须说明整体成功和整体失败两个结果。');
+});

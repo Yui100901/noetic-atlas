@@ -1,3 +1,4 @@
+import {QuestionGradingRequirements} from '../questions/question-grading';
 import type {Question} from '../../../shared/models/types';
 import {questionStemMarkdown} from '../../../shared/questions/blank-markers';
 import {idPath} from '../../shared/lib/api';
@@ -16,6 +17,7 @@ function SourceBody({value}:{value:any}){
     {list(value.blanks).map((blank,index)=>blank&&typeof blank==='object'&&<p key={index}><strong>{index+1}. {text(blank.label)||'填空'}</strong>：{list(blank.answers).filter(v=>typeof v==='string').join(' / ')||'未填写可接受答案'}</p>)}
     {text(value.answerMarkdown)?<Markdown>{value.answerMarkdown}</Markdown>:!keys.length&&!list(value.blanks).length&&<p className="muted">未填写独立参考答案。</p>}
     {text(value.explanationMarkdown)&&<><h4>解析</h4><Markdown>{value.explanationMarkdown}</Markdown></>}
+    <QuestionGradingRequirements value={text(value.gradingRequirements)} mathEnabled={value.mathEnabled===true}/>
   </>;
 }
 /** Shared, defensive evidence view. Broken structures remain inspectable. */

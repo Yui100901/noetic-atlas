@@ -9,6 +9,8 @@ const identifier = (maximum: number) => z.string().trim().min(1).max(maximum).re
 export const id = identifier(160);
 /** A flattened identity contains a 160-character parent, ::, and a 160-character part. */
 export const leafId = identifier(322);
+/** One rubric constraint for source questions, set overrides and AI requests. */
+export const gradingRequirementsSchema = z.string().trim().max(10_000);
 const text = z.string().max(500_000);
 const name = z.string().trim().min(1).max(300);
 const ids = z.array(id).max(500).refine(a => new Set(a).size === a.length, '引用 ID 不得重复');
@@ -18,8 +20,9 @@ export const blankSchema = z.object({ id: id.refine(v => !v.includes('::'), '空
 // This schema owns field optionality across authoring, imports and quality
 // structure checks. Optional prose stays optional even for subjective items;
 // checkLeaf below owns the conditional grading requirements for each type.
-const answerFields = { mathEnabled: z.boolean().optional(), title: name, stemMarkdown: text.min(1), answerMarkdown: text.default(''), explanationMarkdown: text.default(''), options: z.array(z.object({ key: z.string().min(1).max(20), text })).max(26).default([]), correctAnswers: z.array(z.string().max(20)).max(26).default([]), blanks: z.array(blankSchema).max(30).optional() };
-function checkLeaf(q: { type: string; options: {key:string}[]; correctAnswers: string[]; blanks?: z.infer<typeof blankSchema>[] }, ctx: z.RefinementCtx) {
+const answerFields = { gradingRequirements: gradingRequirementsSchema.optional(), mathEnabled: z.boolean().optional(), title: name, stemMarkdown: text.min(1), answerMarkdown: text.default(''), explanationMarkdown: text.default(''), options: z.array(z.object({ key: z.string().min(1).max(20), text })).max(26).default([]), correctAnswers: z.array(z.string().max(20)).max(26).default([]), blanks: z.array(blankSchema).max(30).optional() };
+function checkLeaf(q: { type: string; options: {key:string}[]; correctAnswers: string[]; blanks?: z.infer<typeof blankSchema>[]; gradingRequirements?: string }, ctx: z.RefinementCtx) {
+  if (q.gradingRequirements && !['short_answer','essay'].includes(q.type)) ctx.addIssue({code:'custom',path:['gradingRequirements'],message:'只有主观题可以填写判题要求；组合题请分别填写主观小题的要求'});
   const keys = q.options.map(o => o.key);
   if (new Set(keys).size !== keys.length || new Set(q.correctAnswers).size !== q.correctAnswers.length) ctx.addIssue({ code: 'custom', message: '选项或答案不得重复' });
   if (q.type === 'true_false') {
@@ -109,7 +112,9 @@ export const scoringInputSchema = z.object({ enabled: z.boolean(), totalPoints: 
 // Stored fields include calculated values, which are checked against snapshots
 // on import rather than silently discarding a corrupted scoring configuration.
 export const storedScoringSchema = z.object({ enabled: z.boolean(), totalPoints: moneySchema, questionPoints: z.record(leafId, moneySchema), objectivePercent: z.number().finite().min(0).max(100), actualObjectivePercent: z.number().finite().min(0).max(100), objectivePoints: moneySchema, subjectivePoints: moneySchema, pointsByType: typePointsSchema.refine(p => ['short_answer','true_false','single_choice','multiple_choice'].every(t => p[t as keyof typeof p] !== undefined), '旧有四种题型分值不可缺项'), scheme: z.enum(['legacy', 'custom', 'none']) }).strict();
-export const paperInputSchema = z.object({ id: id.optional(), title: name, description: text.default(''), mode: z.enum(['manual', 'random']), practiceKind: z.enum(['standard','vocabulary','concept']).default('standard'), organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null), questionIds: z.array(id).max(50_000).refine(a=>new Set(a).size===a.length, '题集题号不可重复').optional(), filters: filtersSchema.nullable().optional(), count: z.number().int().min(1).max(500).optional(), scoring: scoringInputSchema.optional() });
+export const questionGradingRequirementsSchema = z.record(leafId, gradingRequirementsSchema).refine(values=>Object.keys(values).length<=50000,'逐题要求最多50000项');
+export const questionVersionsSchema = z.record(id,z.string().max(100)).refine(values=>Object.keys(values).length<=50000,'源题版本最多50000项');
+export const paperInputSchema = z.object({ id: id.optional(), title: name, description: text.default(''), gradingRequirements: gradingRequirementsSchema.optional(), questionGradingRequirements: questionGradingRequirementsSchema.optional(), previewQuestionIds: z.array(id).min(1).max(50000).refine(values=>new Set(values).size===values.length,'预览选题不能重复').optional(), expectedQuestionVersions: questionVersionsSchema.optional(), previewPage:z.number().int().min(1).max(100000).optional(), previewPageSize:z.union([z.literal(5),z.literal(10),z.literal(20)]).optional(), mode: z.enum(['manual', 'random']), practiceKind: z.enum(['standard','vocabulary','concept']).default('standard'), organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null), questionIds: z.array(id).max(50_000).refine(a=>new Set(a).size===a.length, '题集题号不可重复').optional(), filters: filtersSchema.nullable().optional(), count: z.number().int().min(1).max(500).optional(), scoring: scoringInputSchema.optional() });
 export const verdictSchema = z.enum(['correct','partial','incorrect']);
 export const answerSchema = z.object({ mathEnabled: z.boolean().optional(), value: z.union([z.string().max(100_000), z.array(z.string().max(1000)).max(30)]), selfScore: moneySchema.nullable().optional(), mastery: z.number().int().min(0).max(3).nullable().optional(), verdict: verdictSchema.nullable().optional() });
 export const answersSchema = z.record(z.string(), answerSchema).refine(v => Object.keys(v).length <= 500, '单次最多500个作答项');

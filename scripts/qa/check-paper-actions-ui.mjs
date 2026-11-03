@@ -80,7 +80,7 @@ try {
   await page.keyboard.press('Escape'); await shared.waitFor({ state: 'hidden' });
   checks.push('导出与分享合并入口，选择后菜单关闭且独立弹窗正常保留与关闭');
 
-  await manageTrigger().click(); await item(/^调整题目与分值/).click(); await page.getByRole('button', { name: '保存题集', exact: true }).waitFor();
+  await manageTrigger().click(); await item(/^调整题集/).click(); await page.getByRole('button', { name: '保存题集', exact: true }).waitFor();
   assert.match(page.url(), /\/edit$/); await navigate(state.paperId);
   nextConfirmation = false; await manageTrigger().click(); await item(/^归档题集/).click(); assert.equal((await api('/api/papers/' + state.paperId)).archived, false);
   await manageTrigger().click(); await item(/^归档题集/).click(); await page.waitForURL(/#\/papers$/);

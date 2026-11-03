@@ -5,7 +5,7 @@ import type { Question } from '../../../shared/models/types.js';
 import { getSettings } from '../settings/service.js';
 import { paperDraftRetentionCandidates } from './paper-draft-retention.js';
 export { paperDraftRetentionCandidates } from './paper-draft-retention.js';
-import { id, fail, parse, types } from '../../core/validation.js';
+import { id, fail, parse, types, gradingRequirementsSchema, questionGradingRequirementsSchema, questionVersionsSchema } from '../../core/validation.js';
 import { makeId, nextStamp, type Store } from '../../core/store.js';
 
 const ids = z.array(id).max(500).refine(value => new Set(value).size === value.length, '题号不可重复');
@@ -13,6 +13,10 @@ const points = z.record(types, z.number().finite().min(0).max(10000));
 const reference = z.string().max(160);
 const draftFilters = z.object({search:z.string().max(1000).optional(),paperId:reference.optional(),domainId:reference.optional(),categoryId:reference.optional(),tagIds:ids.optional(),tagMode:z.enum(['all','any']).optional(),type:z.string().max(40).optional(),types:z.array(types).max(7).optional(),difficulty:z.string().max(10).optional(),depth:z.string().max(10).optional(),frequency:z.string().max(10).optional(),collection:z.string().max(20).optional(),status:z.string().max(20).optional(),favorite:z.boolean().optional(),wrong:z.boolean().optional(),due:z.boolean().optional(),difficultyMin:z.number().int().min(1).max(4).optional(),difficultyMax:z.number().int().min(1).max(4).optional(),frequencyMin:z.number().int().min(0).max(3).optional()}).strict();
 export const paperDraftStateSchema = z.object({
+  gradingRequirements: gradingRequirementsSchema.optional(),
+  questionGradingRequirements: questionGradingRequirementsSchema.optional(),
+  previewQuestionIds: z.array(id).max(50000).optional(),
+  expectedQuestionVersions: questionVersionsSchema.optional(),
   practiceKind: z.enum(['standard','vocabulary','concept']).optional(), title: z.string().max(200), description: z.string().max(4000), mode: z.enum(['manual','random']),
   organization: z.enum(['domain','other']), domainId: z.string().max(160), questionIds: z.array(id).max(50_000).refine(value=>new Set(value).size===value.length,'题集题号不可重复'),
   filters: draftFilters, random: draftFilters,

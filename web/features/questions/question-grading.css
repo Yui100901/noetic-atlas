@@ -1,0 +1,17 @@
+.question-grading-requirements {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--theme-inset);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.question-grading-requirements > summary {
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.question-grading-requirements > summary + * {
+  margin-top: 12px;
+}

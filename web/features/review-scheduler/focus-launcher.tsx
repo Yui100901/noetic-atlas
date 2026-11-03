@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Clock3, Play } from 'lucide-react';
 import type { FocusSummary, FocusView } from '../../../shared/models/focus-review';
 import type { Paged } from '../../../shared/utils/pagination';
@@ -36,6 +36,18 @@ export function FocusLauncher({
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
+  const mounted = useRef(true),
+    starting = useRef(false),
+    requestRevision = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    starting.current = false;
+    setBusy(false);
+    return () => {
+      mounted.current = false;
+      requestRevision.current++;
+    };
+  }, [paperId]);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -52,6 +64,10 @@ export function FocusLauncher({
     return () => controller.abort();
   }, [open, paperId]);
   const start = async () => {
+    if (starting.current || !mounted.current) return;
+    starting.current = true;
+    const revision = ++requestRevision.current;
+    const current = () => mounted.current && revision === requestRevision.current;
     setBusy(true);
     setError('');
     try {
@@ -62,12 +78,17 @@ export function FocusLauncher({
         ...filters,
         ...(direction ? { direction } : {}),
       });
+      // A completed request must not pull the learner back after leaving this page.
+      if (!current()) return;
       change(false);
       window.location.hash = `#/focus-review/${idPath(session.id)}`;
     } catch (reason) {
-      setError((reason as Error).message);
+      if (current()) setError((reason as Error).message);
     } finally {
-      setBusy(false);
+      if (current()) {
+        starting.current = false;
+        setBusy(false);
+      }
     }
   };
   return (
@@ -103,6 +124,11 @@ export function FocusLauncher({
                       className="button focus-resume-item"
                       key={item.id}
                       href={`#/focus-review/${idPath(item.id)}`}
+                      aria-disabled={busy || loading}
+                      tabIndex={busy || loading ? -1 : undefined}
+                      onClick={(event) => {
+                        if (starting.current || loading) event.preventDefault();
+                      }}
                     >
                       <span>
                         已复习 {item.rated}/{item.total} 项 · {localDate(item.updatedAt)}
@@ -117,6 +143,7 @@ export function FocusLauncher({
               <Field label="复习范围">
                 <select
                   value={scope}
+                  disabled={busy}
                   onChange={(event) => setScope(event.target.value as 'due' | 'all')}
                 >
                   <option value="due">仅当前题集到期任务</option>
@@ -130,12 +157,17 @@ export function FocusLauncher({
                 min={1}
                 max={200}
                 value={count}
+                disabled={busy}
                 onChange={(event) => setCount(Number(event.target.value))}
               />
             </Field>
             {paperId && ['vocabulary', 'concept'].includes(practiceKind || '') && (
               <Field label="复习方向">
-                <select value={direction} onChange={(event) => setDirection(event.target.value)}>
+                <select
+                  disabled={busy}
+                  value={direction}
+                  onChange={(event) => setDirection(event.target.value)}
+                >
                   <option value="">沿用到期任务／默认顺向</option>
                   <option value="word_to_meaning">顺向：看词语或概念想含义</option>
                   <option value="meaning_to_word">逆向：看释义或描述想名称</option>

@@ -32,7 +32,7 @@ try{
   await page.getByRole('button',{name:'追加到学习笔记',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.notes-area')?.value.includes('QA解释'));
   const once=(await state()).notes;assert.ok(once.startsWith(typedNotes));await page.getByRole('button',{name:'追加到学习笔记',exact:true}).click();
   await page.getByRole('button',{name:'追加到学习笔记',exact:true}).waitFor({state:'visible'});assert.equal((await state()).notes,once);checks.push('显式写笔记保存未保存草稿并保留原文，重复应用幂等');
-  await page.getByText('写一段回答，请 AI 给建议',{exact:true}).click();await page.getByLabel('交给 AI 评价的回答',{exact:true}).fill('事务操作整体提交或回滚，转账必须一起完成。');await page.getByLabel('建议满分',{exact:true}).fill('5');
+  await page.getByRole('tab',{name:/AI评价回答/}).click();await page.getByLabel('交给 AI 评价的回答',{exact:true}).fill('事务操作整体提交或回滚，转账必须一起完成。');await page.getByLabel('同时给出建议分数',{exact:true}).check();await page.getByLabel('建议满分',{exact:true}).fill('5');
   await page.getByRole('button',{name:'评价本次回答',exact:true}).click();await page.locator('.ai-grade-card').filter({hasText:'建议 4 / 5分'}).waitFor();
   assert.equal((await state()).notes,once);await page.getByRole('button',{name:'选中评价追加到笔记',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.notes-area')?.value.includes('AI 作答评价'));
   assert.ok((await state()).notes.startsWith(once));checks.push('单题回答经页面生成建议分，显式追加评价到笔记');await page.screenshot({path:resolve(folder,'question-explanation-grade.png'),fullPage:true});

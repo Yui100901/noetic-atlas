@@ -20,7 +20,7 @@ export function usePaperDraft({context,state,restore,delay,maximum,ready=true}:{
     });
     return ()=>controller.abort();
   },[context,ready]);
-  const meaningful=(value:PaperDraftState)=>Boolean(value.title.trim()||value.description.trim()||value.questionIds.length);
+  const meaningful=(value:PaperDraftState)=>Boolean(value.title.trim()||value.description.trim()||value.gradingRequirements?.trim()||Object.keys(value.questionGradingRequirements||{}).length||value.previewQuestionIds?.length||value.questionIds.length);
   const save=()=>{
     const run=async()=>{
       const current=snapshot.current,key=JSON.stringify(current);

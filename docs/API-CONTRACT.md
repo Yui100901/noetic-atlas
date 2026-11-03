@@ -72,8 +72,8 @@
 
 - `GET /api/papers`：支持 archived、organization=domain|other、domainId 和分页；`GET /api/papers/:id` 返回题集及不含答案的题目快照，同时提供选题单位数 questionCount 与展开作答项数 answerCount。加 `?summary=true` 仅返回题目元数据，不传题干、选项和材料；需要完整内容时按题读取快照接口。
 - `GET /api/papers/:id/questions/:questionId`：读取题集内指定作答项的完整快照与答案；前端独立阅读地址为`#/papers/:id/questions/:questionId`，返回目标为原题集，前后题按同一题集展开后的保存顺序确定。不会替换为当前源题内容。组合小题使用编码后的`原题ID::小题ID`。考试期间仍受其他功能访问锁限制。
-- `POST /api/papers`、`PUT /api/papers/:id`：手动卷使用 questionIds；随机卷使用 filters、count 或 scoring。领域专项需 `organization:'domain',domainId`，其他卷使用 other。修改创建新版本，不修改已开始作答的快照。
-- `POST /api/papers/preview`：同一组题结构，返回预览但不保存；随机卷正式生成时重新抽题。候选不足、无精确分值组合或展开后超限时拒绝，不静默放宽条件。
+- `POST /api/papers`、`PUT /api/papers/:id`：手动卷使用 questionIds；随机卷使用 filters、count 或 scoring。领域专项需 `organization:'domain',domainId`，其他卷使用 other。可选 `gradingRequirements` 为经trim的0—10000字符全卷补充要求；创建时省略或空白均无附加要求，编辑时省略保留，显式空字符串／空白清除。`questionGradingRequirements`以作答项ID为key：省略key沿用原题标准，显式字符串仅覆盖本集，空字符串本集清空。组合主观小题使用`原题ID::小题ID`，客观题或非成员ID不接受覆盖。修改创建新版本，不修改已开始作答的快照。
+- `POST /api/papers/preview`：同一组题结构，返回`PaperPreview`而不保存；含题集摘要、`previewQuestions`当前页完整题目与答案解析、逐题标准、`inheritedGradingRequirements`、全部所选原题`questionVersions`及`previewPage/previewPageSize/previewTotal`。默认每页10个整题单位，`previewPageSize`支持5／10／20；公共材料与小题同页。随机首次预览返回具体选题，后续翻页或保存传`previewQuestionIds`锁定同一批ID和顺序，配合`expectedQuestionVersions`校验原题版本；服务器仍核对筛选范围和计分约束，失效返回冲突，不悄悄重新抽题。候选不足、无精确分值组合或展开后超限时拒绝，不静默放宽条件。
 - `DELETE /api/papers/:id`：归档；加 `?permanent=true` 永久删除源卷，保留作答快照。
 - `POST /api/papers/:id/restore`：显式 `{confirmed:true}` 恢复非空且全部成员已发布的归档题集。首次恢复未经编辑的旧集合无分题集时刷新已审核快照并产生新版本；其他恢复保留原快照、版本和分值。已有作答不受影响。
 - `GET /api/paper-drafts?context=...`：最近组题草稿数组，按 updatedAt 排序。
@@ -81,7 +81,11 @@
 - `PUT /api/paper-drafts/:id`：`{expectedUpdatedAt,state}`，继续原草稿时覆盖同一 ID，版本不符返回 `PAPER_DRAFT_VERSION_CONFLICT`。
 - `DELETE /api/paper-drafts/:id`：删除组题草稿。
 
-PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随机规则、计分开关、逐题分值与总分等，不要求它已经满足正式成卷条件。组题草稿与答题草稿分别管理，默认上限均为 3。
+PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随机规则、计分开关、逐题分值、总分及可选 gradingRequirements 等，不要求它已经满足正式成卷条件。组题草稿与答题草稿分别管理，默认上限均为 3。
+
+Question与QuestionPart支持可选`gradingRequirements`：仅short_answer／essay可有非空值，最多10000字符，留空不触发质量缺失。Paper.gradingRequirements为全卷补充；逐题覆盖通过Paper.questionGradingRequirements保存，同时写入题集snapshot相应主观题或子题，不修改原题。`inheritedGradingRequirements`保存覆盖前标准，供编辑恢复沿用。无覆盖的题默认沿用源题要求；本集空覆盖必须与没有覆盖区分。
+
+开始作答冻结全卷补充及每个AttemptQuestion.gradingRequirements；未提交的公开作答响应隐藏两层标准，提交后返回。继续草稿、已提交阅卷和完成卷导出使用作答快照，不从当前题库或题集回填。单题最近完整作答保留对应题目标准，可信JSON／SQLite迁移及题集分享保留两层要求；MD／PDF答案卷及完成卷显示对应要求，空白卷隐藏。普通题库自测使用原题标准，不继承任意题集的全卷补充。
 
 计分使用最多两位小数的分值。手动卷逐题分值之和必须等于总分。随机计分卷按总分、题型分值和目标客观占比寻找组合；目标比例不能保证完全命中，会显示实际组成。计分配置随卷及作答快照保存，后续默认值变化不重算历史成绩。无分练习仍核对客观题答案，但不产生数字成绩。
 
@@ -90,6 +94,9 @@ PaperDraftState 保存未完成的卷名、组织、题目顺序、筛选、随�
 `GET /api/bootstrap`的`stats.domainQuestionCounts`按领域返回`{published,pending}`。同领域多分类去重，跨领域分别计数；草稿与归档不计，零题领域由客户端显示0。计数使用紧凑题目元数据与当前分类归属，不载入题干、答案或学习笔记。
 
 题目可含`concept:{term,meaningPrompt,acceptedAnswers}`，仅适用于简答题。`meaningPrompt`是独立短定义且不能包含主词或可接受别称。`Paper.practiceKind`支持`standard|vocabulary|concept`；概念题集复用`vocabularyDirection:word_to_meaning|meaning_to_word`传输值，界面按概念语境显示方向，不要求语言字段或读音。逆向作答隐藏概念名与解释，并按主词及收录别称核对；两个方向的FSRS计划分开保存。
+
+词汇／概念卡的`gradingRequirements`是正向主观标准。逆向规则由快照中的`blanks.answers/caseSensitive/trim`派生（源卡预览由`acceptedAnswers`和默认配置派生），不新增可自由编辑但不影响客观判分的文本字段。默认逆向仅对双方字符串执行`trim()`和`toLowerCase()`后完全相等，不做NFKC或词内空白折叠。未提交响应仍隐藏词卡元数据及填空答案；规则只在参考阅读或交卷后呈现。答案导出`ExportQuestion`可含`reverseGradingRequirements`、`gradingDirection`，完成卷只呈现本次方向，源题附答案卷可同时展示双向规则；空白卷不含这些信息。旧`/api/papers/:id/export?answers=true`也包含双向规则。
+
 
 `GET /api/search?q=关键词&type=all&sort=relevance&page=1&pageSize=20&includeUnpublished=false`。type可选`all|question|paper|document|note|domain|category|tag`，sort为`relevance|updatedAt`，pageSize为10／20／50／100。q最多100字符、8个空格分隔词，NFKC规范化、忽略大小写并取交集；SQL符号按字面匹配。空词返回零结果，不扫描或维护搜索投影；未知参数与非法值返回400。
 
@@ -230,16 +237,16 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 2. 候选范围不再设 300 题上限。先查询已发布题目的轻量元数据，从要求中识别范围并检索排序，按输入字节预算截取候选摘要，再分批推荐；小候选池且手动指定数量时可直接让选择阶段理解提示词。不把全库正文一次性发送给模型。仅发送候选题号、标题、题干摘要、类型、难度及相关分类标签等，不发送参考答案、解析、笔记、作答或图片。
 3. 返回 `AiRun<AiPaperPlanResult>`：title、description、items:[{questionId,reason}]、requestedCount、candidateCount、candidates，以及 retrieval:{availableCount,matchedCount,reviewedCount,batches,interpreted,summary}。availableCount 是手动范围内可用题量，matchedCount／candidateCount 是识别条件匹配量，reviewedCount 是实际送入模型比较的不重复候选量；batches 是选题批次，interpreted 表示是否先单独解析提示词。模型必须返回要求数量的不重复候选 ID，跨批次也不得重复。每次AI推荐最多500个展开作答项，组合题按子题数量占用额度。
 4. 用户可在预览中移除、添加本次实际比较过的候选题、修改顺序、题量和逐题分值。可用范围和匹配量不表示该范围内每题都已发给模型；补充选择只允许返回的 candidates。
-5. `POST /api/ai/runs/:id/paper`：`{confirmed:true,title,description?,questionIds,organization?,domainId?,scoring?}`。重新校验选题、发布状态、分析时版本与展开作答项上限，复用普通组题业务，返回 201 `{paper,run}`。同一结果只创建一次，保存后通过普通题集编辑。
+5. `POST /api/ai/runs/:id/paper`：`{confirmed:true,title,description?,gradingRequirements?,questionIds,organization?,domainId?,scoring?}`。重新校验选题、发布状态、分析时版本与展开作答项上限，复用普通组题业务，返回 201 `{paper,run}`。同一结果只创建一次，保存后通过普通题集编辑。
 
 相关错误：`AI_PAPER_INSUFFICIENT_QUESTIONS`、`AI_PAPER_COUNT_TOO_LARGE`、`AI_PAPER_FILTER_INVALID`、`AI_PAPER_TOO_MANY_PARTS`、`AI_PAPER_SELECTION_INVALID`、`AI_PAPER_CANDIDATE_MISMATCH`、`AI_PAPER_ALREADY_CREATED`、`AI_QUESTION_VERSION_CONFLICT`。数量不足、提示词条件不合法或题目变更时明确失败，不静默放宽范围；分批任务全部成功后才生成一条完整分析记录。
 
 ### 解析与主观评价
 
 - `POST /api/ai/explain`：`{questionId,partId?}` → explanationMarkdown、followUpsMarkdown、pitfallsMarkdown。结合题干、原答案解析和追问补充说明，不替换原解析。
-- `POST /api/ai/question-edit`：`{questionId,expectedUpdatedAt,question:QuestionInput,requirements?}` → `AiRun<AiQuestionEditResult>`，类型为`question_edit`；只分析提交的当前草稿并审计结果，不写原题或质量状态。结果含`summary/suggestions/warnings`，最多20条建议；每条含`id/title/reason/confidence/partId?/changes`。修改白名单为标题、题干、答案说明、解析、选项、判分答案、填空答案、分类和标签；小题仅允许前七类。每条补丁合并后须满足题目结构及已有分类标签约束，禁止修改题号、题型、发布状态或小题身份。分析前后核对持久化题目版本，支持SSE及原生进度、取消和失败审计。浏览器按字段应用与撤回至表单，持久化仍使用原题目保存接口。
-- `POST /api/ai/grade`：`{attemptId,questionIds?,gradingRequirements?}` 评价已提交卷中的 1–20 道主观题；或 `{questionId,answer,maxPoints?,gradingRequirements?}` 临时评价单道简答／论述。要求最多10000字符；单题满分范围0.01–1000、最多两位小数；卷题使用当时快照。`POST /api/attempts/:id/ai-review` 同样接收 questionIds 和 gradingRequirements。
-- 评价返回逐题 verdict（correct／partial／incorrect）、score、maxPoints、comment、strengths、improvements。有分卷建议分与判定须一致；无分卷分数二者为 null，仍给出判定。服务保存实际使用的 gradingRequirements。旧无明确判定且无分值的分析标 requiresRegrade，显示未判定并阻止应用，须重新评价。
+- `POST /api/ai/question-edit`：`{questionId,expectedUpdatedAt,question:QuestionInput,requirements?}` → `AiRun<AiQuestionEditResult>`，类型为`question_edit`；只分析提交的当前草稿并审计结果，不写原题或质量状态。结果含`summary/suggestions/warnings`，最多20条建议；每条含`id/title/reason/confidence/partId?/changes`。修改白名单为标题、题干、答案说明、解析、选项、判分答案、填空答案、主观题判题要求、分类和标签；小题允许自身内容和主观题判题要求，不允许修改分类、标签或身份。每条补丁合并后须满足题目结构及已有分类标签约束，禁止修改题号、题型、发布状态或小题身份。分析前后核对持久化题目版本，支持SSE及原生进度、取消和失败审计。浏览器按字段应用与撤回至表单，持久化仍使用原题目保存接口。
+- `POST /api/ai/grade`：`{attemptId,questionIds?,gradingRequirements?}` 评价已提交卷中的 1–20 道主观题；或 `{questionId,answer,maxPoints?,gradingRequirements?}` 临时评价单道简答／论述。每个作答项默认使用当前原题、由paperId／paperVersion指定的题集快照或已提交AttemptQuestion中的本题判题要求。请求省略gradingRequirements时还继承Attempt／题集的全卷补充；显式字符串仅覆盖本次全卷补充（空字符串取消本次全卷补充，不抹掉逐题标准）。逐题标准作为items[].gradingRequirements发送并随结果保存，结果顶层gradingRequirements记录本次全卷补充；临时覆盖不改写题集、作答或题库。要求最多10000字符；单题满分范围0.01–1000、最多两位小数；卷题使用当时快照。`POST /api/attempts/:id/ai-review` 同样接收 questionIds 和 gradingRequirements。
+- 评价返回逐题 verdict（correct／partial／incorrect）、score、maxPoints、comment、strengths、improvements。有分卷建议分与判定须一致；无分卷分数二者为 null，仍给出判定。服务保存实际使用的逐题标准及全卷补充gradingRequirements，不信任模型回填要求。旧无明确判定且无分值的分析标 requiresRegrade，显示未判定并阻止应用，须重新评价。
 - `POST /api/ai/runs/:id/apply`：`{confirmed:true,applyScores?,appendNotes?,questionIds?}`。至少选择一项；applyScores 应用已提交作答的判定，有分题另应用分值；返回 appliedScores、appliedVerdicts。单次临时评价可写笔记，不能伪造已提交统计。笔记包含判题要求与结果并保留原内容，同一结果不重复追加。应用前校验源题／作答版本，客观成绩不变。
 
 ### 转换导入与审核
@@ -364,3 +371,9 @@ learning_days保存生成时的目标与任务快照，learning_task_results以�
 - `POST /api/maintenance/compact`、`POST /api/maintenance/reindex`：`{confirmed:true}`，分别整理空闲页和重建派生索引，返回维护前后存储摘要。
 
 预览POST声明只读存储语义，Android不会因预览重写SQLite文件。清理／重置事务内重新核对指纹，过期分别返回`MAINTENANCE_PREVIEW_STALE`或`LEARNING_RESET_PREVIEW_STALE`（409）。失败不写维护成功记录，Android持久化失败恢复原库。原`/api/learning/reset-preview`和`/api/learning/reset`继续返回全局进度重置原契约，内部复用同一维护实现。
+
+## 阅读来源与AI分析
+
+单题`/api/ai/explain`与临时作答`/api/ai/grade`支持`partId`以及成对提供的`paperId、paperVersion`。题库请求读取当前原题，题集请求仅从指定题集快照读取题干和参考内容，不接受浏览器提交任意参考答案。版本不符返回`AI_PAPER_VERSION_CONFLICT`（409），非本集题目返回404。生成后、应用前会复核原题及题集版本；小题内容保留公共材料，笔记写入原题对应小题。
+
+完成记录的可选`readingSource`包含`questionId、questionVersion、partId?、paperId?、paperVersion?`。阅读面板仅自动使用来源匹配的近期解析；无来源的旧分析仍可在处理历史查看。临时评价不会创建作答记录，也不能应用整卷分值；写入笔记沿用显式确认与版本校验。

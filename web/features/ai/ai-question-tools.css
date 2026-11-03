@@ -1,0 +1,95 @@
+.ai-question-assistant {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ai-question-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ai-question-heading p {
+  margin: 0;
+}
+.ai-question-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-block: 1rem;
+}
+.ai-question-tabs > button {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border, var(--theme-border, #dce3df));
+  border-radius: 12px;
+  background: var(--surface, var(--theme-surface, #fff));
+  color: var(--text, var(--theme-text, #233d34));
+  cursor: pointer;
+}
+.ai-question-tabs > button[aria-selected='true'] {
+  background: var(--theme-primary-soft, #edf5ef);
+  border-color: var(--accent, var(--theme-primary, #58836d));
+  box-shadow: inset 0 0 0 1px var(--accent, var(--theme-primary, #58836d));
+}
+.ai-question-tabs > button:focus-visible {
+  outline: 2px solid var(--accent, var(--theme-primary, #58836d));
+  outline-offset: 3px;
+}
+.ai-question-tabs span {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.ai-question-tabs small {
+  color: var(--muted, var(--theme-muted, #63746b));
+  font-size: 0.75rem;
+}
+.ai-question-panel {
+  padding-top: 0.5rem;
+  min-width: 0;
+}
+.ai-question-panel[hidden] {
+  display: none;
+}
+.ai-question-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.ai-question-panel-heading > div {
+  flex: 1;
+  min-width: 12rem;
+}
+.ai-question-panel-heading p {
+  margin: 0;
+}
+.ai-question-panel > .ai-tools {
+  margin: 0;
+}
+.ai-question-panel .field {
+  max-width: 100%;
+}
+@media (max-width: 600px) {
+  .ai-question-tabs > button {
+    padding: 0.75rem 0.6rem;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+  .ai-question-tabs svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .ai-question-tabs strong {
+    font-size: 0.85rem;
+  }
+  .ai-question-panel-heading > .button {
+    width: 100%;
+    justify-content: center;
+  }
+}

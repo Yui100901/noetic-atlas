@@ -15,3 +15,56 @@
 .question-grading-requirements > summary + * {
   margin-top: 12px;
 }
+.question-grading-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.rubric-format-hints {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-warning-border, #e2c7ac);
+  border-radius: 10px;
+  background: var(--theme-warning-soft, #fff6e8);
+  color: var(--theme-text, #473b23);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.rubric-format-hints > summary {
+  color: var(--theme-warning, var(--orange));
+  cursor: pointer;
+  font-weight: 600;
+}
+.rubric-format-hints[open] > summary,
+.rubric-format-hints > ul {
+  margin-bottom: 8px;
+}
+.rubric-format-hints > ul {
+  display: grid;
+  gap: 10px;
+  padding-left: 18px;
+  margin-top: 8px;
+}
+.rubric-format-hint-heading {
+  display: flex;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.rubric-format-hint-heading .text-button {
+  padding: 2px 0;
+  white-space: nowrap;
+}
+.rubric-format-hints pre {
+  margin: 5px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rubric-format-unavailable {
+  font-size: 12px;
+}

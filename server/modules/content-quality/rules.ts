@@ -4,6 +4,7 @@ import type { Question, QuestionPart } from '../../../shared/models/types.js';
 import type { QualityRule, QualitySeverity } from '../../../shared/models/content-quality.js';
 import { conceptPromptIsSafe } from '../../../shared/questions/concept.js';
 import { vocabularyIssues } from '../../../shared/questions/vocabulary.js';
+import { inspectRubricFormat } from '../../../shared/questions/rubric-format.js';
 import { findBlankMarkers } from '../../../shared/questions/blank-markers.js';
 import { questionSchema } from '../../core/validation.js';
 
@@ -27,7 +28,7 @@ export function qualityContentFingerprint(value:Question|Record<string,any>) {
 export function qualitySignatures(value:Question) {
   const prompt=leaf(value),answer=answers(value);
   const grading=['single_choice','multiple_choice','true_false'].includes(value.type)?array(value.correctAnswers).slice().sort():value.type==='fill_blank'?array(value.blanks).map(raw=>{const blank=record(raw);return{id:blank.id,answers:array(blank.answers).map(raw=>typeof raw==='string'?(blank.caseSensitive===false?raw.toLocaleLowerCase('en'):raw):raw).sort(),caseSensitive:blank.caseSensitive,trim:blank.trim};}):answer;
-  return {promptHash:digest(prompt),answerHash:digest(grading),fullHash:digest({prompt,answer,explanationMarkdown:value.explanationMarkdown,parts:array(value.parts).map(part=>record(part).explanationMarkdown),concept:value.concept,vocabulary:value.vocabulary})};
+  return {promptHash:digest(prompt),answerHash:digest(grading),fullHash:digest({prompt,answer,explanationMarkdown:value.explanationMarkdown,gradingRequirements:value.gradingRequirements,parts:array(value.parts).map(part=>({explanationMarkdown:record(part).explanationMarkdown,gradingRequirements:record(part).gradingRequirements})),concept:value.concept,vocabulary:value.vocabulary})};
 }
 export function inspectQuestionQuality(question:Question):QualityFinding[] {
   const findings:QualityFinding[]=[];
@@ -37,6 +38,12 @@ export function inspectQuestionQuality(question:Question):QualityFinding[] {
   const inspect=(value:Question|QuestionPart,partId?:string)=>{
     if(!value||typeof value!=='object')return;
     const stem=string(value.stemMarkdown),answer=string(value.answerMarkdown),explanation=string(value.explanationMarkdown);
+    const subjective=value.type==='short_answer'||value.type==='essay';
+    const rubric=subjective?string(value.gradingRequirements):'';
+    if(rubric.trim()){
+      const issues=inspectRubricFormat(rubric);
+      if(issues.length)add('rubric_format','warning','判题标准存在格式问题',issues.map(issue=>`gradingRequirements${issue.line?` 第${issue.line}行`:''}（${issue.code}）：${issue.message}\n${issue.source||''}`).join('\n\n'),'在题目编辑页的判题要求中修正对应条目；保留原有考查要点，空字段仍可保存。修改后重新扫描并逐项确认处理状态。',partId);
+    }
     if(!stem.trim())add('empty_stem','error','题干只有空白或缺失','题干未包含可阅读内容。','补充作答所需的条件和问题。',partId);
     // An explanation may already live in answerMarkdown. A separate field is
     // optional; its absence cannot establish inadequate teaching content.
@@ -44,9 +51,9 @@ export function inspectQuestionQuality(question:Question):QualityFinding[] {
     const seen=new Map<string,string>();
     for(const option of options){if(!option||typeof option!=='object')continue;const text=string(option.text).replace(/\r\n/g,'\n');if(!text.trim())continue;const previous=seen.get(text);if(previous)add('duplicate_options','warning','两个选项具有完全相同的正文',`选项 ${previous} 与 ${option.key}：${text.slice(0,1500)}`,'核对是否误填了选项；不自动替换或重排答案。',partId);else seen.set(text,option.key);}
     if(value.mathEnabled??question.mathEnabled){
-      const fields=[['题干',stem],['参考答案',answer],['解析',explanation],...options.map(option=>['选项 '+option.key,string(option.text)])];
+      const fields=[['题干',stem],['参考答案',answer],['解析',explanation],...(rubric.trim()?[['判题要求 gradingRequirements',rubric]]:[]),...options.map(option=>['选项 '+option.key,string(option.text)])];
       const issues=fields.flatMap(([label,markdown])=>inspectMathMarkdown(markdown!).map(issue=>({label,...issue})));
-      if(issues.length)add('math_syntax','warning',`${[...new Set(issues.map(issue=>issue.label))].join('、')}中的公式未能排版`,issues.map(issue=>`${issue.label}（位置 ${issue.offset}）：${issue.message}\n${issue.source}`).join('\n\n'),'核对LaTeX分隔符与命令；化学反应使用\\ce{...}，单位使用\\mathrm{...}。本检查仅验证排版语法，不判断公式科学性。',partId);
+      if(issues.length)add('math_syntax','warning',`${[...new Set(issues.map(issue=>issue.label))].join('、')}中的公式未能排版`,issues.map(issue=>{const content=fields.find(([label])=>label===issue.label)?.[1]||'';const line=content.slice(0,issue.offset).split('\n').length;return `${issue.label}（第${line}行，位置 ${issue.offset}）：${issue.message}\n${issue.source}`;}).join('\n\n'),'核对LaTeX分隔符与命令；化学反应使用\\ce{...}，单位使用\\mathrm{...}。本检查仅验证排版语法，不判断公式科学性。',partId);
     }
     const visible=prose(stem);
     if(value.type==='fill_blank'){

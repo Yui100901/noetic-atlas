@@ -1,3 +1,4 @@
+import * as questionMaintenance from '../modules/questions/maintenance-schema.js';
 import {explainInputSchema,gradeInputSchema} from '../modules/ai/reading-source.js';
 import {healthOutputSchema,cleanupOutputSchema,resetOutputSchema,compactOutputSchema} from '../modules/maintenance/output-schema.js';
 import {cleanupSelectionSchema} from '../modules/maintenance/cleanup.js';
@@ -115,7 +116,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/content-quality/issues/:id/review-context':quality.qualityReviewContextSchema,
   '/api/content-quality/review-contexts':quality.qualityReviewContextsSchema,
   '/api/daily-push/check': z.object({}).strict(), '/api/daily-push/:id/read': z.object({}).strict(),
-  '/api/questions': validation.questionSchema, '/api/domains': validation.domainSchema, '/api/categories': validation.categorySchema,
+  '/api/questions': questionMaintenance.questionSaveSchema, '/api/domains': validation.domainSchema, '/api/categories': validation.categorySchema,
   '/api/tags': validation.tagSchema, '/api/documents': validation.documentSchema,
   '/api/papers': validation.paperInputSchema, '/api/papers/preview': validation.paperInputSchema,
   '/api/questions/metadata': validation.questionMetadataInputSchema,
@@ -151,7 +152,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
   '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),documentDrafts:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
 };
-const summaries: Record<string,string> = {'learning-plans':'学习计划','focus-sessions':'专注复习',questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',maintenance:'数据维护',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
+const summaries: Record<string,string> = {'learning-plans':'学习计划','focus-sessions':'专注复习',questions:'题目',domains:'知识领域',categories:'分类',tags:'标签',documents:'学习资料','document-drafts':'资料编辑草稿','question-drafts':'题目编辑草稿',papers:'题集',learning:'题集学习记录',analytics:'学习统计与周报',search:'统一搜索',attempts:'作答记录',study:'学习状态',reviews:'复习事件',settings:'系统配置',assets:'文件资源',ai:'AI辅助',share:'内容分享',data:'数据迁移',backup:'数据备份',maintenance:'数据维护',health:'健康检查',bootstrap:'初始信息','paper-drafts':'组卷草稿',exams:'考试会话'};
 function bodyFor(method:string,url:string): JsonSchema|undefined {
   if(url==='/api/learning-plans/:id/start')return toJson(planStartSchema);
   if(url==='/api/focus-sessions'&&method==='POST')return toJson(createFocusSchema);
@@ -161,6 +162,9 @@ function bodyFor(method:string,url:string): JsonSchema|undefined {
   if(url==='/api/review-scheduler/card'&&method==='PATCH')return toJson(changeCardSchema);
   if(url==='/api/review-scheduler/review'&&method==='POST')return toJson(manualReviewSchema);
   if(url==='/api/review-scheduler/attempts/:id/rating'&&method==='POST')return toJson(attemptRatingSchema);
+  if(url==='/api/question-drafts'&&method==='POST')return toJson(questionMaintenance.createQuestionDraftSchema);
+  if(url==='/api/question-drafts/:id')return method==='PUT'?toJson(questionMaintenance.updateQuestionDraftSchema):method==='DELETE'?toJson(questionMaintenance.deleteQuestionDraftSchema):undefined;
+  if(url==='/api/questions/:id/revisions/:revisionId/restore')return toJson(questionMaintenance.restoreQuestionRevisionSchema);
   if(url==='/api/document-drafts'&&method==='POST')return toJson(createDocumentDraftSchema);
   if(url==='/api/document-drafts/:id')return method==='PUT'?toJson(updateDocumentDraftSchema):method==='DELETE'?toJson(deleteDocumentDraftSchema):undefined;
   if(url==='/api/document-drafts/:id/publish'&&method==='POST')return toJson(publishDocumentDraftSchema);
@@ -200,6 +204,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/papers/:id/metadata')schema.querystring=toJson(z.object({}).strict());
   const learningQueries:Record<string,z.ZodType>={'/api/learning/summary':learningSummaryQuerySchema,'/api/learning/attempts':learningAttemptsQuerySchema,'/api/learning/questions':learningQuestionsQuerySchema,'/api/learning/contexts':learningContextsQuerySchema,'/api/learning/global/summary':globalLearningSummaryQuerySchema,'/api/learning/global/questions':globalLearningQuestionsQuerySchema};
   if(learningQueries[url])schema.querystring=toJson(learningQueries[url]!);
+  if(url==='/api/question-drafts'&&method==='GET')schema.querystring=toJson(questionMaintenance.questionDraftQuerySchema);
+  if(url==='/api/questions/:id/revisions'&&method==='GET')schema.querystring=toJson(questionMaintenance.questionRevisionQuerySchema);
   if(url==='/api/questions/:id/history')schema.querystring=toJson(questionHistoryQuerySchema);
   if(url==='/api/questions/:id/similar')schema.querystring=toJson(similarQuestionsQuerySchema);
   if(url==='/api/questions/:id/statistics')schema.querystring=toJson(z.object({partId:id.optional()}).strict());
@@ -261,6 +267,11 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/papers/page')success=learningPage(paperListItemOutput);
   if(url==='/api/documents/page')success=learningPage(toJson(validation.documentSchema.omit({bodyMarkdown:true}).extend({excerpt:z.string()})));
   if(url==='/api/papers/:id/metadata')success={type:'object',additionalProperties:false,required:['id','title','version','archived'],properties:Object.fromEntries(['id','title','version','archived'].map(key=>[key,paperOutput.properties[key]]))};
+  if(url==='/api/question-drafts')success=method==='GET'?learningPage(toJson(z.object({id,questionId:id.nullable(),title:z.string(),baseUpdatedAt:z.string().nullable(),createdAt:z.string(),updatedAt:z.string(),conflict:z.boolean()}).strict())):toJson(questionMaintenance.questionDraftSchema.safeExtend({conflict:z.boolean()}));
+  if(url==='/api/question-drafts/:id'&&method!=='DELETE')success=toJson(questionMaintenance.questionDraftSchema.safeExtend({conflict:z.boolean()}));
+  if(url==='/api/questions/:id/revisions')success=learningPage(toJson(questionMaintenance.questionRevisionSchema.omit({content:true}).extend({title:z.string()})));
+  if(url==='/api/questions/:id/revisions/:revisionId')success=toJson(questionMaintenance.questionRevisionSchema.extend({title:z.string(),diff:z.array(z.object({field:z.string(),before:z.unknown(),after:z.unknown()}))}));
+  if(url==='/api/questions/:id/revisions/:revisionId/restore')success=toJson(validation.questionSchema);
   if(url==='/api/questions/:id/statistics')success=questionStatisticsOutput;
   if(url==='/api/questions/:id/history')success=questionHistoryOutput;
   if(url==='/api/questions/metadata')success=toJson(z.object({items:z.array(z.object({id,title:z.string(),type:validation.types,status:z.enum(['published','pending','draft','archived'])})),missingIds:z.array(id)}));

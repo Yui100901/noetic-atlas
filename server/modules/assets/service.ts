@@ -73,8 +73,14 @@ export function validateAllAssetReferences(store: Store) {
     // Source records are authoritative; the derived reference index cannot validate imports.
     const records =
       source === 'ai_import_jobs' ? store.database.records(source) : store.all(source);
-    for (const record of records)
+    for (const record of records) {
+      // A repair baseline preserves the damaged source exactly as evidence.
+      // Its existing files remain indexed/protected, but unavailable historical
+      // references must not make a repaired current bank impossible to restore.
+      if (source === 'question_revisions' && (record as { origin?: string }).origin === 'baseline')
+        continue;
       validateAssetReferences(store, assetReferenceContent(source, record));
+    }
   }
 }
 /** Derived references use the same structural collector as writes/migration;
@@ -156,7 +162,7 @@ export function deleteAsset(store: Store, aid: string) {
       fail(
         409,
         'ASSET_IN_USE',
-        '文件仍被题目、学习资料、笔记、教材候选题或历史练习快照引用，请保留文件以便查看和迁移',
+        '文件仍被题目、题目编辑草稿或修订、学习资料、笔记、教材候选题或历史练习快照引用，请保留文件以便查看和迁移',
       );
     store.remove('assets', aid);
     return { ok: true, deleted: aid };

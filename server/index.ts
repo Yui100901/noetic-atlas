@@ -1,3 +1,5 @@
+import { registerQuestionDraftRoutes } from './modules/questions/drafts.js';
+import { registerQuestionRevisionRoutes } from './modules/questions/revisions.js';
 import {registerMaintenanceRoutes} from './modules/maintenance/routes.js';
 import {migrateFeedbackQualityIssues} from './modules/content-quality/feedback-links.js';
 import {retireMissingSourceIssues,retireMissingExplanationIssues} from './modules/content-quality/maintenance.js';
@@ -97,6 +99,8 @@ export async function buildApp(options: AppOptions = {}) {
   registerQuestionFeedbackRoutes(app, store, { native: options.native });
   registerPaperDraftRoutes(app, store);
   registerQuestionRoutes(app, store);
+  registerQuestionDraftRoutes(app, store);
+  registerQuestionRevisionRoutes(app, store);
   registerContentQualityRoutes(app, store);
   registerSimilarQuestionRoutes(app, store, { native: options.native });
   registerQuestionHistoryRoutes(app,store);

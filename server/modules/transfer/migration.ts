@@ -13,7 +13,8 @@ import { validatePaperAnswers } from '../questions/structure.js';
 import { DEFAULT_SETTINGS } from '../../../shared/models/settings.js';
 import { settingsSchema, getSettings } from '../settings/service.js';
 import { assetRecordSchema, validateAssetRecord } from '../assets/schema.js';
-import { validateAllAssetReferences } from '../assets/service.js';
+import { collectAssetReferences, validateAllAssetReferences } from '../assets/service.js';
+import { questionDraftSchema, questionRevisionSchema, validateQuestionDraft, validateQuestionRevision } from '../questions/maintenance-schema.js';
 import { paperDraftSchema, validatePaperDraft } from '../practice/paper-drafts.js';
 import type { PaperDraftState } from '../../../shared/practice/paper-drafts.js';
 import { cleanLearningEnvelope } from '../../../shared/questions/learning-records.js';
@@ -66,6 +67,8 @@ const envelopeSchema = z.object({
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
   documentDrafts: z.array(documentDraftSchema).default([]),
+  questionDrafts: z.array(questionDraftSchema).default([]),
+  questionRevisions: z.array(questionRevisionSchema).default([]),
   aiWorkspaceDrafts: z.array(aiWorkspaceDraftSchema).default([]),
   questionHistory:z.array(questionHistorySchema).default([]),
   dailyPushes:z.array(dailyPushRecordSchema).default([]),
@@ -73,7 +76,7 @@ const envelopeSchema = z.object({
   questionFeedback: z.array(questionFeedbackSchema).default([]),
   qualityScans: z.array(qualityScanSchema).default([]), qualityIssues: z.array(qualityIssueSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'document_versions' ? 'documentVersions' : table==='learning_days'?'learningDays':table==='learning_task_results'?'learningTaskResults': table === 'focus_sessions' ? 'focusSessions' : table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
+const dataKey = (table: Table) => table === 'document_versions' ? 'documentVersions' : table==='learning_days'?'learningDays':table==='learning_task_results'?'learningTaskResults': table === 'focus_sessions' ? 'focusSessions' : table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'question_drafts' ? 'questionDrafts' : table === 'question_revisions' ? 'questionRevisions' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
 export function exportData(store: Store) {
@@ -86,6 +89,8 @@ export function exportData(store: Store) {
 }
 export function importData(store: Store, raw: unknown) {
   const data = parse(envelopeSchema, cleanLegacyBankFilters(cleanLearningEnvelope(raw)));
+  const revisionSequences = data.questionRevisions.map(value => JSON.stringify([value.questionId, value.sequence]));
+  if (new Set(revisionSequences).size !== revisionSequences.length) fail(400, 'DUPLICATE_QUESTION_REVISION_SEQUENCE', '导入数据包含相同题目的重复修订序号');
   for (const table of tables) {
     const records = data[dataKey(table)];
     const keys = records.map((r: any) => recordKey(table, r)).filter(Boolean);
@@ -102,7 +107,16 @@ export function importData(store: Store, raw: unknown) {
         store.insert(table, entityId, table === 'reviews' ? { ...value, id: entityId } : value); counts.added++;
       }
     }
-    for (const asset of data.assets) {validateAssetRecord(asset);const existing=store.get<any>('assets',asset.id);if(existing&&existing.dataBase64!==asset.dataBase64&&data.documentVersions.some(version=>version.assetId===asset.id))fail(409,'DOCUMENT_SOURCE_ASSET_CONFLICT','资料原文附件ID与本机不同文件冲突，请在独立数据库恢复此备份，未合并任何数据');}
+    const maintenanceAssets = collectAssetReferences([
+      ...data.questionDrafts.filter(value => !store.get('question_drafts', value.id)).map(value => ({ form: value.state.form, sources: value.state.sources })),
+      ...data.questionRevisions.filter(value => !store.get('question_revisions', value.id)).map(value => value.content),
+    ]);
+    for (const asset of data.assets) {
+      validateAssetRecord(asset);
+      const existing=store.get<any>('assets',asset.id);
+      if(existing&&existing.dataBase64!==asset.dataBase64&&data.documentVersions.some(version=>version.assetId===asset.id))fail(409,'DOCUMENT_SOURCE_ASSET_CONFLICT','资料原文附件ID与本机不同文件冲突，请在独立数据库恢复此备份，未合并任何数据');
+      if(existing&&existing.dataBase64!==asset.dataBase64&&maintenanceAssets.has(asset.id))fail(409,'QUESTION_MAINTENANCE_ASSET_CONFLICT','题目草稿或修订附件ID与本机不同文件冲突，请使用独立数据库完整恢复，未合并任何数据');
+    }
     insert('assets', data.assets);
     // An untouched installation may restore its original preferences. A merge
     // into an already configured installation retains the local preferences.
@@ -163,6 +177,10 @@ export function importData(store: Store, raw: unknown) {
     insert('paper_drafts', data.paperDrafts);
     for (const draft of data.documentDrafts) if (!store.get('document_drafts', draft.id)) validateDocumentDraftState(store, draft.state, true);
     insert('document_drafts', data.documentDrafts);
+    for (const draft of data.questionDrafts) if (!store.get('question_drafts', draft.id)) validateQuestionDraft(store, draft);
+    insert('question_drafts', data.questionDrafts);
+    for (const revision of data.questionRevisions) if (!store.get('question_revisions', revision.id)) validateQuestionRevision(store, revision);
+    insert('question_revisions', data.questionRevisions);
     insert('ai_workspace_drafts', data.aiWorkspaceDrafts);
     for (const state of data.study) store.require('questions', state.questionId);
     insert('study', data.study, 'questionId');

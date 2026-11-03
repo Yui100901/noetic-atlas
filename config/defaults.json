@@ -8,6 +8,8 @@
     "maxQuickDrafts": 3,
     "maxPaperDrafts": 3,
     "maxDocumentDrafts": 3,
+    "maxQuestionDrafts": 3,
+    "maxQuestionRevisions": 20,
     "examDurationMinutes": 120,
     "maxHistoryPerPaper": 0,
     "maxQuickHistory": 0,

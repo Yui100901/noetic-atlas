@@ -1,3 +1,6 @@
+import { questionSaveSchema } from './maintenance-schema.js';
+import { requireQuestionDraftVersion } from './drafts.js';
+import { captureQuestionRevision } from './revisions.js';
 import { readOnlyOperation } from '../../http/operation.js';
 import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
@@ -21,16 +24,16 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/questions/:id', async request => store.question(getId(request)));
   app.post('/api/questions/metadata', readOnlyOperation, async request => store.questionMetadataByIds(parse(questionMetadataInputSchema,request.body).ids));
   app.post('/api/questions', async (request, reply) => {
-    const input = normalizeQuestionBlankStems(parse(questionSchema, request.body)); assertNewQuestionId(input.id); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
+    const {revisionReason='',draftId,draftUpdatedAt,...raw}=parse(questionSaveSchema,request.body);const input = normalizeQuestionBlankStems(raw); assertNewQuestionId(input.id); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
     const q = { ...input, status: input.status === 'draft' ? 'draft' : 'pending', id: input.id || makeId('q'), createdAt: now(), updatedAt: now() } as Question;
-    store.transaction(()=>{validateDocumentCitations(store,q,true);store.insert('questions', q.id, q);}); return reply.code(201).send(store.question(q.id));
+    store.transaction(()=>{if(draftId)requireQuestionDraftVersion(store,draftId,draftUpdatedAt!,null);validateDocumentCitations(store,q,true);store.insert('questions', q.id, q);captureQuestionRevision(store,undefined,q,'baseline',revisionReason);if(draftId)store.remove('question_drafts',draftId);}); return reply.code(201).send(store.question(q.id));
   });
   app.put('/api/questions/:id', async request => {
-    const qid = getId(request); const previous = store.require<Question>('questions', qid); const input = normalizeQuestionBlankStems(parse(questionSchema, request.body));
+    const qid = getId(request); const previous = store.require<Question>('questions', qid); const {revisionReason='',draftId,draftUpdatedAt,...raw}=parse(questionSaveSchema,request.body);const input = normalizeQuestionBlankStems(raw);
     if (input.id && input.id !== qid) fail(400, 'ID_IMMUTABLE', '题号不能在编辑时更换'); store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
     if (input.updatedAt && input.updatedAt !== previous.updatedAt) fail(409, 'QUESTION_VERSION_CONFLICT', '题目已被修改，请刷新后再编辑');
     if (input.status === 'published' && previous.status !== 'published') fail(409, 'REVIEW_REQUIRED', '未发布题目必须先送审，再通过用户确认审核');
-    const q = { ...input, id: qid, createdAt: previous.createdAt || now(), updatedAt: nextStamp(previous.updatedAt) }; store.transaction(()=>{validateDocumentCitations(store,q,true);store.put('questions', qid, q);}); return store.question(qid);
+    const q = { ...input, id: qid, createdAt: previous.createdAt || now(), updatedAt: nextStamp(previous.updatedAt) }; store.transaction(()=>{const current=store.require<Question>('questions',qid);if(current.updatedAt!==previous.updatedAt)fail(409,'QUESTION_VERSION_CONFLICT','题目已被修改，请重新核对');if(draftId)requireQuestionDraftVersion(store,draftId,draftUpdatedAt!,qid);validateDocumentCitations(store,q,true);captureQuestionRevision(store,previous,q,'manual',revisionReason);store.put('questions', qid, q);if(draftId)store.remove('question_drafts',draftId);}); return store.question(qid);
   });
   app.post('/api/questions/review', async request => {
     const input = parse(questionReviewSchema, request.body);
@@ -65,7 +68,7 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
         store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
         return { ...input, id: q.id, status: 'pending' as const, createdAt: q.createdAt || now(), updatedAt: nextStamp(q.updatedAt) };
       });
-      for (const q of entries) {validateDocumentCitations(store,q,true);store.put('questions', q.id, q);}
+      for (const q of entries) {validateDocumentCitations(store,q,true);captureQuestionRevision(store,store.require<Question>('questions',q.id),q,'pending_import','待审核题JSON批量修订');store.put('questions', q.id, q);}
       return { ok: true, updated: entries.length, items: entries.map(q => store.question(q.id)) };
     });
   });
@@ -77,6 +80,7 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
     if (papers.length) fail(409, 'QUESTION_IN_PAPER', '题目仍被当前试卷引用，请先从这些试卷中移除；可先将题目归档', { paperIds: papers.map(p => p.id), paperTitles: papers.map(p => p.title) });
     return store.transaction(() => {
       store.remove('questions', qid);
+      for(const table of ['question_drafts','question_revisions'] as const){const d=store.database;for(const row of d.all(d.query.selectFrom(table).select('id').where(d.expressions.field('data','questionId'),'=',qid)))store.remove(table,row.id);}
       if (store.get('study', qid)) store.remove('study', qid);
       for (const state of store.all<any>('study_parts')) if (state.questionId === qid) store.remove('study_parts', JSON.stringify([qid, state.partId]));
       for (const review of store.all<any>('reviews')) if (review.questionId === qid) store.remove('reviews', review.id);

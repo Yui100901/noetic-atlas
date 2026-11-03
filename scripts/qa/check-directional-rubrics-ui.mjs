@@ -75,6 +75,7 @@ try {
   await go('#/attempts/' + attempt.id);
   const reverse = page.locator('.question-grading-requirements');
   await reverse.locator('summary').click();
+  await reverse.locator('li').filter({ hasText: '可接受答案' }).waitFor();
   assert.match(await reverse.innerText(), /atlas/);
   assert.doesNotMatch(await reverse.innerText(), /"atlas"/);
   assert.doesNotMatch(await reverse.innerText(), /atlas-new/);

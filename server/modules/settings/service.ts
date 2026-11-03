@@ -19,6 +19,10 @@ import {
 import { DEFAULT_DAILY_PUSH } from '../../../shared/models/daily-push.js';
 import { dailyPushSettingsSchema, validateDailyPushConfiguration } from '../daily-push/schema.js';
 import { documentDraftRetentionCandidates } from '../library/document-draft-retention.js';
+import {
+  questionDraftRetentionCandidates,
+  questionRevisionRetentionCandidates,
+} from '../questions/maintenance-retention.js';
 import { reviewSchedulingSettingsSchema } from './review-scheduling.js';
 import { mirrorReviewStudy } from '../review-scheduler/service.js';
 
@@ -32,6 +36,8 @@ export const settingsSchema = z
     maxPaperDrafts: z.number().int().min(1).max(100).default(3),
     examDurationMinutes: z.number().int().min(1).max(1440).default(120),
     maxDocumentDrafts: z.number().int().min(1).max(100).default(3),
+    maxQuestionDrafts: z.number().int().min(1).max(100).default(3),
+    maxQuestionRevisions: z.number().int().min(1).max(100).default(20),
     maxHistoryPerPaper: z.number().int().min(0).max(10000),
     maxQuickHistory: z.number().int().min(0).max(10000),
     maxQuestionHistory: z.number().int().min(0).max(10000).default(10),
@@ -191,6 +197,19 @@ export function settingsRetentionPlan(store: Store, settings: SystemSettings) {
   const authoring = paperDraftRetentionCandidates(store, settings.maxPaperDrafts);
   const documentDrafts = documentDraftRetentionCandidates(store, settings.maxDocumentDrafts);
   const retention = retentionPreview(attempts);
+  const questionDrafts = questionDraftRetentionCandidates(store, settings.maxQuestionDrafts);
+  const questionRevisions = questionRevisionRetentionCandidates(
+    store,
+    settings.maxQuestionRevisions,
+  );
+  if (questionDrafts.length) {
+    retention.questionDrafts = questionDrafts.length;
+    retention.total += questionDrafts.length;
+  }
+  if (questionRevisions.length) {
+    retention.questionRevisions = questionRevisions.length;
+    retention.total += questionRevisions.length;
+  }
   const questionHistory = questionHistoryRetentionCandidates(store, settings.maxQuestionHistory);
   if (questionHistory.length) {
     retention.questionHistory = questionHistory.length;
@@ -210,7 +229,16 @@ export function settingsRetentionPlan(store: Store, settings: SystemSettings) {
     retention.focusHistory = focus.length - retention.focusDrafts;
     retention.total += focus.length;
   }
-  return { attempts, authoring, questionHistory, documentDrafts, retention, focus };
+  return {
+    attempts,
+    authoring,
+    questionHistory,
+    documentDrafts,
+    questionDrafts,
+    questionRevisions,
+    retention,
+    focus,
+  };
 }
 
 /** Caller owns the transaction, so configuration import can atomically update both sections. */
@@ -223,8 +251,16 @@ export function saveSettings(
   const previous = getSettings(store);
   if (settings.updatedAt !== previous.updatedAt)
     fail(409, 'SETTINGS_VERSION_CONFLICT', '配置已被修改，请刷新后重新编辑');
-  const { attempts, authoring, questionHistory, documentDrafts, retention, focus } =
-    settingsRetentionPlan(store, settings);
+  const {
+    attempts,
+    authoring,
+    questionHistory,
+    documentDrafts,
+    questionDrafts,
+    questionRevisions,
+    retention,
+    focus,
+  } = settingsRetentionPlan(store, settings);
   if (retention.total && !options.confirmedRetention)
     fail(
       409,
@@ -243,6 +279,8 @@ export function saveSettings(
         'authoring',
         'questionHistory',
         'documentDrafts',
+        'questionDrafts',
+        'questionRevisions',
         'focusDrafts',
         'focusHistory',
       ] as const
@@ -306,6 +344,8 @@ export function saveSettings(
   }
   for (const old of authoring) store.remove('paper_drafts', old.id);
   for (const old of documentDrafts) store.remove('document_drafts', old);
+  for (const old of questionDrafts) store.remove('question_drafts', old);
+  for (const old of questionRevisions) store.remove('question_revisions', old);
   for (const row of focus) store.remove('focus_sessions', row.id);
   return { settings: saved, retention };
 }

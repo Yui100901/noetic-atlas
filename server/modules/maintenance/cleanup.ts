@@ -29,6 +29,7 @@ const tables: Record<CleanupKind, RecordTable> = {
   practice_drafts: 'attempts',
   paper_drafts: 'paper_drafts',
   document_drafts: 'document_drafts',
+  question_drafts: 'question_drafts',
   ai_drafts: 'ai_workspace_drafts',
   attempt_history: 'attempts',
   question_history: 'question_history',
@@ -114,16 +115,17 @@ export function cleanupPlan(
           .select('id')
           .select([
             x.field<string>('data', date).as('date'),
-            x
-              .field<string | null>(
-                'data',
-                kind === 'unused_assets'
-                  ? 'filename'
-                  : kind === 'practice_drafts' || kind === 'attempt_history'
-                    ? 'paperTitle'
-                    : 'title',
-              )
-              .as('title'),
+            (kind === 'question_drafts'
+              ? x.nestedField<string | null>('data', ['state', 'form', 'title'])
+              : x.field<string | null>(
+                  'data',
+                  kind === 'unused_assets'
+                    ? 'filename'
+                    : kind === 'practice_drafts' || kind === 'attempt_history'
+                      ? 'paperTitle'
+                      : 'title',
+                )
+            ).as('title'),
             db.logicalBytes('data').as('bytes'),
             db.recordFingerprint('data').as('signature'),
           ])

@@ -1,4 +1,4 @@
-import { inspectRubricFormat } from './rubric-format.js';
+import { inspectRubricFormat } from '../../shared/questions/rubric-format.js';
 import { createHash } from 'node:crypto';
 import { existsSync, statfsSync } from 'node:fs';
 import { mkdir, readFile, writeFile, copyFile, unlink } from 'node:fs/promises';

@@ -6,6 +6,10 @@ import remarkMath from 'remark-math';
 export interface RubricFormatIssue {
   code: string;
   message: string;
+  /** One-based line and zero-based UTF-16 offset in the original Markdown. */
+  line?: number;
+  offset?: number;
+  source?: string;
 }
 interface Node {
   type: string;
@@ -18,10 +22,10 @@ const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
 const protectedTypes = new Set(['inlineCode', 'math', 'inlineMath']);
 const nodeText = (node: Node): string => node.value ?? (node.children || []).map(nodeText).join('');
 const bareLabel =
-  /^(?:词性|主要释义|中文释义|英文释义|English definition|参考答案|答案说明|必要核对点|原题标准)\s*[：:]$/;
+  /^(?:词性|主要释义|中文释义|英文释义|English definition|参考答案|答案说明|必要核对点|必要要点|评分点|得分点|正确|部分正确|错误|错误及边界|可接受表达|可接受等价表达|判题要求|判题标准|原题标准)\s*[：:]$/;
 
-/** Structural validation of generated rubric Markdown, not a factual/semantic
- * rubric score. Code, tables and math are kept out of prose heuristics. An
+/** Shared structural validation for authoring, online scans and maintenance.
+ * Code, tables and math are kept out of prose heuristics. An
  * absent rubric is valid; this helper does not create a new required field. */
 export function inspectRubricFormat(markdown: string): RubricFormatIssue[] {
   if (!markdown.trim()) return [];
@@ -32,7 +36,21 @@ export function inspectRubricFormat(markdown: string): RubricFormatIssue[] {
     const key = `${code}:${line || 0}`;
     if (!seen.has(key)) {
       seen.add(key);
-      issues.push({ code, message: `${message}${line ? `（第${line}行）` : ''}` });
+      const offset = node.position?.start.offset;
+      const source =
+        offset === undefined
+          ? undefined
+          : markdown.slice(
+              offset,
+              Math.min(node.position?.end.offset ?? offset + 600, offset + 600),
+            );
+      issues.push({
+        code,
+        message: `${message}${line ? `（第${line}行）` : ''}`,
+        ...(line ? { line } : {}),
+        ...(offset === undefined ? {} : { offset }),
+        ...(source ? { source } : {}),
+      });
     }
   };
   const visit = (node: Node, parent?: Node) => {

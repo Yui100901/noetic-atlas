@@ -9,7 +9,7 @@ const h = await startBrowserHarness({
   setup: String.raw`
 const {learningSeed,fixtureQuestion}=await import('./tests/fixtures/learning-seed.ts');
 const {buildSubjectiveRubric}=await import('./scripts/content/grading-rubrics.ts');
-const {inspectRubricFormat}=await import('./scripts/content/rubric-format.ts');
+const {inspectRubricFormat}=await import('./shared/questions/rubric-format.ts');
 const fence=String.fromCharCode(96).repeat(3);
 const seed=learningSeed();
 const sources=[

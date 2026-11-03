@@ -29,6 +29,8 @@ export interface SystemSettings {
   maxQuickDrafts: number;
   maxPaperDrafts: number;
   maxDocumentDrafts: number;
+  maxQuestionDrafts: number;
+  maxQuestionRevisions: number;
   examDurationMinutes: number;
   /** Zero preserves all submitted attempts. */
   maxHistoryPerPaper: number;
@@ -51,7 +53,7 @@ export interface SystemSettings {
 export const DEFAULT_SETTINGS: SystemSettings = {
   id: 'system', updatedAt: '1970-01-01T00:00:00.000Z', theme: 'green',
   maxDraftsPerPaper: 3, maxQuickDrafts: 3,
-  maxPaperDrafts: 3, maxDocumentDrafts: 3, examDurationMinutes: 120,
+  maxPaperDrafts: 3, maxDocumentDrafts: 3, maxQuestionDrafts: 3, maxQuestionRevisions: 20, examDurationMinutes: 120,
   maxHistoryPerPaper: 0, maxQuickHistory: 0, maxQuestionHistory: 10,
   randomQuestionCount: 20, scoringEnabledByDefault: false,
   randomTotalPoints: 100, objectivePercent: 60,
@@ -62,4 +64,4 @@ export const DEFAULT_SETTINGS: SystemSettings = {
   dailyPush: { ...DEFAULT_DAILY_PUSH, categoryIds: [] },
 };
 
-export interface RetentionPreview { focusDrafts?:number;focusHistory?:number; drafts: number; history: number; total: number; authoring?: number; questionHistory?: number; documentDrafts?: number }
+export interface RetentionPreview { focusDrafts?:number;focusHistory?:number; drafts: number; history: number; total: number; authoring?: number; questionHistory?: number; documentDrafts?: number; questionDrafts?: number; questionRevisions?: number }

@@ -101,6 +101,7 @@ export function PaperPreviewDialog({
             label={`${id} 本集判题要求`}
             value={controls.questionGradingRequirements[id]}
             disabled={busy}
+            mathEnabled={question.mathEnabled ?? root.mathEnabled}
             onChange={(value) => controls.onRequirement(id, value)}
           />
         )}

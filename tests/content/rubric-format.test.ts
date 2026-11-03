@@ -1,8 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inspectRubricFormat } from '../../scripts/content/rubric-format.js';
+import { inspectRubricFormat } from '../../shared/questions/rubric-format.js';
 
 const codes = (source: string) => inspectRubricFormat(source).map((issue) => issue.code);
+
+test('shared rubric diagnostics locate exact original Markdown including CRLF and bounded evidence', () => {
+  const text = '### 标准\r\n\r\n1. 必须说明回滚。\r\n2. ...';
+  const issue = inspectRubricFormat(text).find((item) => item.code === 'punctuation_only_prose')!;
+  assert.equal(issue.line, 4);
+  assert.equal(issue.offset, text.indexOf('...'));
+  assert.equal(issue.source, '...');
+  assert.ok(
+    inspectRubricFormat('<span>' + '字'.repeat(1000) + '</span>').every(
+      (item) => (item.source?.length || 0) <= 600,
+    ),
+  );
+});
 
 test('rubric format gate catches actual empty numbered or bullet items and unnamed nested lists', () => {
   assert.ok(codes('### 必要核对点\n1.\n2. 有文字').includes('empty_list_item'));
@@ -36,6 +49,7 @@ test('punctuation placeholders and detached value labels are rejected without co
   assert.ok(codes('1. 拼音：huànnànyǔgòng\n2. ...').includes('punctuation_only_prose'));
   assert.ok(codes('1. 词性：\n2. 动词').includes('empty_label'));
   assert.ok(codes('1. 中文释义：').includes('empty_label'));
+  assert.ok(codes('- 正确：\n- 部分正确：\n- 错误及边界：').includes('empty_label'));
   assert.deepEqual(
     inspectRubricFormat(
       '1. 标识符必须是 `...`，不是 `..`。\n2. $+$ 与 $-$ 的作用不同。\n\n| 记号 | 意义 |\n| --- | --- |\n| ... | 可变参数 |\n| ; | 结束符 |\n\n```text\n...\n1.\n词性：\n```',

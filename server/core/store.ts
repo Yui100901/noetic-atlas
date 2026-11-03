@@ -11,7 +11,7 @@ import type { DocumentDraft } from '../../shared/models/document-drafts.js';
 import { enrichQuestionsWithFeedback } from '../modules/quality-feedback/service.js';
 
 export type Entity = Domain | Category | Tag | Question | QuestionBank | DocumentRecord | StudyState | Paper | Attempt;
-export const tables = ['document_versions', 'domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'review_cards', 'review_events', 'question_banks', 'settings', 'assets', 'paper_drafts', 'document_drafts', 'ai_workspace_drafts', 'daily_pushes', 'question_feedback', 'quality_scans', 'quality_issues', 'focus_sessions','learning_days','learning_task_results'] as const;
+export const tables = ['document_versions', 'domains', 'categories', 'tags', 'questions', 'documents', 'papers', 'attempts', 'study', 'study_parts', 'learning_results', 'question_history', 'reviews', 'review_cards', 'review_events', 'question_banks', 'settings', 'assets', 'paper_drafts', 'document_drafts', 'question_drafts', 'question_revisions', 'ai_workspace_drafts', 'daily_pushes', 'question_feedback', 'quality_scans', 'quality_issues', 'focus_sessions','learning_days','learning_task_results'] as const;
 export type Table = typeof tables[number];
 export const now = () => new Date().toISOString();
 export const nextStamp = (previous?: string) => new Date(Math.max(Date.now(), previous ? Date.parse(previous) + 1 : 0)).toISOString();

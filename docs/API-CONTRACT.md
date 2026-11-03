@@ -377,3 +377,22 @@ learning_days保存生成时的目标与任务快照，learning_task_results以�
 单题`/api/ai/explain`与临时作答`/api/ai/grade`支持`partId`以及成对提供的`paperId、paperVersion`。题库请求读取当前原题，题集请求仅从指定题集快照读取题干和参考内容，不接受浏览器提交任意参考答案。版本不符返回`AI_PAPER_VERSION_CONFLICT`（409），非本集题目返回404。生成后、应用前会复核原题及题集版本；小题内容保留公共材料，笔记写入原题对应小题。
 
 完成记录的可选`readingSource`包含`questionId、questionVersion、partId?、paperId?、paperVersion?`。阅读面板仅自动使用来源匹配的近期解析；无来源的旧分析仍可在处理历史查看。临时评价不会创建作答记录，也不能应用整卷分值；写入笔记沿用显式确认与版本校验。
+
+## 题目编辑草稿与内容修订
+
+| 接口 | 作用 |
+| --- | --- |
+| `GET /api/question-drafts?questionId=&page=1&pageSize=10` | 指定题目或省略questionId的新题上下文，返回分页摘要；不包含完整表单 |
+| `POST /api/question-drafts` | `{questionId:null或题号,baseUpdatedAt:null或源版本,state:{form,sources,reason}}`，允许未完成表单 |
+| `GET /api/question-drafts/:id` | 按需读取一份完整草稿及源版本冲突标记 |
+| `PUT /api/question-drafts/:id` | `{expectedUpdatedAt,state,baseUpdatedAt?}`覆盖同一草稿，显式重定基线仍核对当前源版本 |
+| `DELETE /api/question-drafts/:id` | `{expectedUpdatedAt}`删除指定版本草稿 |
+| `GET /api/questions/:id/revisions?page=1&pageSize=10` | 按每题修订序号倒序的摘要页，无完整历史正文 |
+| `GET /api/questions/:id/revisions/:revisionId` | 历史作者内容及与当前原题的字段差异 |
+| `POST /api/questions/:id/revisions/:revisionId/restore` | `{expectedUpdatedAt,confirmed:true,reason?}`严格校验后保存为新修订，保留当前身份及审核状态 |
+
+普通题目POST／PUT可附`revisionReason`及配对的`draftId`／`draftUpdatedAt`，正式写入与当前草稿消费在同一事务内完成。草稿版本、上下文或源版本冲突拒绝覆盖；首次旧题编辑捕获原基线，正文无实质变化不生成重复修订。状态审核不属于内容修订。
+
+维护表为`question_drafts`、`question_revisions`，完整JSON对应`questionDrafts`、`questionRevisions`，普通内容分享不带维护记录。默认每个编辑上下文3份草稿、每题20份修订，由`maxQuestionDrafts`／`maxQuestionRevisions`控制。配置预览与导入指纹包含这两表，调低上限的确认结果含`questionDrafts?`／`questionRevisions?`数量。
+
+草稿仅保存安全、有界的作者字段，不能夹带身份时间戳、学习状态或反馈字段；恢复和正式保存使用完整题型及资源校验。损坏源题的`baseline`可保留无效答案或已丢失附件作为只读证据，不承诺该内容可直接恢复；其他修订、当前题和草稿仍严格检查附件引用。所有版本都参与现存附件的引用保护。

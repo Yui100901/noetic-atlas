@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { inspectRubricFormat } from '../../scripts/content/rubric-format.js';
+import { inspectRubricFormat } from '../../shared/questions/rubric-format.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../../server/core/store.js';

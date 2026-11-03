@@ -1,3 +1,4 @@
+import { captureQuestionRevision } from '../questions/revisions.js';
 import {explainInputSchema,gradeInputSchema,resolveReadingSource} from './reading-source.js';
 import {literalMathMarkdown} from '../../../shared/math/markdown.js';
 import {validateDocumentCitations} from '../library/sources.js';
@@ -345,7 +346,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const item = (run.result as AiReviewResult).items.find(i => i.questionId === input.questionId); if (!item?.suggestedChanges) fail(400, 'AI_NO_CORRECTION', '本题没有可应用的结构化修订');
     return store.transaction(() => {
       requireSameQuestions(store, run._context, [input.questionId]); const old = store.require<Question>('questions', input.questionId); if (old.status !== 'pending') fail(409, 'AI_QUESTION_NOT_PENDING', '只能修改待审核题目');
-      const candidate = parse(questionSchema, { ...item!.suggestedChanges, documentLinks:old.documentLinks, id: old.id, categoryIds: old.categoryIds, tagIds: old.tagIds, status: 'pending', createdAt: old.createdAt, updatedAt: nextStamp(old.updatedAt) }); store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store,candidate,true); store.put('questions', old.id, candidate);
+      const candidate = parse(questionSchema, { ...item!.suggestedChanges, documentLinks:old.documentLinks, id: old.id, categoryIds: old.categoryIds, tagIds: old.tagIds, status: 'pending', createdAt: old.createdAt, updatedAt: nextStamp(old.updatedAt) }); store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store,candidate,true); captureQuestionRevision(store,old,candidate as Question,'ai_review','应用AI待审核题修订'); store.put('questions', old.id, candidate);
       run._context.questionVersions[old.id] = candidate.updatedAt!; run.correctedQuestionIds = [...new Set([...(run.correctedQuestionIds || []), old.id])]; run.appliedAt = now(); putRun(store, run); return { question: store.question(old.id), run: publicRun(run) };
     });
   });

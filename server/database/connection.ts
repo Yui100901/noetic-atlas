@@ -55,6 +55,8 @@ export class DatabaseConnection {
       ['documents_archived_updated_idx','documents',['_archived','updatedAt']],
       ['document_versions_document_idx','document_versions',['documentId','versionId']],
       ['document_drafts_context_updated_idx','document_drafts',['documentId','updatedAt']],
+      ['question_drafts_context_updated_idx','question_drafts',['questionId','updatedAt']],
+      ['question_revisions_context_sequence_idx','question_revisions',['questionId','sequence']],
       ['ai_workspace_drafts_context_updated_idx','ai_workspace_drafts',['kind','contextId','updatedAt']],
       ['questions_type_title_idx','questions',['type','title']],
       ['question_feedback_question_status_idx','question_feedback',['questionId','status']],

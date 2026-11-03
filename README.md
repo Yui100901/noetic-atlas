@@ -64,7 +64,9 @@ Windows 可双击 `启动学习站.cmd`：首次或源码变化时构建，未�
 
 发布版本支持`x.y`和`x.y.z`，例如`1.6`、`1.5.1`，也可附`-rc.1`等预发布段；保留所选段数用于版本显示及各端包名。未指定`--version`时，交互终端会询问版本，回车沿用当前值；非交互运行沿用当前版本。正式执行会同步`package.json`与`package-lock.json`的版本，成功后持久保留；检查或构建失败时尽力回滚，遇到外部编辑则不覆盖并提示核对。Android缺省修订号按0计算，`1.6`和`1.6.0`对应同一`versionCode`，升级时须提高版本。`--dry-run --version 1.6`只预览，不写版本；`clean`不询问版本，也不接受`--version`。脚本不会自动commit、打Git标签或发布GitHub Release。
 
-当前软件版本以`package.json`为准；[1.5.0更新记录](./docs/版本说明-1.5.0.md)作为历史说明保留。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
+当前版本为`2.0`，详见[2.0更新记录](./docs/版本说明-2.0.md)；[1.5.0更新记录](./docs/版本说明-1.5.0.md)作为历史说明保留。实际版本以`package.json`为准。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。
+
+题库导出独立于软件构建。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个独立ZIP；默认目录为`artifacts/domain-packs/v版本/`，当前为`artifacts/domain-packs/v2.0/`。目录已存在时拒绝覆盖，可用`-- --output 新目录`另存。软件包保持空题库，领域ZIP作为独立附件发布；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
 
 Android 首次正式发布运行 `npm run android:signing:init` 创建本地签名，之后正式打包自动使用；请独立备份私钥和密码，详见[Android 构建与签名](./docs/发布与部署.md#android-构建与签名)。
 

@@ -21,6 +21,9 @@ function card(value: unknown) {
       kind: 'vocabulary' as const,
       target: text(vocabulary.headword),
       answers: strings(vocabulary.acceptedAnswers),
+      reverseEnabled: vocabulary.reverseEnabled !== false,
+      trim: vocabulary.trim !== false,
+      caseSensitive: vocabulary.caseSensitive === true,
     };
   if (text(concept.term))
     return {
@@ -28,6 +31,9 @@ function card(value: unknown) {
       kind: 'concept' as const,
       target: text(concept.term),
       answers: strings(concept.acceptedAnswers),
+      reverseEnabled: true,
+      trim: true,
+      caseSensitive: false,
     };
   return null;
 }
@@ -61,6 +67,7 @@ export function reverseCardGradingTitle(value: unknown): string {
 export function reverseCardGradingRequirements(value: unknown): string {
   const data = card(value);
   if (!data) return '';
+  if (data.question.type !== 'fill_blank' && !data.reverseEnabled) return '本词卡已关闭逆向练习。';
   const { question, target, answers, kind } = data;
   const blanks =
     question.type === 'fill_blank' && Array.isArray(question.blanks)
@@ -69,7 +76,7 @@ export function reverseCardGradingRequirements(value: unknown): string {
           trim: blank.trim === true,
           caseSensitive: blank.caseSensitive === true,
         }))
-      : [{ answers, trim: true, caseSensitive: false }];
+      : [{ answers, trim: data.trim, caseSensitive: data.caseSensitive }];
   // Before submission, public blank snapshots omit aliases. Do not substitute
   // live-source rules for a hidden or incomplete answer snapshot.
   if (!blanks.length || blanks.some((blank) => !blank.answers.length)) return '';

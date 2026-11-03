@@ -11,6 +11,7 @@ import {buildApp} from '../../server/index.js';
 
 const proposal=(changes:any,id='one',extra:any={})=>({id,title:'逐项修改建议',reason:'明确表述定义及适用条件。',confidence:'high',changes,...extra});
 const output=(suggestions:any[])=>({summary:'核对当前草稿和相关质量记录。',suggestions,warnings:[]});
+const lexicalCard=()=>({language:'en' as const,headword:'atlas',meaningPrompt:'收录多幅地理图的图书',acceptedAnswers:['atlas'],pronunciations:[]});
 async function fixture(t:test.TestContext){
  const store=new Store(':memory:');
  for(const domain of ['cs','geo']){store.put('domains',domain,{id:domain,name:domain,description:'',sortOrder:0});store.put('categories',domain+'-cat',{id:domain+'-cat',name:domain,domainId:domain,parentId:null,description:'',sortOrder:0});store.put('tags',domain+'-tag',{id:domain+'-tag',name:domain,domainId:domain,kind:'topic',description:'',color:'#123456'});}
@@ -103,4 +104,15 @@ test('AI can propose detailed subjective rubrics without changing the source and
  const f=await fixture(t);f.handler(material=>{assert.equal(material.question.gradingRequirements,'旧标准');return output([proposal({gradingRequirements:'必须说明整体提交、失败回滚及等价表达；仅说明成功结果为部分正确。'})]);});
  const response=await f.call({question:{...f.draft(),gradingRequirements:'旧标准'}});assert.equal(response.statusCode,200,response.body);assert.match(response.json().result.suggestions[0].changes.gradingRequirements,/失败回滚/);assert.equal(f.store.require<any>('questions','Q').gradingRequirements,undefined);
  f.put('Q',{type:'true_false',correctAnswers:['true']});f.handler(()=>output([proposal({gradingRequirements:'强行添加客观题标准'})]));const invalid=await f.call();assert.equal(invalid.statusCode,502);assert.equal(f.store.require<any>('questions','Q').gradingRequirements,undefined);
+});
+
+test('AI vocabulary proposals preserve identity, are independently validated and never write the source',async t=>{
+ const f=await fixture(t),vocabulary=lexicalCard();f.put('Q',{title:'atlas',vocabulary,answerMarkdown:'地图集'});
+ const before=f.store.require<any>('questions','Q');
+ f.handler(material=>{assert.equal(material.question.vocabulary.headword,'atlas');return output([proposal({vocabulary:{...vocabulary,partOfSpeech:'名词 n.',meaningPrompt:'将多幅地图编排成册的图书',caseSensitive:true,trim:true,reverseEnabled:true}})]);});
+ const response=await f.call();assert.equal(response.statusCode,200,response.body);assert.equal(response.json().result.suggestions[0].changes.vocabulary.caseSensitive,true);assert.deepEqual(f.store.require('questions','Q'),before);
+ for(const changed of [{headword:'dictionary'},{language:'ja'},{meaningPrompt:'atlas 地图集'}]){
+  f.handler(()=>output([proposal({vocabulary:{...vocabulary,...changed}})]));const invalid=await f.call();assert.equal(invalid.statusCode,502,invalid.body);assert.deepEqual(f.store.require('questions','Q'),before);
+ }
+ f.put('Q',{answerMarkdown:'普通问题'});f.handler(()=>output([proposal({vocabulary})]));assert.equal((await f.call()).statusCode,502);
 });

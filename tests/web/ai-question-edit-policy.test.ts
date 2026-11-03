@@ -106,3 +106,13 @@ test('rubric edits can be applied and undone while later answer changes invalida
  const undone=undoAiQuestionEditSuggestion(result.value,result.receipt);assert.equal(undone.ok,true);if(undone.ok)assert.equal(undone.value.gradingRequirements,undefined);
  const changed={...base,answerMarkdown:'后来修改的答案'};const denied=applyAiQuestionEditSuggestion(changed,base,suggestion('stale',{gradingRequirements:'基于旧答案的标准'}));assert.equal(denied.ok,false);if(!denied.ok)assert.equal(denied.code,'field_conflict');
 });
+
+test('word-card proposals apply and undo without identity changes or overwriting newer meanings',()=>{
+ const vocabulary={language:'en' as const,headword:'atlas',meaningPrompt:'收录地理图的图书',acceptedAnswers:['atlas'],pronunciations:[]};
+ const base=question({vocabulary}),proposal=suggestion('lexical',{vocabulary:{...vocabulary,meaningPrompt:'由多幅地图编排而成的图书'}});
+ const first=applied(base,base,proposal);assert.equal(first.value.vocabulary!.meaningPrompt,'由多幅地图编排而成的图书');assert.deepEqual(undone(first.value,first.receipt),base);
+ assert.equal(applyAiQuestionEditSuggestion({...base,answerMarkdown:'人工补充新义项'},base,proposal).ok,false);
+ assert.equal(undoAiQuestionEditSuggestion({...first.value,vocabulary:{...first.value.vocabulary!,caseSensitive:true}},first.receipt).ok,false);
+ for(const bad of [{...vocabulary,headword:'map'},{...vocabulary,meaningPrompt:'atlas的意思'},{...vocabulary,unknown:'field'}])assert.equal(applyAiQuestionEditSuggestion(base,base,suggestion('bad-vocabulary',{vocabulary:bad})).ok,false);
+ assert.equal(applyAiQuestionEditSuggestion(question(),question(),proposal).ok,false);
+});

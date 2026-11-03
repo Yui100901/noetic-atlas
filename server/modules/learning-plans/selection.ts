@@ -95,10 +95,19 @@ export function selectPlanTasks(
               .select([
                 x.nestedField<string | null>('data', ['vocabulary', 'language']).as('word'),
                 x.nestedField<string | null>('data', ['concept', 'term']).as('concept'),
+                x
+                  .nestedField<number | null>('data', ['vocabulary', 'reverseEnabled'])
+                  .as('reverseEnabled'),
               ])
               .where(x.idInJson('id', ids)),
           )
-          .map((row) => [row.id, !!(row.word || row.concept)])
+          .map((row) => [
+            row.id,
+            {
+              structured: !!(row.word || row.concept),
+              reverseEnabled: !row.word || row.reverseEnabled !== 0,
+            },
+          ])
       : [],
   );
   const normalize = (v: { questionId: string; partId?: string | null; direction?: string }) =>
@@ -108,7 +117,7 @@ export function selectPlanTasks(
       direction:
         v.direction === 'meaning_to_word'
           ? 'meaning_to_word'
-          : !v.partId && flags.get(v.questionId)
+          : !v.partId && flags.get(v.questionId)?.structured
             ? 'word_to_meaning'
             : 'standard',
     });
@@ -202,7 +211,7 @@ export function selectPlanTasks(
           : [{ id: '', type: q.type as Exclude<QuestionType, 'group'>, title: q.title }];
       for (const part of parts) {
         const partId = part.id || undefined,
-          structured = !partId && flags.get(q.id),
+          structured = !partId && flags.get(q.id)?.structured,
           directions = structured
             ? goal.direction === 'both'
               ? ['word_to_meaning', 'meaning_to_word']
@@ -213,6 +222,7 @@ export function selectPlanTasks(
               ? []
               : ['standard'];
         for (const direction of directions) {
+          if (direction === 'meaning_to_word' && !flags.get(q.id)?.reverseEnabled) continue;
           const identity = {
               questionId: q.id,
               ...(partId ? { partId } : {}),

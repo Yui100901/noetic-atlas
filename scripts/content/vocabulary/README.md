@@ -10,8 +10,10 @@
 
 日语采用原卡 JMdict 的常用假名读音，保留多读音。罗马音为赫本式规则转写：shi/chi/tsu/fu、拗音、促音、拨音 n'；长音符 ー 标 macron，ou/oo 等假名序列保留拼写以避免凭空推断音节/词素边界。它是辅助转写，不是音高、重音或字典音频核验结果；参照 [ALA-LC Japanese Romanization Table](https://www.loc.gov/catdir/cpso/romanization/japanese.pdf)。不把自动转写称为源词典自带罗马音。
 
-`meaningPrompt` 独立于原解析，只保留必要释义，不包含词头、假名、罗马音、IPA、例句或关联词。题集设置 `practiceKind: vocabulary` 后，在开始练习或考试时选择顺向或逆向；单题页不设置方向。逆向将本次选中词卡转换为引用原题 ID 的填空卷，按原词头及原常用假名进行大小写无关、去首尾空白的字面匹配，不把近义词自动视作答案。交卷前，API 白名单不返回词卡结构、来源或参考答案。学习历史仍归原题；不另外复制一套词卡。
+`meaningPrompt` 独立于原解析，只保留必要释义，不包含词头、假名、罗马音、IPA、例句或关联词。题集设置 `practiceKind: vocabulary` 后，在开始练习或考试时选择顺向或逆向；单题页不设置方向。逆向将本次选中词卡转换为引用原题 ID 的填空卷，按词卡允许答案及其大小写、首尾空白配置进行字面匹配（默认忽略大小写、去首尾空白），不把近义词自动视作答案。交卷前，API 白名单不返回词卡结构、来源或参考答案。学习历史仍归原题；不另外复制一套词卡。
 
 现有自动生成词表可运行 `npx tsx scripts/content/vocabulary/enable-wordlist-papers.ts --database data/noetic-atlas.sqlite` 预检，显式加 `--apply` 后先备份，再设置词汇题集属性并增加版本。只处理 `wordlist-english-NNN`、`wordlist-japanese-NNN` 且成员身份和结构均有效的词表，不改归档状态、题目快照或历史作答。手建题集请在编辑器自行设置用途。
 
 运行 `node --import tsx --test tests/practice/vocabulary-set-practice.test.ts tests/practice/history-direction.test.ts` 验证整集方向、防泄题、客观判定、原题统计、迁移、分享与导出。运行 `python scripts/content/vocabulary/test_romanization.py` 验证假名转写规则。内容补充仍应根据来源和学习反馈修订；源数据许可不替代内容准确性核验。
+
+词卡专用编辑、匹配规则和数据库批量规范化统一见[开发与维护](../../../docs/开发与维护.md#语言词卡维护)、[使用说明书](../../../docs/使用说明书.md#下载导入与审核)。

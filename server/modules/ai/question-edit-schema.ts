@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {blankSchema,id,questionSchema,gradingRequirementsSchema} from '../../core/validation.js';
+import {blankSchema,id,questionSchema,gradingRequirementsSchema,vocabularySchema} from '../../core/validation.js';
 
 const ids=z.array(id).max(500).refine(values=>new Set(values).size===values.length,'引用不能重复');
 export const aiQuestionEditChangesSchema=z.object({
@@ -10,7 +10,7 @@ export const aiQuestionEditChangesSchema=z.object({
  gradingRequirements:gradingRequirementsSchema.optional(),
  options:z.array(z.object({key:z.string().min(1).max(20),text:z.string().max(500_000)}).strict()).max(26).optional(),
  correctAnswers:z.array(z.string().max(20)).max(26).optional(),blanks:z.array(blankSchema).max(30).optional(),
- categoryIds:ids.optional(),tagIds:ids.optional(),
+ categoryIds:ids.optional(),tagIds:ids.optional(),vocabulary:vocabularySchema.optional(),
 }).strict().refine(value=>Object.keys(value).length>0,'每条建议须包含可应用的字段');
 export const aiQuestionEditResultSchema=z.object({
  summary:z.string().min(1).max(4000),suggestions:z.array(z.object({

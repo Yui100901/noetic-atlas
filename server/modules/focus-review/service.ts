@@ -236,7 +236,9 @@ export function createFocus(
             : 'standard');
         if (
           direction === 'meaning_to_word' &&
-          ((!question.vocabulary && !question.concept) || leaf.partId)
+          ((!question.vocabulary && !question.concept) ||
+            question.vocabulary?.reverseEnabled === false ||
+            leaf.partId)
         )
           continue;
         selected.push({
@@ -274,7 +276,12 @@ export function createFocus(
       const direction =
         input.direction ||
         (question.vocabulary || question.concept ? 'word_to_meaning' : 'standard');
-      if (direction === 'meaning_to_word' && !question.vocabulary && !question.concept) continue;
+      if (
+        direction === 'meaning_to_word' &&
+        ((!question.vocabulary && !question.concept) ||
+          question.vocabulary?.reverseEnabled === false)
+      )
+        continue;
       for (const leaf of flattenQuestions([question])) {
         selected.push({
           questionId: id,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Store } from '../../server/core/store.js';
 import { questionSchema } from '../../server/core/validation.js';
 import type { Question, VocabularyData } from '../../shared/models/types.js';
+import { normalizeVocabularyData } from '../../shared/questions/vocabulary.js';
 import { planVocabularySupplement, applyExpansion } from '../../scripts/content/expansion-2026-10/apply-expansion.js';
 
 const vocabulary: VocabularyData = { language: 'en', headword: 'abandon', meaningPrompt: '放弃；遗弃', acceptedAnswers: ['abandon'], pronunciations: [{ label: '美式', ipa: '/əˈbændən/', sourceLabel: 'Test source', sourceUrl: 'https://example.org/readings', license: 'MIT', method: 'source' }] };
@@ -23,7 +24,7 @@ test('vocabulary maintenance preserves user text, status, timestamps and study; 
   const updated = store.require<Question>('questions', question.id!);
   const { vocabulary: added, sourceRefs, ...original } = updated;
   const { sourceRefs: oldSources, ...old } = question;
-  assert.deepEqual(original, old); assert.deepEqual(added, vocabulary); assert.equal(sourceRefs.length, oldSources.length + 1);
+  assert.deepEqual(original, old); assert.deepEqual(added, normalizeVocabularyData(vocabulary)); assert.equal(sourceRefs.length, oldSources.length + 1);
   assert.deepEqual(store.study(question.id!), study);
   assert.equal(applyExpansion(store, [], patch()).vocabularyUnchanged, 1);
 });
@@ -34,7 +35,7 @@ test('identity collisions, literal answer hints, duplicate IDs and existing meta
   assert.deepEqual(store.require<Question>('questions', question.id!), question);
   applyExpansion(store, [], patch());
   assert.throws(() => applyExpansion(store, [], patch({ ...vocabulary, meaningPrompt: '另一种个人提示' })), /differs/);
-  assert.deepEqual(store.require<Question>('questions', question.id!).vocabulary, vocabulary);
+  assert.deepEqual(store.require<Question>('questions', question.id!).vocabulary, normalizeVocabularyData(vocabulary));
 });
 
 test('Japanese identity accepts the original fixed card suffix and rejects a different word', t => {

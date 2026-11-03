@@ -23,7 +23,7 @@ const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
 const eventOrder = (a: ReviewEvent, b: ReviewEvent) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.id.localeCompare(b.id);
 const identityOf = (card: ReviewIdentity): ReviewIdentity => ({ questionId: card.questionId, ...(card.partId ? { partId: card.partId } : {}), direction: card.direction });
 
-interface SourceHeader { id: string; status: string; type: string; hasVocabulary: boolean; hasConcept: boolean; hasLegacyStandard: boolean; leaves: Array<{ partId?: string; type: string }> }
+interface SourceHeader { id: string; status: string; type: string; hasVocabulary: boolean; hasConcept: boolean; reverseEnabled: boolean; hasLegacyStandard: boolean; leaves: Array<{ partId?: string; type: string }> }
 function sourceHeaders(store: Store, ids: string[]): Map<string, SourceHeader> {
   if (!ids.length) return new Map();
   const d = store.database, x = d.expressions;
@@ -35,9 +35,10 @@ function sourceHeaders(store: Store, ids: string[]): Map<string, SourceHeader> {
   return new Map(d.all(d.query.selectFrom('questions').select('id').select([x.field<string>('data', 'status').as('status'), x.field<string>('data', 'type').as('type'), x.questionLearningLeaves('data').as('leaves')])
     .select(eb => eb.case().when(eb.and([eb(x.field('data', 'vocabulary'), 'is', null), eb(x.field('data', 'concept'), 'is', null)])).then(0).else(1).end().as('hasVocabulary'))
     .select(eb=>eb.case().when(x.field('data','concept'),'is',null).then(0).else(1).end().as('hasConcept'))
-    .where(x.idInJson('id', wanted))).map(row => [row.id, { ...row, hasVocabulary: !!row.hasVocabulary, hasConcept:!!row.hasConcept, hasLegacyStandard:legacy.has(row.id), leaves: JSON.parse(row.leaves) }]));
+    .select(x.nestedField<number | null>('data',['vocabulary','reverseEnabled']).as('reverseEnabled'))
+    .where(x.idInJson('id', wanted))).map(row => [row.id, { ...row, hasVocabulary: !!row.hasVocabulary, hasConcept:!!row.hasConcept, reverseEnabled:row.reverseEnabled!==0, hasLegacyStandard:legacy.has(row.id), leaves: JSON.parse(row.leaves) }]));
 }
-function sourceIdentity(store: Store, questionId: string, partId?: string, direction?: ReviewDirection, supplied?: Map<string, SourceHeader>): ReviewIdentity {
+function sourceIdentity(store: Store, questionId: string, partId?: string, direction?: ReviewDirection, supplied?: Map<string, SourceHeader>, allowDisabledReverse = false): ReviewIdentity {
   const question = (supplied || sourceHeaders(store, [questionId])).get(questionId);
   if (!question || question.status !== 'published') return fail(404, 'REVIEW_SOURCE_UNAVAILABLE', '题目已删除、归档或未发布，无法安排复习');
   if (question.type === 'group' ? !partId || !question.leaves.some(part => part.partId === partId) : partId !== undefined) fail(400, 'REVIEW_PART_INVALID', '请选择有效的小题；组合题按小题独立安排复习');
@@ -45,6 +46,7 @@ function sourceIdentity(store: Store, questionId: string, partId?: string, direc
   const resolved = question.hasConcept && question.hasLegacyStandard && !partId && forward ? 'standard'
     : question.hasVocabulary && (!direction || direction === 'standard') ? 'word_to_meaning' : direction || 'standard';
   if (resolved !== 'standard' && (!question.hasVocabulary || partId)) fail(400, 'REVIEW_DIRECTION_INVALID', '只有词汇或概念卡可分别记录正向与逆向复习');
+  if (resolved === 'meaning_to_word' && !question.reverseEnabled && !allowDisabledReverse) fail(400, 'VOCABULARY_REVERSE_DISABLED', '本词卡已关闭逆向练习，请选择正向复习');
   return { questionId, ...(partId ? { partId } : {}), direction: resolved };
 }
 function eventsFor(store: Store, cardId: string): ReviewEvent[] {
@@ -110,7 +112,9 @@ export function removeReviewSources(store:Store,ids:ReadonlySet<string>){
 }
 
 export function reviewCardView(store: Store, input: { questionId: string; partId?: string; direction?: ReviewDirection; attemptId?: string; leafId?: string }, at = new Date()): ReviewCardView {
-  const identity = sourceIdentity(store, input.questionId, input.partId, input.direction), cardId = reviewCardId(identity);
+  const headers = sourceHeaders(store, [input.questionId]);
+  const identity = sourceIdentity(store, input.questionId, input.partId, input.direction, headers, true), cardId = reviewCardId(identity);
+  const reverseDisabled = identity.direction === 'meaning_to_word' && !headers.get(input.questionId)!.reverseEnabled;
   const card = store.get<ReviewCard>('review_cards', cardId) || null, state = card || makeCard(store, identity, at), parameters = getSettings(store).reviewScheduling;
   const events = eventsFor(store, cardId), latest = events.at(-1);
   let memory = state.memory, reviewAt = at, previewParameters = parameters;
@@ -123,13 +127,13 @@ export function reviewCardView(store: Store, input: { questionId: string; partId
     reviewAt = new Date(attempt.submittedAt!); previewParameters = original?.parameters || parameters;
     memory = replayReviewCard(state, events.filter(event => event.id !== eventId && (Date.parse(event.occurredAt) < reviewAt.getTime() || Date.parse(event.occurredAt) === reviewAt.getTime() && event.id.localeCompare(eventId) < 0))).memory;
   }
-  const preview = parameters.strategy === 'fsrs' ? REVIEW_RATINGS.map(rating => {
+  const preview = parameters.strategy === 'fsrs' && !reverseDisabled ? REVIEW_RATINGS.map(rating => {
     const next = reviewMemory(memory, rating, reviewAt, previewParameters, cardId + ':' + (input.attemptId ? attemptReviewId(input.attemptId, input.leafId!, identity.direction) : 'preview'));
     return { rating, label: REVIEW_RATING_LABELS[rating], dueAt: next.due, intervalSeconds: Math.max(0, Math.round((Date.parse(next.due) - reviewAt.getTime()) / 1000)), scheduledDays: next.scheduled_days };
   }) : [];
   return { ...identity, strategy: parameters.strategy, card, dueAt: state.suspended ? null : state.dueAt, lastReviewedAt: state.lastReviewedAt, suspended: state.suspended,
     state: (['new', 'learning', 'review', 'relearning'] as const)[state.memory.state], retrievability: retrievability(state.memory, at), preview,
-    eventCount: events.length, latestRating: latest?.rating || null, canReview: parameters.strategy === 'fsrs', ...(parameters.strategy === 'fixed' ? { reason: '当前使用固定间隔，可在系统配置切换自适应复习。' } : {}) };
+    eventCount: events.length, latestRating: latest?.rating || null, canReview: parameters.strategy === 'fsrs' && !reverseDisabled, ...(reverseDisabled ? {reason:'本词卡已关闭逆向练习，保留此方向的历史记录。'} : parameters.strategy === 'fixed' ? { reason: '当前使用固定间隔，可在系统配置切换自适应复习。' } : {}) };
 }
 
 function eligible(store: Store, attempt: StoredAttempt, leafId: string, headers?: Map<string, SourceHeader>, wasReset?: boolean) {
@@ -270,7 +274,7 @@ export function reviewQueue(store: Store, input: { page: number; pageSize: numbe
   const legacy = [...d.all(d.query.selectFrom('study').select(legacyFields).where(x.field('data', 'nextReviewAt'), 'is not', null)), ...partStudies]
     .filter(row => !represented.has(JSON.stringify([row.questionId, row.partId ?? null])) && row.nextReviewAt && Date.parse(row.nextReviewAt) <= at.getTime());
   const wanted = [...new Set([...allCards.map(card => card.questionId), ...legacy.map(row => row.questionId)])];
-  const metadata = wanted.length ? d.all(d.query.selectFrom('questions').select('id').select([x.field<string>('data', 'title').as('title'), x.field<string>('data', 'type').as('type'), x.field<string>('data', 'categoryIds').as('categoryIds'), x.questionLearningLeaves('data').as('leaves')])
+  const metadata = wanted.length ? d.all(d.query.selectFrom('questions').select('id').select([x.field<string>('data', 'title').as('title'), x.field<string>('data', 'type').as('type'), x.field<string>('data', 'categoryIds').as('categoryIds'), x.questionLearningLeaves('data').as('leaves'),x.nestedField<number | null>('data',['vocabulary','reverseEnabled']).as('reverseEnabled')])
     .select(eb => eb.case().when(eb.and([eb(x.field('data', 'vocabulary'), 'is', null), eb(x.field('data', 'concept'), 'is', null)])).then(0).else(1).end().as('hasVocabulary')).select(eb=>eb.case().when(x.field('data','concept'),'is',null).then(0).else(1).end().as('hasConcept')).where(x.idInJson('id', wanted)).where(x.field('data', 'status'), '=', 'published'))
     .map(row => ({ id: row.id, data: { ...row, categoryIds: JSON.parse(row.categoryIds || '[]') as string[], parts: (JSON.parse(row.leaves) as Array<{ partId?: string }>).map(leaf => ({ id: leaf.partId })) } })) : [];
   const categories = input.categoryId ? new Set(store.categoryDescendants(input.categoryId)) : null;
@@ -280,6 +284,8 @@ export function reviewQueue(store: Store, input: { page: number; pageSize: numbe
   const add = (identity: ReviewIdentity, dueAt: string | null, card: ReviewCard | null) => {
     const question = questions.get(identity.questionId); if (!question || question.type === 'group' && !identity.partId || identity.partId && !question.parts?.some((part: any) => part.id === identity.partId)) return;
     const logicalDirection: ReviewDirection = question.hasConcept && identity.direction === 'standard' ? 'word_to_meaning' : identity.direction;
+    // Keep old reverse memory/events, but do not offer disabled tasks again.
+    if(logicalDirection === 'meaning_to_word' && question.reverseEnabled === 0) return;
     // A legacy standard card is the concept's established forward identity.
     // Keep a previously-created extra forward chain as history, not a second
     // live due task competing with the canonical old card.

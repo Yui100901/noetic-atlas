@@ -1,0 +1,122 @@
+.vocabulary-editor,
+.vocabulary-preview {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--theme-inset, #f4f7f0);
+}
+.vocabulary-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.vocabulary-editor-heading,
+.vocabulary-editor-actions,
+.vocabulary-editor-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+}
+.vocabulary-editor-heading {
+  justify-content: space-between;
+}
+.vocabulary-editor-heading > .field {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.vocabulary-editor-heading h3 {
+  font-size: 15px;
+  margin: 0;
+}
+.vocabulary-reading-row {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+.vocabulary-reading-row legend {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 5px;
+}
+.vocabulary-reading-source > summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.vocabulary-reading-source[open] > summary {
+  margin-bottom: 12px;
+}
+.vocabulary-editor-issues {
+  display: grid;
+  gap: 8px;
+}
+.vocabulary-prompt-matches {
+  display: grid;
+  gap: 6px;
+}
+.vocabulary-prompt-matches p {
+  margin: 0;
+}
+.vocabulary-editor-issues .notice,
+.vocabulary-preview .notice,
+.vocabulary-editor p {
+  margin: 0;
+}
+.vocabulary-preview .section-tabs {
+  margin-bottom: 0;
+}
+.vocabulary-preview .section-tabs > button {
+  white-space: normal;
+}
+.vocabulary-preview-body {
+  min-width: 0;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.vocabulary-preview-prompt {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.vocabulary-preview-answer {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  min-width: 0;
+}
+.vocabulary-preview-answer .vocabulary-pronunciation {
+  margin: 0;
+}
+.vocabulary-match-result {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.vocabulary-match-result.correct {
+  background: var(--theme-success-bg, #e7f5e7);
+  color: var(--theme-success-text, #246437);
+}
+.vocabulary-match-result.incorrect {
+  background: var(--theme-danger-bg, #fcebea);
+  color: var(--theme-danger, #a12b29);
+}
+@media (max-width: 600px) {
+  .vocabulary-editor,
+  .vocabulary-preview {
+    padding: 12px;
+  }
+  .vocabulary-editor-actions > .button {
+    flex: 1 1 auto;
+    justify-content: center;
+    white-space: normal;
+  }
+  .vocabulary-preview-body {
+    padding: 12px;
+  }
+}

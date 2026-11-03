@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { Question, QuestionPart } from '../../../shared/models/types.js';
 import type { QualityRule, QualitySeverity } from '../../../shared/models/content-quality.js';
 import { conceptPromptIsSafe } from '../../../shared/questions/concept.js';
+import { vocabularyIssues } from '../../../shared/questions/vocabulary.js';
 import { findBlankMarkers } from '../../../shared/questions/blank-markers.js';
 import { questionSchema } from '../../core/validation.js';
 
@@ -69,5 +70,9 @@ export function inspectQuestionQuality(question:Question):QualityFinding[] {
   // problem; supplied references still undergo normal structure/link checks.
   for(const ref of array(question.sourceRefs)){if(typeof ref?.url!=='string')continue;try{const url=new URL(ref.url);if(url.hostname==='example.com'||url.hostname==='example.org'||url.hostname.endsWith('.invalid'))add('reference_placeholder','warning','参考来源仍为示例或无效占位域名',ref.url,'替换为实际参考资料；本规则没有联网检查其它链接是否可达。');}catch{/* Internal links are valid sources and schema handles invalid URLs. */}}
   if(question.concept&&typeof question.concept.meaningPrompt==='string'&&typeof question.concept.term==='string'&&Array.isArray(question.concept.acceptedAnswers)&&question.concept.acceptedAnswers.every(answer=>typeof answer==='string')&&!conceptPromptIsSafe(question.concept))add('concept_prompt_leak','error','概念反向提示可能暴露主词或包含不支持的格式',string(question.concept.meaningPrompt),'重写独立短定义，去掉主词及已接受别称；保留完整解析用于交卷后核对。');
+  const vocabulary=question.vocabulary;
+  if(vocabulary&&typeof vocabulary.headword==='string'&&typeof vocabulary.meaningPrompt==='string'&&Array.isArray(vocabulary.acceptedAnswers)&&vocabulary.acceptedAnswers.every(answer=>typeof answer==='string')&&Array.isArray(vocabulary.pronunciations)&&vocabulary.pronunciations.every(item=>item&&typeof item.label==='string'&&['ipa','kana','romaji','sourceUrl'].every(key=>(item as unknown as Record<string,unknown>)[key]===undefined||typeof (item as unknown as Record<string,unknown>)[key]==='string'))){
+    for(const issue of vocabularyIssues(vocabulary))if(issue.severity==='error')add(issue.code==='reverse_prompt_unsafe'?'vocabulary_prompt_leak':'vocabulary_metadata','error',issue.message,issue.code==='reverse_prompt_unsafe'?vocabulary.meaningPrompt:JSON.stringify(vocabulary),'在词汇卡编辑区修订对应字段；逆向提示过于宽泛时可补充语境或关闭逆向，不要自动添加未经核实的同义答案。');
+  }
   return findings;
 }

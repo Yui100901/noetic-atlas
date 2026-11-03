@@ -170,5 +170,16 @@
   "scripts/qa/check-directional-rubrics-ui.mjs",
   "scripts/qa/check-rubric-format-ui.mjs",
   "scripts/qa/check-authoring-request-safety-ui.mjs",
-  "scripts/qa/check-focus-entry-safety-ui.mjs"
+  "scripts/qa/check-focus-entry-safety-ui.mjs",
+  "scripts/content/vocabulary/standardize.ts",
+  "tests/content/vocabulary-standardization.test.ts",
+  "tests/questions/vocabulary-authoring.test.ts",
+  "tests/web/vocabulary-editor-state.test.ts",
+  "web/features/questions/vocabulary-editor-state.ts",
+  "web/features/questions/vocabulary-editor.tsx",
+  "web/features/questions/vocabulary-editor.css",
+  "web/features/questions/vocabulary-prompt-matches.tsx",
+  "scripts/qa/check-vocabulary-editor-ui.mjs",
+  "shared/questions/vocabulary.ts",
+  "server/modules/questions/vocabulary.ts"
 ]

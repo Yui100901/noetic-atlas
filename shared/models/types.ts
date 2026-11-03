@@ -13,7 +13,7 @@ export interface Tag { id: string; name: string; color: string; description: str
 export type QuestionStatus = 'published' | 'pending' | 'draft' | 'archived';
 export interface SourceRef { label: string; url: string }
 export interface VocabularyPronunciation { label: string; ipa?: string; kana?: string; romaji?: string; sourceLabel: string; sourceUrl: string; license: string; method: 'source' | 'transliteration' | 'expanded' | 'manual' }
-export interface VocabularyData { language: 'en' | 'ja'; headword: string; meaningPrompt: string; acceptedAnswers: string[]; pronunciations: VocabularyPronunciation[] }
+export interface VocabularyData { language: 'en' | 'ja'; headword: string; partOfSpeech?: string; meaningPrompt: string; acceptedAnswers: string[]; pronunciations: VocabularyPronunciation[]; reverseEnabled?: boolean; caseSensitive?: boolean; trim?: boolean }
 export interface ConceptData { term: string; meaningPrompt: string; acceptedAnswers: string[] }
 export type VocabularyDirection = 'word_to_meaning' | 'meaning_to_word';
 export type PaperPracticeKind = 'standard' | 'vocabulary' | 'concept';

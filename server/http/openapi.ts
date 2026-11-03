@@ -32,7 +32,7 @@ import { aiWorkspaceDraftSchema,aiWorkspaceDraftQuerySchema,aiWorkspaceDraftCrea
 import { paginationFields } from '../core/pagination.js';
 import { questionQuerySchema } from '../modules/questions/query-schema.js';
 import { taxonomyQuerySchema } from '../modules/taxonomy/schema.js';
-import { vocabularyQuerySchema } from '../modules/questions/vocabulary.js';
+import { vocabularyQuerySchema,vocabularyPromptMatchesSchema } from '../modules/questions/vocabulary.js';
 import { learningSummaryQuerySchema, learningAttemptsQuerySchema, learningQuestionsQuerySchema, learningContextsQuerySchema } from '../modules/practice/learning.js';
 import { globalLearningSummaryQuerySchema, globalLearningQuestionsQuerySchema, learningCardSummariesInputSchema } from '../modules/practice/global-learning.js';
 import { learningResetInputSchema } from '../modules/study/reset.js';
@@ -128,6 +128,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/maintenance/compact':maintenanceConfirmationSchema,
   '/api/maintenance/reindex':maintenanceConfirmationSchema,
   '/api/questions/bulk-import': validation.bulkQuestionImportSchema, '/api/questions/review': validation.questionReviewSchema,
+  '/api/vocabulary/prompt-matches':vocabularyPromptMatchesSchema,
   '/api/ai/settings': ai.aiSettingsSchema, '/api/ai/paper-plan': ai.aiPaperPlanInputSchema,
   '/api/attempts/:id/timing': practiceTimingInputSchema,
   '/api/ai/similar-questions': aiSimilarQuestionsInputSchema,
@@ -211,6 +212,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/learning/reset-preview')schema.querystring=toJson(z.object({}).strict());
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
+  if(url==='/api/vocabulary/prompt-matches')schema.summary='查找同语言使用相同逆向释义提示的词卡';
   if(url==='/api/documents/:id/questions')schema.querystring=toJson(relatedQuestionsQuerySchema);
   if(url==='/api/documents/:id/versions/:versionId')schema.params=toJson(documentSourceParamsSchema);
   if(url==='/api/documents'||url==='/api/documents/page')schema.querystring=toJson(documentListQuerySchema);
@@ -284,6 +286,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/settings/import')success=toJson(configurationImportResultSchema);
   if(url==='/api/health')success={type:'object',properties:{ok:{const:true},application:{const:'noetic-atlas'}}};
   if(url==='/api/vocabulary')success={type:'object',required:['word','matches'],properties:{word:{type:'string'},matches:{type:'array',items:{type:'object',required:['id','title','status'],properties:{id:{type:'string'},title:{type:'string'},status:{enum:['published','pending','draft','archived']}}}}}};
+  if(url==='/api/vocabulary/prompt-matches')success={type:'object',additionalProperties:false,required:['total','items'],properties:{total:{type:'integer',minimum:0},items:{type:'array',maxItems:5,items:{type:'object',additionalProperties:false,required:['id','title','headword'],properties:{id:{type:'string'},title:{type:'string'},headword:{type:'string'}}}}}};
   if(url==='/api/documents/:id'&&method==='GET')success=toJson(validation.documentSchema.extend({contentVersion:validation.documentVersionIdSchema}));
   if(url==='/api/documents/:id/versions/:versionId')success=toJson(documentVersionSchema.extend({currentVersionId:validation.documentVersionIdSchema.nullable(),currentTitle:z.string().nullable(),archived:z.boolean()}));
   if(url==='/api/documents/:id/questions')success=learningPage(toJson(z.object({id:validation.id,title:z.string(),type:validation.types,status:z.string(),documentLinks:z.array(validation.documentCitationSchema)})));

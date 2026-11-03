@@ -1,13 +1,14 @@
 import type { QuestionFeedbackView } from './question-feedback.js';
 import type { Question } from './types.js';
 
-export const QUALITY_RULE_VERSION = '2026-10-30.1';
+export const QUALITY_RULE_VERSION = '2026-11-03.1';
 // Kept in the rule vocabulary for historical evidence, never emitted anew.
 export const RETIRED_QUALITY_RULES = ['missing_source', 'missing_explanation'] as const;
 export const isRetiredQualityRule = (rule: string) => (RETIRED_QUALITY_RULES as readonly string[]).includes(rule);
 export const QUALITY_RULE_LABELS = {
   math_syntax:'公式语法与支持范围', structure: '结构与答案引用', empty_stem: '题干为空', missing_explanation: '缺少解析', missing_source: '缺少参考来源',
   duplicate_options: '选项正文重复', template_placeholder: '填空模板占位符', concept_prompt_leak: '反向定义泄露答案',
+  vocabulary_metadata:'词汇卡字段与读音', vocabulary_prompt_leak:'词汇逆向提示泄露答案',
   reference_placeholder: '来源为占位地址', redundant_stem: '题干含冗余说明', answer_explanation_conflict: '答案结论疑似不一致',
   exact_duplicate: '完整内容重复候选', conflicting_answers: '同题不同答案候选', user_feedback:'用户反馈',
 } as const;

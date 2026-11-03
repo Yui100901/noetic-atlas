@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {Check,Sparkles,Undo2} from 'lucide-react';
-import type {QuestionInput} from '../../../shared/models/types';
+import type {QuestionInput,VocabularyData} from '../../../shared/models/types';
 import type {AiRun} from '../../../shared/ai/ai';
 import type {AiQuestionEditResult,AiQuestionEditSuggestion,AiQuestionEditChanges} from '../../../shared/ai/question-edit';
 import {AiServiceNotice} from '../ai/ai-components';
@@ -11,7 +11,7 @@ import './ai-question-editor.css';
 
 type EditRun=Extract<AiRun<AiQuestionEditResult>,{status:'completed'}>;
 interface Applied {key:string;runId:string;suggestion:AiQuestionEditSuggestion;receipt:AiQuestionEditReceipt}
-const labels:Record<keyof AiQuestionEditChanges,string>={mathEnabled:'公式排版',title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',gradingRequirements:'判题要求',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签'};
+const labels:Record<keyof AiQuestionEditChanges,string>={mathEnabled:'公式排版',title:'标题',stemMarkdown:'题干',answerMarkdown:'参考答案',explanationMarkdown:'解析',gradingRequirements:'判题要求',options:'选项',correctAnswers:'判分答案',blanks:'填空答案',categoryIds:'分类',tagIds:'标签',vocabulary:'词汇卡信息'};
 const confidence={high:'较高把握',medium:'建议核对',low:'需重点核对'};
 
 /** Suggestions operate on the current local form, never a server mutation. */
@@ -47,6 +47,10 @@ export function AiQuestionEditor({questionId,version,draft,disabled,onChange}:{q
   if(field==='categoryIds'||field==='tagIds'){const records=field==='categoryIds'?bootstrap.categories:bootstrap.tags;return(value as string[]).map(id=>records.find(item=>item.id===id)?.name||id).join('、')||'（空）';}
   if(field==='options')return(value as Array<{key:string;text:string}>).map(item=>item.key+'. '+item.text).join('\n')||'（空）';
   if(field==='correctAnswers')return(value as string[]).map(item=>item==='true'?'正确':item==='false'?'错误':item).join('、')||'（空）';
+  if(field==='vocabulary'){
+   const card=value as VocabularyData;
+   return [`语言：${card.language==='ja'?'日语':'英语'}`,`词条：${card.headword}`,`词性：${card.partOfSpeech||'未填写'}`,`逆向练习：${card.reverseEnabled===false?'关闭':'开启'}`,`独立提示：${card.meaningPrompt||'未填写'}`,`可接受答案：${card.acceptedAnswers.join('、')}`,`匹配：${card.caseSensitive?'区分大小写':'忽略大小写'}；${card.trim===false?'保留首尾空白':'忽略首尾空白'}`,...card.pronunciations.map(item=>`读音（${item.label}）：${card.language==='en'?item.ipa||'未填写':[item.kana,item.romaji].filter(Boolean).join(' · ')||'未填写'}${item.sourceLabel?`；来源：${item.sourceLabel}`:''}${item.sourceUrl?` ${item.sourceUrl}`:''}${item.license?`；许可：${item.license}`:''}`)].join('\n');
+  }
   return typeof value==='string'?value||'（空）':JSON.stringify(value,null,2);
  }
  const oldApplied=applied.filter(value=>value.runId!==analysis?.run.id);

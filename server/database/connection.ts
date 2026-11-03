@@ -68,6 +68,11 @@ export class DatabaseConnection {
     ] as const) {
       this.run(this.query.schema.createIndex(name).ifNotExists().on(table).expression(sql.join(fields.map(key=>this.expressions.field('data',key)))));
     }
+    this.run(this.query.schema.createIndex('questions_vocabulary_prompt_idx').ifNotExists().on('questions').expression(sql.join([
+      this.expressions.nestedField('data',['vocabulary','language']),
+      this.expressions.nestedField('data',['vocabulary','meaningPrompt']),
+      this.expressions.field('data','status'),
+    ])));
   }
   private compiled<T>(value: Compilable<T> | CompiledQuery<T>): CompiledQuery<T> { return 'compile' in value ? value.compile() : value; }
   all<T>(value: Compilable<T> | CompiledQuery<T>): T[] { const q=this.compiled(value);return this.client.prepare(q.sql).all(...q.parameters as SQLInputValue[]) as T[]; }

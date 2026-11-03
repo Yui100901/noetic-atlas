@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { conceptPromptIsSafe } from '../../shared/questions/concept.js';
+import { normalizeVocabularyData, vocabularyIssues, vocabularySourceUrlIsValid } from '../../shared/questions/vocabulary.js';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: unknown) { super(message); }
@@ -56,10 +57,13 @@ export const domainSchema = z.object({ id: id.optional(), name, description: tex
 export const categorySchema = domainSchema.extend({ domainId: id, parentId: id.nullable().default(null) });
 export const tagSchema = z.object({ id: id.optional(), name, color: z.string().max(30).default('#5264db'), description: text.default(''), domainId: id.nullable().optional(), kind: z.enum(['topic', 'method', 'custom']).optional() });
 export const vocabularySchema = z.object({
-  language: z.enum(['en','ja']), headword: z.string().trim().min(1).max(300), meaningPrompt: z.string().trim().min(1).max(8000),
-  acceptedAnswers: z.array(z.string().trim().min(1).max(1000)).min(1).max(30),
-  pronunciations: z.array(z.object({ label: z.string().min(1).max(100), ipa: z.string().min(1).max(1000).optional(), kana: z.string().min(1).max(1000).optional(), romaji: z.string().min(1).max(1000).optional(), sourceLabel: z.string().min(1).max(500), sourceUrl: z.string().url().max(3000).refine(value=>/^https?:\/\//.test(value)), license: z.string().min(1).max(300), method: z.enum(['source','transliteration','expanded','manual']) }).strict()).min(1).max(40),
-}).strict().superRefine((value,context)=>{if(value.pronunciations.some(item=>value.language==='en'?!item.ipa:!item.kana||!item.romaji))context.addIssue({code:'custom',message:'英语读音需IPA，日语读音需假名和罗马音'});});
+  language: z.enum(['en','ja']), headword: z.string().trim().min(1).max(300), partOfSpeech: z.string().trim().max(100).optional(), meaningPrompt: z.string().trim().max(8000).default(''),
+  reverseEnabled: z.boolean().optional(), caseSensitive: z.boolean().optional(), trim: z.boolean().optional(),
+  acceptedAnswers: z.array(z.string().max(1000)).max(30).default([]),
+  pronunciations: z.array(z.object({ label: z.string().max(100).default(''), ipa: z.string().max(1000).optional(), kana: z.string().max(1000).optional(), romaji: z.string().max(1000).optional(), sourceLabel: z.string().max(500).default(''), sourceUrl: z.string().trim().max(3000).refine(vocabularySourceUrlIsValid,'读音来源须为HTTP(S)地址，也可以留空').default(''), license: z.string().max(300).default(''), method: z.enum(['source','transliteration','expanded','manual']).default('manual') }).strict()).max(40).default([]),
+}).strict().overwrite(normalizeVocabularyData).superRefine((value,context)=>{
+  for(const issue of vocabularyIssues(value))if(issue.severity==='error')context.addIssue({code:'custom',message:issue.message});
+});
 export const conceptSchema = z.object({
   term: z.string().trim().min(1).max(300), meaningPrompt: z.string().trim().min(1).max(3000),
   acceptedAnswers: z.array(z.string().trim().min(1).max(300)).min(1).max(30),
@@ -81,6 +85,7 @@ export const questionSchema = z.object({
   createdAt: stamp.optional(), updatedAt: stamp.optional(),
 }).superRefine((q, ctx) => {
   checkLeaf(q, ctx);
+  if (q.vocabulary && (q.concept || !['short_answer','fill_blank'].includes(q.type))) ctx.addIssue({ code: 'custom', message: '词汇信息仅适用于词汇简答卡或其逆向填空快照，不可兼作概念卡' });
   if (q.concept && (q.vocabulary || !['short_answer','fill_blank'].includes(q.type))) ctx.addIssue({ code: 'custom', message: '概念信息仅适用于概念简答卡或其逆向作答快照，不可兼作语言词卡' });
   if (q.type === 'group') {
     if (!q.parts || q.parts.length < 2) ctx.addIssue({ code: 'custom', message: '组合题需要2至30个独立子题' });

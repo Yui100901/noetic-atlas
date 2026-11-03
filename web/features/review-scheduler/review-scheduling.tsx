@@ -15,13 +15,17 @@ const ratingHints: Record<ReviewRating, string> = { again: '想不起来、答�
 const localInput = (value: string | null) => { if (!value) return ''; const date = new Date(value); if (!Number.isFinite(date.getTime())) return ''; return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 const shortDue = (value: string) => new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
 
-export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, concept = false, direction: initialDirection, attemptId, leafId, onChanged, available = true, onlyAgain = false }: {
-  questionId: string; partId?: string; vocabulary?: boolean; concept?: boolean; direction?: ReviewDirection; attemptId?: string; leafId?: string; onChanged?: () => void; available?: boolean; onlyAgain?: boolean;
+export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, concept = false, allowReverse = true, direction: initialDirection, attemptId, leafId, onChanged, available = true, onlyAgain = false }: {
+  questionId: string; partId?: string; vocabulary?: boolean; concept?: boolean; allowReverse?: boolean; direction?: ReviewDirection; attemptId?: string; leafId?: string; onChanged?: () => void; available?: boolean; onlyAgain?: boolean;
 }) {
   const { bootstrap, reload, toast } = useApp();
   const strategy = (bootstrap.settings?.reviewScheduling || DEFAULT_REVIEW_SCHEDULING).strategy;
-  const [direction, setDirection] = useState<ReviewDirection>(initialDirection || (vocabulary ? 'word_to_meaning' : 'standard'));
-  useEffect(() => { setDirection(initialDirection || (vocabulary ? 'word_to_meaning' : 'standard')); }, [questionId, partId, initialDirection, vocabulary]);
+  const [requestedDirection, setDirection] = useState<ReviewDirection>(initialDirection || (vocabulary ? 'word_to_meaning' : 'standard'));
+  // New reviews follow the current source policy. Existing attempt corrections
+  // retain their frozen direction and never rewrite historical memory events.
+  const readOnlyDirection = !attemptId && !allowReverse && initialDirection === 'meaning_to_word';
+  const direction = !attemptId && !allowReverse && !initialDirection && requestedDirection === 'meaning_to_word' ? 'word_to_meaning' : requestedDirection;
+  useEffect(() => { setDirection(initialDirection || (vocabulary ? 'word_to_meaning' : 'standard')); }, [questionId, partId, initialDirection, vocabulary, allowReverse, attemptId]);
   const resource = useResource<ReviewCardView>(strategy === 'fsrs' && available ? `/api/review-scheduler/card?${qs({ questionId, partId, direction, attemptId, leafId })}` : null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [dueAt, setDueAt] = useState('');
   const manualRequest = useRef<{ identity: string; rating: ReviewRating; id: string } | null>(null);
@@ -30,6 +34,7 @@ export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, 
   if (!available) return <p className="review-scheduling-help">题目发布后可记录自适应复习，现有笔记和掌握程度继续保留。</p>;
   const changed = () => { resource.refresh(); reload(); onChanged?.(); };
   const rate = async (rating: ReviewRating | null) => {
+    if (readOnlyDirection) return;
     setBusy(true); setError('');
     try {
       if (attemptId && leafId) await send(`/api/review-scheduler/attempts/${idPath(attemptId)}/rating`, 'POST', { leafId, rating });
@@ -43,6 +48,7 @@ export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, 
     } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
   };
   const configure = async (values: { suspended?: boolean; dueAt?: string | null }) => {
+    if (readOnlyDirection) return;
     setBusy(true); setError('');
     try { await send('/api/review-scheduler/card', 'PATCH', { questionId, ...(partId ? { partId } : {}), direction, ...values }); changed(); toast(values.suspended === undefined ? '复习日期已更新' : values.suspended ? '已暂停此项复习' : '已恢复此项复习'); }
     catch (reason) { setError((reason as Error).message); } finally { setBusy(false); }
@@ -50,13 +56,14 @@ export function ReviewSchedulingPanel({ questionId, partId, vocabulary = false, 
   const value = resource.data;
   return <div className="review-scheduling" aria-label={attemptId ? '本次回忆评级' : '自适应复习'}>
     <div className="review-scheduling-heading"><h3><CalendarClock size={16} />{attemptId ? '本次回忆评级' : '自适应复习'}</h3><span className="badge">FSRS</span></div>
-    {vocabulary && !attemptId && !initialDirection && <div className="review-scheduling-direction"><Field label="复习方向"><select disabled={busy} value={direction} onChange={event => setDirection(event.target.value as ReviewDirection)}><option value="word_to_meaning">{concept ? '顺向 · 看概念想含义' : directionLabels.word_to_meaning}</option><option value="meaning_to_word">{concept ? '逆向 · 看描述想概念' : directionLabels.meaning_to_word}</option></select></Field></div>}
+    {vocabulary && !attemptId && !initialDirection && <div className="review-scheduling-direction"><Field label="复习方向"><select disabled={busy} value={direction} onChange={event => setDirection(event.target.value as ReviewDirection)}><option value="word_to_meaning">{concept ? '顺向 · 看概念想含义' : directionLabels.word_to_meaning}</option><option value="meaning_to_word" disabled={!allowReverse}>{!allowReverse ? '逆向（此词卡已关闭）' : concept ? '逆向 · 看描述想概念' : directionLabels.meaning_to_word}</option></select></Field></div>}
+    {vocabulary && !attemptId && !allowReverse && <p className="review-scheduling-help">{readOnlyDirection ? '原题已关闭逆向练习，此处只读查看该方向的既有记录。' : '原题已关闭逆向练习，当前仅安排顺向复习；既有逆向作答与记录仍保留。'}</p>}
     {resource.loading ? <Loading text="正在计算复习安排…" /> : resource.error ? <ErrorNotice message={resource.error} retry={resource.refresh} /> : value && <>
       <p className="review-scheduling-summary">{value.suspended ? '已暂停自动复习' : stateLabels[value.state]}{value.latestRating ? ` · 最近${REVIEW_RATING_LABELS[value.latestRating]}` : ''}{attemptId ? ' · 更正只作用于原作答事件' : ''}</p>
       <dl className="review-scheduling-facts"><div><dt>下次复习</dt><dd>{value.suspended ? '暂停中' : localDate(value.dueAt)}</dd></div><div><dt>有效回忆记录</dt><dd>{value.eventCount} 次</dd></div>{value.card && <><div><dt>复习次数／遗忘次数</dt><dd>{value.card.memory.reps}／{value.card.memory.lapses}</dd></div><div><dt>最近复习</dt><dd>{localDate(value.lastReviewedAt)}</dd></div></>}</dl>
-      {value.canReview ? <><div className="review-rating-buttons" role="group" aria-label="选择回忆评级">{value.preview.map(preview => <button type="button" key={preview.rating} className={`rating-${preview.rating} ${value.latestRating === preview.rating ? 'selected' : ''}`} disabled={busy || onlyAgain && preview.rating !== 'again'} title={onlyAgain && preview.rating !== 'again' ? '本次回答错误、有关键遗漏或提前查看参考，需选择重学' : `${ratingHints[preview.rating]}；下次${localDate(preview.dueAt)}`} onClick={() => void rate(preview.rating)}><strong>{REVIEW_RATING_LABELS[preview.rating]}</strong><small>下次 {shortDue(preview.dueAt)}</small></button>)}</div><p className="review-scheduling-help">{onlyAgain ? '本次回答错误、有关键遗漏或提前查看参考，仅能记录“重学”；完成一次独立正确回忆后可选择其他评级。' : '先独立回忆并核对答案，再选择。“困难”表示完整答对但吃力；关键遗漏请选择“重学”。'}</p></> : <p className="review-scheduling-help">{value.reason || '当前不能记录回忆评级。'}</p>}
+      {value.canReview && !readOnlyDirection ? <><div className="review-rating-buttons" role="group" aria-label="选择回忆评级">{value.preview.map(preview => <button type="button" key={preview.rating} className={`rating-${preview.rating} ${value.latestRating === preview.rating ? 'selected' : ''}`} disabled={busy || onlyAgain && preview.rating !== 'again'} title={onlyAgain && preview.rating !== 'again' ? '本次回答错误、有关键遗漏或提前查看参考，需选择重学' : `${ratingHints[preview.rating]}；下次${localDate(preview.dueAt)}`} onClick={() => void rate(preview.rating)}><strong>{REVIEW_RATING_LABELS[preview.rating]}</strong><small>下次 {shortDue(preview.dueAt)}</small></button>)}</div><p className="review-scheduling-help">{onlyAgain ? '本次回答错误、有关键遗漏或提前查看参考，仅能记录“重学”；完成一次独立正确回忆后可选择其他评级。' : '先独立回忆并核对答案，再选择。“困难”表示完整答对但吃力；关键遗漏请选择“重学”。'}</p></> : <p className="review-scheduling-help">{value.reason || '当前不能记录回忆评级。'}</p>}
       {attemptId && value.canReview && <button type="button" className="text-button" disabled={busy} onClick={() => void rate(null)}><RotateCcw size={12} />恢复本次自动评级</button>}
-      {!attemptId && <details className="review-scheduling-controls"><summary>暂停或调整复习日期</summary><div className="review-scheduling-actions"><button type="button" className="button" disabled={busy} onClick={() => void configure({ suspended: !value.suspended })}>{value.suspended ? <Play size={13} /> : <Pause size={13} />}{value.suspended ? '恢复复习' : '暂停复习'}</button></div><Field label="下次复习时间" hint="按设备本地时间设置，不增加复习次数。"><input type="datetime-local" value={dueAt} disabled={busy} onChange={event => setDueAt(event.target.value)} /></Field><div className="review-scheduling-actions"><button type="button" className="button" disabled={busy || !dueAt} onClick={() => { const timestamp = new Date(dueAt); if (!Number.isFinite(timestamp.getTime())) { setError('请选择有效日期和时间'); return; } void configure({ dueAt: timestamp.toISOString() }); }}>保存复习时间</button><button type="button" className="button" disabled={busy} onClick={() => void configure({ dueAt: null })}>恢复算法排期</button></div></details>}
+      {!attemptId && !readOnlyDirection && <details className="review-scheduling-controls"><summary>暂停或调整复习日期</summary><div className="review-scheduling-actions"><button type="button" className="button" disabled={busy} onClick={() => void configure({ suspended: !value.suspended })}>{value.suspended ? <Play size={13} /> : <Pause size={13} />}{value.suspended ? '恢复复习' : '暂停复习'}</button></div><Field label="下次复习时间" hint="按设备本地时间设置，不增加复习次数。"><input type="datetime-local" value={dueAt} disabled={busy} onChange={event => setDueAt(event.target.value)} /></Field><div className="review-scheduling-actions"><button type="button" className="button" disabled={busy || !dueAt} onClick={() => { const timestamp = new Date(dueAt); if (!Number.isFinite(timestamp.getTime())) { setError('请选择有效日期和时间'); return; } void configure({ dueAt: timestamp.toISOString() }); }}>保存复习时间</button><button type="button" className="button" disabled={busy} onClick={() => void configure({ dueAt: null })}>恢复算法排期</button></div></details>}
     </>}{error && <ErrorNotice message={error} />}
   </div>;
 }

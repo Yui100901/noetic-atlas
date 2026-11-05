@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {createQaBrowser,waitForQaReady} from './helpers/browser-runtime.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 
 const root=resolve(import.meta.dirname,'../..'),output=resolve(root,'test-results/ai-import-layout-ui');await mkdir(output,{recursive:true});
@@ -11,8 +11,8 @@ const fixture=spawn(process.execPath,['--import','tsx','scripts/qa/serve-ai-work
 let stdout='',stderr='',browser,page;fixture.stdout.on('data',value=>stdout+=value);fixture.stderr.on('data',value=>stderr+=value);
 const checks=[],errors=[],external=[],geometry=[];
 try{
- let ready;for(let tick=0;tick<300;tick++){if(fixture.exitCode!==null)throw Error(stderr);const line=stdout.split(/\r?\n/).find(value=>value.startsWith('AI_WORKFLOWS_READY '));if(line){ready=JSON.parse(line.slice('AI_WORKFLOWS_READY '.length));break;}await delay(100);}assert.ok(ready,stderr);const{origin}=ready;
- const{chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href:'playwright');browser=await chromium.launch({channel:'msedge',headless:true});const context=await browser.newContext({viewport:{width:390,height:844},locale:'zh-CN',reducedMotion:'reduce'});page=await context.newPage();page.setDefaultTimeout(20000);
+ const {origin}=await waitForQaReady(fixture,{prefix:'AI_WORKFLOWS_READY ',stdout:()=>stdout,stderr:()=>stderr});
+ browser=await createQaBrowser();const context=await browser.newContext({viewport:{width:390,height:844},locale:'zh-CN',reducedMotion:'reduce'});page=await context.newPage();page.setDefaultTimeout(20000);
  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>void dialog.accept());await page.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin===origin||['data:','blob:'].includes(url.protocol))return route.continue();external.push(url.href);return route.abort();});
  const api=async(url,method='GET',data)=>{const response=await page.request.fetch(origin+url,{method,...(data===undefined?{}:{data})});assert.ok(response.ok(),await response.text());return response.json();};
  const drafts=kind=>api('/api/ai/workspace-drafts?kind='+kind),controls=kind=>page.locator(`[data-draft-kind="${kind}"]`),text=()=>page.getByLabel('待转换文本',{exact:true});

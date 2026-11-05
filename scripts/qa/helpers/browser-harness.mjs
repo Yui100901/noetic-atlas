@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve, relative, isAbsolute } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { createQaBrowser, fixtureReadyTimeout } from './browser-runtime.mjs';
 
 export const projectRoot = resolve(import.meta.dirname, '../../..');
 const readyPrefix = 'NOETIC_BROWSER_QA_READY ';
@@ -35,7 +35,7 @@ export async function startBrowserHarness({
   reducedMotion = 'reduce',
   onDialog = (dialog) => void dialog.accept(),
   allowedOrigins = [],
-  timeoutMs = 30_000,
+  timeoutMs = fixtureReadyTimeout(),
 } = {}) {
   assert.match(name || '', /^[a-z0-9][a-z0-9-]*$/);
   const folder = resolve(projectRoot, 'test-results', name);
@@ -118,17 +118,7 @@ console.log(${JSON.stringify(readyPrefix)}+JSON.stringify({...state,origin:await
     const address = new URL(state.origin);
     assert.equal(address.hostname, '127.0.0.1');
     assert.notEqual(address.port, '4317', 'QA cannot attach to the operator service');
-    const { chromium } = await import(
-      process.env.PLAYWRIGHT_MODULE
-        ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href
-        : 'playwright'
-    );
-    const channel =
-      process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : 'chromium');
-    browser = await chromium.launch({
-      headless: true,
-      ...(channel === 'chromium' ? {} : { channel }),
-    });
+    browser = await createQaBrowser();
     page = await browser.newPage({
       viewport,
       locale: 'zh-CN',

@@ -11,7 +11,8 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { resolve, dirname, join, relative, sep } from 'node:path';
+import { resolve, dirname, join, relative, sep, isAbsolute } from 'node:path';
+import { parseArgs } from 'node:util';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -20,6 +21,10 @@ import { pathToFileURL } from 'node:url';
 import { packager } from '@electron/packager';
 import { createZip, SOFTWARE_DATA_BOUNDARY } from './release-web.mjs';
 import { validateEmptyInstall, validateBaseConfiguration } from './validate-public-data.mjs';
+import {
+  writeWindowsServerDependencies,
+  assertWindowsServerLock,
+} from './windows-server-dependencies.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 export const NODE_VERSION = '24.22.0';
@@ -30,6 +35,15 @@ function inside(path) {
   const target = resolve(path);
   if (!target.startsWith(root + sep)) throw new Error('打包路径越出项目目录');
   return target;
+}
+async function assertWorkspaceTarget(path) {
+  let parent = path;
+  while (!existsSync(parent)) parent = dirname(parent);
+  const actual = await realpath(parent),
+    canonicalRoot = await realpath(root);
+  const fromRoot = relative(canonicalRoot, actual);
+  if (isAbsolute(fromRoot) || fromRoot === '..' || fromRoot.startsWith('..' + sep))
+    throw new Error('Windows输出目录引用了项目外的位置');
 }
 async function sha256(path) {
   const hash = createHash('sha256');
@@ -164,7 +178,11 @@ async function filesIn(directory) {
   for (const name of (await readdir(directory)).sort()) await visit(join(directory, name));
   return files;
 }
-export async function packageWindowsRelease({ reuseBuild = false, skipChecks = false } = {}) {
+export async function packageWindowsRelease({
+  reuseBuild = false,
+  skipChecks = false,
+  outputDirectory,
+} = {}) {
   if (process.platform !== 'win32') throw new Error('Windows打包目前要求Windows构建机');
   process.chdir(root);
   const config = JSON.parse(await readFile('package.json', 'utf8'));
@@ -174,7 +192,18 @@ export async function packageWindowsRelease({ reuseBuild = false, skipChecks = f
   }
   const counts = validateEmptyInstall();
   validateBaseConfiguration(JSON.parse(await readFile(join(root, 'config/defaults.json'), 'utf8')));
-  const staging = inside(join(root, '.localtools/release-staging/windows'));
+  const artifacts = outputDirectory
+    ? inside(resolve(root, outputDirectory))
+    : join(root, 'artifacts');
+  if (!['artifacts', 'test-results'].includes(relative(root, artifacts).split(sep)[0]))
+    throw new Error('Windows输出目录必须位于artifacts或test-results之内');
+  const staging = inside(
+    outputDirectory
+      ? join(artifacts, '.windows-staging')
+      : join(root, '.localtools/release-staging/windows'),
+  );
+  await assertWorkspaceTarget(artifacts);
+  await assertWorkspaceTarget(staging);
   await rm(staging, { recursive: true, force: true });
   const shell = join(staging, 'shell'),
     server = join(staging, 'server'),
@@ -212,9 +241,27 @@ export async function packageWindowsRelease({ reuseBuild = false, skipChecks = f
         return !part || ['package.json', 'server', 'shared', 'web'].includes(part);
       },
     }),
-    copyFile('package.json', join(server, 'package.json')),
-    copyFile('package-lock.json', join(server, 'package-lock.json')),
   ]);
+  const serverPackages = await writeWindowsServerDependencies(root, server);
+  // npm ci otherwise materializes old production-marked orphan records. Let npm
+  // prune the lock graph offline, then verify no pinned artifact has changed.
+  await run(
+    process.execPath,
+    [
+      npmCli(),
+      'install',
+      '--package-lock-only',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      '--offline',
+    ],
+    { cwd: server },
+  );
+  assertWindowsServerLock(
+    JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8')),
+    JSON.parse(await readFile(join(server, 'package-lock.json'), 'utf8')),
+  );
   console.log('准备独立生产依赖和桌面运行时…');
   const [nodeSource, electronZipDir] = await Promise.all([
     officialNode(),
@@ -228,6 +275,7 @@ export async function packageWindowsRelease({ reuseBuild = false, skipChecks = f
         '--ignore-scripts',
         '--no-audit',
         '--no-fund',
+        '--prefer-offline',
         '--fetch-timeout=30000',
         '--fetch-retries=1',
       ],
@@ -237,7 +285,7 @@ export async function packageWindowsRelease({ reuseBuild = false, skipChecks = f
   await Promise.all(
     ['node.exe', 'LICENSE'].map((name) => copyFile(join(nodeSource, name), join(node, name))),
   );
-  const output = inside(join(root, 'artifacts/windows')),
+  const output = inside(join(artifacts, 'windows')),
     appDir = inside(join(output, 'noetic-atlas-win32-x64'));
   if (existsSync(join(appDir, 'data')))
     throw new Error('已有便携目录包含data，请先保留该目录中的用户数据，再重新打包');
@@ -280,6 +328,7 @@ export async function packageWindowsRelease({ reuseBuild = false, skipChecks = f
       kind: 'windows-x64',
       electronVersion: config.devDependencies.electron,
       nodeVersion: NODE_VERSION,
+      serverPackages,
       counts,
       dataBoundary: SOFTWARE_DATA_BOUNDARY,
       files: Object.fromEntries(
@@ -289,14 +338,14 @@ export async function packageWindowsRelease({ reuseBuild = false, skipChecks = f
   const manifestData = Buffer.from(JSON.stringify(manifest, null, 2));
   files.push({ name: 'release-manifest.json', data: manifestData });
   await writeFile(join(folder, 'release-manifest.json'), manifestData);
-  const releases = inside(join(root, 'artifacts/releases'));
+  const releases = inside(join(artifacts, 'releases'));
   await mkdir(releases, { recursive: true });
   const filename = `noetic-atlas-${config.version}-windows-x64.zip`,
     data = createZip(files, `noetic-atlas-${config.version}-windows-x64`);
   await writeFile(join(releases, filename), data);
   const result = {
     target: 'windows',
-    file: `artifacts/releases/${filename}`,
+    file: relative(root, join(releases, filename)).replaceAll('\\', '/'),
     directory: relative(root, folder).replaceAll('\\', '/'),
     bytes: data.length,
     sha256: createHash('sha256').update(data).digest('hex'),
@@ -304,11 +353,28 @@ export async function packageWindowsRelease({ reuseBuild = false, skipChecks = f
   console.log(JSON.stringify(result, null, 2));
   return result;
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
-  packageWindowsRelease({
-    reuseBuild: process.argv.includes('--reuse-build'),
-    skipChecks: process.argv.includes('--skip-checks'),
-  }).catch((error) => {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  try {
+    const { values } = parseArgs({
+      options: {
+        'reuse-build': { type: 'boolean' },
+        'skip-checks': { type: 'boolean' },
+        'output-directory': { type: 'string' },
+        help: { type: 'boolean' },
+      },
+    });
+    if (values.help)
+      console.log(
+        'release-windows.mjs [--reuse-build] [--skip-checks] [--output-directory artifacts或test-results内的路径]\n默认仍输出artifacts/windows和artifacts/releases；隔离输出不覆盖既有发布产物。',
+      );
+    else
+      await packageWindowsRelease({
+        reuseBuild: values['reuse-build'],
+        skipChecks: values['skip-checks'],
+        outputDirectory: values['output-directory'],
+      });
+  } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
-  });
+  }
+}

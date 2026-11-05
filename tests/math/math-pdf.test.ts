@@ -51,6 +51,39 @@ const textOperations = (pdf: PDFDocument) =>
         return [];
       }
     }).length;
+
+test('PDF reuses one embedded managed image across repeated question and answer appearances', async () => {
+  const source = await font;
+  const single = await PDFDocument.load(
+    await renderExportPdf(
+      document('![同一图片](/api/assets/sample/content)'),
+      source,
+      undefined,
+      async () => ({ data: png, mimeType: 'image/png' }),
+    ),
+  );
+  let calls = 0;
+  const repeated = await PDFDocument.load(
+    await renderExportPdf(
+      document(
+        Array.from({ length: 50 }, () => '![同一图片](/api/assets/sample/content)').join('\n\n'),
+      ),
+      source,
+      undefined,
+      async () => {
+        calls++;
+        return { data: png, mimeType: 'image/png' };
+      },
+    ),
+  );
+  assert.equal(calls, 1);
+  assert.equal(
+    images(repeated).length,
+    images(single).length,
+    'the same PDF image object is reused, not only its downloaded bytes',
+  );
+  assert.ok(repeated.getPageCount() > single.getPageCount());
+});
 test('PDF renders mixed inline/display/table math, reuses formulas and paginates tall content', async () => {
   const calls: string[] = [];
   const resolver: PdfFormulaResolver = async (source, display, size) => {

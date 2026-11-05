@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { pathToFileURL } from 'node:url';
+import { createQaBrowser, waitForQaReady } from './helpers/browser-runtime.mjs';
 
 const folder = resolve('test-results/practice-timing-ui'); await mkdir(folder, { recursive: true });
 const server = spawn(process.execPath, ['--import', 'tsx', 'scripts/qa/serve-practice-timing.ts'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -11,11 +11,8 @@ let stdout = '', stderr = '', browser, page, dismissUnload = false, cancelledUnl
 const checks = [], pageErrors = [], unexpectedNetwork = [];
 server.stdout.on('data', chunk => stdout += chunk); server.stderr.on('data', chunk => stderr += chunk);
 try {
-  for (let count = 0; count < 600 && !stdout.includes('PRACTICE_TIMING_READY '); count++) { if (server.exitCode !== null) throw new Error(stderr); await delay(100); }
-  const line = stdout.split(/\r?\n/).find(value => value.startsWith('PRACTICE_TIMING_READY ')); assert.ok(line, stderr + stdout);
-  const { origin } = JSON.parse(line.slice('PRACTICE_TIMING_READY '.length));
-  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href : 'playwright');
-  browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true });
+  const { origin } = await waitForQaReady(server, { prefix: 'PRACTICE_TIMING_READY ', stdout: () => stdout, stderr: () => stderr });
+  browser = await createQaBrowser();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' }); page = await context.newPage(); page.setDefaultTimeout(30_000);
   page.on('pageerror', reason => pageErrors.push(reason.message));
   page.on('dialog', dialog => { if (dialog.type() === 'beforeunload' && dismissUnload) { dismissUnload = false; cancelledUnloads++; void dialog.dismiss(); } else void dialog.accept(); });

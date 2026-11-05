@@ -171,6 +171,16 @@ try {
   await page.getByRole('button', { name: '导出题集', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '导出题集', exact: true });
   await dialog.getByRole('radio', { name: /附答案卷/ }).check();
+  const fontUrl = '**/fonts/NotoSansSC-Regular.ttf.bin';
+  const unavailableFont = (route) =>
+    route.fulfill({ status: 503, body: 'synthetic unavailable font' });
+  await page.route(fontUrl, unavailableFont);
+  await dialog.getByRole('button', { name: '下载文件', exact: true }).click();
+  await dialog.getByText(/本地 PDF 字体加载失败/).waitFor();
+  await page.unroute(fontUrl, unavailableFont);
+  checks.push(
+    'font failure keeps its concrete cause and allows a successful retry with math enabled',
+  );
   const pending = page.waitForEvent('download', { timeout: 60000 });
   await dialog.getByRole('button', { name: '下载文件', exact: true }).click();
   const downloaded = await pending;

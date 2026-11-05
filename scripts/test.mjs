@@ -23,7 +23,23 @@ const bundle = files.some((file) => file.includes(`${join('tests', 'mobile')}`))
   : undefined;
 const child = spawn(
   process.execPath,
-  ['--import', 'tsx', '--test', ...process.argv.slice(2), ...files],
+  // Native SQLite/WASM and portable-runtime fixtures are expensive processes.
+  // Bound the default file workers; retain Node's explicit caller override.
+  [
+    '--import',
+    'tsx',
+    '--test',
+    ...(process.argv
+      .slice(2)
+      .some(
+        (argument) =>
+          argument === '--test-concurrency' || argument.startsWith('--test-concurrency='),
+      )
+      ? []
+      : ['--test-concurrency=4']),
+    ...process.argv.slice(2),
+    ...files,
+  ],
   {
     cwd: root,
     stdio: 'inherit',

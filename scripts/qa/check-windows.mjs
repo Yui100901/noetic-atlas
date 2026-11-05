@@ -1,31 +1,73 @@
 /** Exercise the actual portable EXE, without any system Node on its PATH. */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { assertCleanBaseConfiguration, assertEmptyInstallation, createReviewedReleaseQuestion, completeReleasePaper } from './release-fixture.mjs';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import {
+  assertCleanBaseConfiguration,
+  assertEmptyInstallation,
+  createReviewedReleaseQuestion,
+  completeReleasePaper,
+} from './release-fixture.mjs';
 
 assert.equal(process.platform, 'win32', 'Windows portable acceptance must run on Windows');
 const root = resolve(import.meta.dirname, '../..');
 const project = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-const executable = resolve(process.argv.slice(2).find(argument => !argument.startsWith('--')) || join(root, 'artifacts/windows/noetic-atlas-win32-x64/noetic-atlas.exe'));
-assert.ok(existsSync(executable), 'Portable EXE missing: run npm run release -- windows first');
-const portableFolder = dirname(executable);
+const sourceExecutable = resolve(
+  process.argv.slice(2).find((argument) => !argument.startsWith('--')) ||
+    join(root, 'artifacts/windows/noetic-atlas-win32-x64/noetic-atlas.exe'),
+);
+assert.ok(
+  existsSync(sourceExecutable),
+  'Portable EXE missing: run npm run release -- windows first',
+);
+const portableFolder = dirname(sourceExecutable);
 const defaults = JSON.parse(await readFile(join(portableFolder, 'config/defaults.json'), 'utf8'));
 assertCleanBaseConfiguration(defaults);
-assert.ok(!existsSync(join(portableFolder, 'resources/server/data')), 'Portable resources must not contain a question data directory');
+assert.ok(
+  !existsSync(join(portableFolder, 'resources/server/data')),
+  'Portable resources must not contain a question data directory',
+);
+assert.ok(
+  !existsSync(join(portableFolder, 'data')),
+  'Use a clean distribution; QA must not copy an existing portable user data directory',
+);
 const manifest = JSON.parse(await readFile(join(portableFolder, 'release-manifest.json'), 'utf8'));
 assert.equal(manifest.dataBoundary?.installation, 'empty-install');
 assert.equal(manifest.dataBoundary?.includesQuestionData, false);
-for (const name of ['questions', 'domains', 'categories', 'tags']) assert.equal(manifest.counts[name], 0, `Software manifest ${name} must be zero`);
-const playwright = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href : 'playwright');
+for (const name of ['questions', 'domains', 'categories', 'tags'])
+  assert.equal(manifest.counts[name], 0, `Software manifest ${name} must be zero`);
+const playwright = await import(
+  process.env.PLAYWRIGHT_MODULE
+    ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href
+    : 'playwright'
+);
 assert.ok(playwright._electron, 'The selected Playwright runtime has no Electron support');
-const output = join(root, 'test-results/windows-smoke'); await mkdir(output, { recursive: true });
+const output = join(root, 'test-results/windows-smoke');
+await mkdir(output, { recursive: true });
 const temporaryRoot = await realpath(tmpdir());
+const checkoutRoot = await realpath(root);
+const within = (parent, target) => {
+  const part = relative(parent, target);
+  return (
+    part === '' ||
+    (!isAbsolute(part) &&
+      part !== '..' &&
+      !part.startsWith('..' + (process.platform === 'win32' ? '\\' : '/')))
+  );
+};
+assert.equal(
+  within(checkoutRoot, temporaryRoot),
+  false,
+  'OS temporary directory must be outside the checkout',
+);
 const temporary = await mkdtemp(join(temporaryRoot, 'noetic-windows-smoke-'));
+const isolatedFolder = join(temporary, 'app');
+const executable = join(isolatedFolder, basename(sourceExecutable));
 const dataDirectory = join(temporary, 'data');
 const downloaded = join(temporary, 'portable-export.json');
 const checks = [];
@@ -36,75 +78,190 @@ const windowsRoot = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows
 const systemPath = join(windowsRoot, 'System32');
 const environment = { ...process.env };
 for (const name of Object.keys(environment)) {
-  if (name.toLowerCase() === 'path' || ['NODE_OPTIONS', 'NODE_PATH', 'ELECTRON_RUN_AS_NODE', 'NOETIC_DESKTOP_RESOURCES', 'NOETIC_ATLAS_DATA_DIR'].includes(name)) delete environment[name];
+  if (
+    name.toLowerCase() === 'path' ||
+    [
+      'NODE_OPTIONS',
+      'NODE_PATH',
+      'ELECTRON_RUN_AS_NODE',
+      'NOETIC_DESKTOP_RESOURCES',
+      'NOETIC_ATLAS_DATA_DIR',
+    ].includes(name)
+  )
+    delete environment[name];
 }
 environment.PATH = systemPath;
 environment.NOETIC_ATLAS_DATA_DIR = dataDirectory;
 
-const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
+const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 async function until(check, message, timeout = 20000) {
   const end = Date.now() + timeout;
-  while (Date.now() < end) { if (await check()) return; await delay(150); }
+  while (Date.now() < end) {
+    if (await check()) return;
+    await delay(150);
+  }
   throw new Error(message);
 }
-function alive(pid) { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } }
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === 'ESRCH') return false;
+    throw error;
+  }
+}
 async function portClosed(address) {
-  try { await fetch(`${address}/api/health`, { signal: AbortSignal.timeout(700) }); return false; } catch { return true; }
+  try {
+    await fetch(`${address}/api/health`, { signal: AbortSignal.timeout(700) });
+    return false;
+  } catch {
+    return true;
+  }
 }
 async function api(path, method = 'GET', body) {
-  const response = await fetch(origin + path, { method, signal: AbortSignal.timeout(10000), ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
-  assert.ok(response.ok, `${path}: HTTP ${response.status}`); return response.json();
+  const response = await fetch(origin + path, {
+    method,
+    signal: AbortSignal.timeout(10000),
+    ...(body === undefined
+      ? {}
+      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  assert.ok(response.ok, `${path}: HTTP ${response.status}`);
+  return response.json();
 }
 async function start() {
-  electronApp = await playwright._electron.launch({ executablePath: executable, env: environment, timeout: 60000 });
+  electronApp = await playwright._electron.launch({
+    executablePath: executable,
+    cwd: isolatedFolder,
+    env: environment,
+    timeout: 60000,
+  });
   processId = electronApp.process().pid;
   page = await electronApp.firstWindow({ timeout: 60000 });
   page.setDefaultTimeout(20000);
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', (error) => errors.push(error.message));
   await page.waitForLoadState('domcontentloaded');
   await page.getByRole('navigation', { name: '主导航' }).waitFor();
   origin = new URL(page.url()).origin;
   assert.match(origin, /^http:\/\/127\.0\.0\.1:\d+$/);
-  const runtime = await electronApp.evaluate(({ app }) => ({ execPath: process.execPath, version: app.getVersion(), dataDirectory: app.getPath('userData'), path: process.env.PATH || process.env.Path }));
-  assert.equal((await realpath(runtime.execPath)).toLowerCase(), (await realpath(executable)).toLowerCase());
+  const runtime = await electronApp.evaluate(({ app }) => ({
+    execPath: process.execPath,
+    version: app.getVersion(),
+    dataDirectory: app.getPath('userData'),
+    path: process.env.PATH || process.env.Path,
+    cwd: process.cwd(),
+  }));
+  assert.equal(
+    (await realpath(runtime.execPath)).toLowerCase(),
+    (await realpath(executable)).toLowerCase(),
+  );
   assert.equal(runtime.version, project.version);
   assert.equal(runtime.path.toLowerCase(), systemPath.toLowerCase());
-  assert.equal(resolve(runtime.dataDirectory).toLowerCase(), join(dataDirectory, 'desktop').toLowerCase());
+  assert.equal(resolve(runtime.cwd).toLowerCase(), isolatedFolder.toLowerCase());
+  assert.equal(within(checkoutRoot, await realpath(runtime.execPath)), false);
+  assert.equal(
+    resolve(runtime.dataDirectory).toLowerCase(),
+    join(dataDirectory, 'desktop').toLowerCase(),
+  );
 }
 async function close() {
   if (!electronApp) return;
-  const current = electronApp, oldOrigin = origin, oldPid = processId;
+  const current = electronApp,
+    oldOrigin = origin,
+    oldPid = processId;
   await current.close();
-  electronApp = undefined; page = undefined;
-  await until(async () => !alive(oldPid), 'Portable application process did not exit after close', 15000);
-  if (oldOrigin) await until(() => portClosed(oldOrigin), 'Portable server port remains open after close', 15000);
+  electronApp = undefined;
+  page = undefined;
+  await until(
+    async () => !alive(oldPid),
+    'Portable application process did not exit after close',
+    15000,
+  );
+  if (oldOrigin)
+    await until(
+      () => portClosed(oldOrigin),
+      'Portable server port remains open after close',
+      15000,
+    );
 }
 
 try {
+  assert.equal(dirname(resolve(isolatedFolder)), resolve(temporary));
+  // Dereference any internal distribution links rather than preserving a link
+  // that might let module resolution return to the original checkout.
+  await cp(portableFolder, isolatedFolder, { recursive: true, dereference: true });
+  assert.equal(within(checkoutRoot, await realpath(isolatedFolder)), false);
   // where.exe is from System32. A result here would invalidate the portability
   // check, even if the desktop launcher happened to use its bundled executable.
   let systemNodePresent = false;
-  try { systemNodePresent = execFileSync(join(systemPath, 'where.exe'), ['node.exe'], { env: environment, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().length > 0; }
-  catch (error) { if (error.status !== 1) throw error; }
+  try {
+    systemNodePresent =
+      execFileSync(join(systemPath, 'where.exe'), ['node.exe'], {
+        env: environment,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+        .toString()
+        .trim().length > 0;
+  } catch (error) {
+    if (error.status !== 1) throw error;
+  }
   assert.equal(systemNodePresent, false, 'System-only PATH unexpectedly contains Node');
-  await start(); checks.push('实际打包EXE启动，PATH仅含Windows系统目录，无需安装Node');
+  await start();
+  checks.push('实际打包EXE启动，PATH仅含Windows系统目录，无需安装Node');
   await assertEmptyInstallation(api, defaults);
+  const document = await api('/api/openapi.json');
+  assert.equal(document.openapi, '3.1.0');
+  for (const path of ['/api/docs/', '/api/docs/static/swagger-ui-bundle.js']) {
+    const response = await fetch(origin + path, { signal: AbortSignal.timeout(10000) });
+    assert.equal(response.status, 200, path);
+    assert.ok((await response.text()).length > 100, path);
+  }
+  checks.push('自动接口文档与Swagger UI运行期静态资源保留完整');
   await page.screenshot({ path: join(output, 'home.png'), fullPage: true });
   checks.push('零题目、零领域分类标签、零用户记录，软件只带基础配置且AI关闭无密钥');
-  const renderer = await page.evaluate(() => ({ require: typeof globalThis.require, process: typeof globalThis.process, electron: typeof globalThis.electron }));
+  const renderer = await page.evaluate(() => ({
+    require: typeof globalThis.require,
+    process: typeof globalThis.process,
+    electron: typeof globalThis.electron,
+  }));
   assert.deepEqual(renderer, { require: 'undefined', process: 'undefined', electron: 'undefined' });
   const preferences = await electronApp.evaluate(({ BrowserWindow }) => {
     const preferences = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
-    return { contextIsolation: preferences.contextIsolation, sandbox: preferences.sandbox, nodeIntegration: preferences.nodeIntegration, webviewTag: preferences.webviewTag };
+    return {
+      contextIsolation: preferences.contextIsolation,
+      sandbox: preferences.sandbox,
+      nodeIntegration: preferences.nodeIntegration,
+      webviewTag: preferences.webviewTag,
+    };
   });
-  assert.deepEqual(preferences, { contextIsolation: true, sandbox: true, nodeIntegration: false, webviewTag: false });
-  assert.equal(await page.evaluate(() => window.open('https://example.com', '_blank') === null), true, 'External popup was not denied');
-  assert.equal(await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  assert.deepEqual(preferences, {
+    contextIsolation: true,
+    sandbox: true,
+    nodeIntegration: false,
+    webviewTag: false,
+  });
+  assert.equal(
+    await page.evaluate(() => window.open('https://example.com', '_blank') === null),
+    true,
+    'External popup was not denied',
+  );
+  assert.equal(
+    await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
+    1,
+  );
   checks.push('Renderer隔离与sandbox有效，无Node或Electron接口暴露');
 
   const question = await createReviewedReleaseQuestion(api);
-  const { attempt } = await completeReleasePaper(api, question);
-  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '知识题库', exact: false }).click();
+  const search = await api('/api/search?q=' + encodeURIComponent(question.title));
+  assert.ok(search.items.some((item) => item.type === 'question' && item.id === question.id));
+  checks.push('发布包内服务依赖支持题目索引与统一搜索');
+  const { paper, attempt } = await completeReleasePaper(api, question);
+  await page
+    .getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: '知识题库', exact: false })
+    .click();
   const firstQuestion = page.locator('.question-row .question-title').first();
   await firstQuestion.waitFor();
   const questionHref = await firstQuestion.getAttribute('href');
@@ -112,10 +269,15 @@ try {
   const questionId = decodeURIComponent(questionHref.replace(/^#\/questions\//, ''));
   assert.equal(questionId, question.id);
   await firstQuestion.click();
-  const notes = page.getByRole('textbox', { name: '我的学习笔记' }); await notes.waitFor();
+  const notes = page.getByRole('textbox', { name: '我的学习笔记' });
+  await notes.waitFor();
   const note = 'Windows portable acceptance: notes survive application restart.';
   await notes.fill(note);
-  const noteSaved = page.waitForResponse(response => new URL(response.url()).pathname === `/api/study/${encodeURIComponent(questionId)}` && response.request().method() === 'PUT');
+  const noteSaved = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/study/${encodeURIComponent(questionId)}` &&
+      response.request().method() === 'PUT',
+  );
   await page.getByRole('button', { name: '保存笔记', exact: true }).click();
   assert.equal((await noteSaved).status(), 200);
   await page.getByRole('status').filter({ hasText: '学习记录已保存' }).waitFor();
@@ -129,49 +291,201 @@ try {
     BrowserWindow.getAllWindows()[0].webContents.session.once('will-download', (_event, item) => {
       globalThis.__noeticSmokeDownload.started = true;
       item.setSavePath(savePath);
-      item.once('done', (_event, state) => { globalThis.__noeticSmokeDownload.done = true; globalThis.__noeticSmokeDownload.state = state; });
+      item.once('done', (_event, state) => {
+        globalThis.__noeticSmokeDownload.done = true;
+        globalThis.__noeticSmokeDownload.state = state;
+      });
     });
   }, downloaded);
   await page.evaluate(async () => {
     const response = await fetch('/api/export');
     if (!response.ok) throw new Error(`Desktop export failed (${response.status})`);
     const url = URL.createObjectURL(await response.blob());
-    const link = document.createElement('a'); link.href = url; link.download = 'portable-export.json';
-    document.body.append(link); link.click(); link.remove();
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'portable-export.json';
+    document.body.append(link);
+    link.click();
+    link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   });
-  await until(() => electronApp.evaluate(() => globalThis.__noeticSmokeDownload.done), 'Electron Blob download did not finish');
-  assert.equal(await electronApp.evaluate(() => globalThis.__noeticSmokeDownload.state), 'completed');
+  await until(
+    () => electronApp.evaluate(() => globalThis.__noeticSmokeDownload.done),
+    'Electron Blob download did not finish',
+  );
+  assert.equal(
+    await electronApp.evaluate(() => globalThis.__noeticSmokeDownload.state),
+    'completed',
+  );
   const exported = JSON.parse(await readFile(downloaded, 'utf8'));
   assert.equal(exported.questions.length, 1);
   assert.equal(exported.questions[0].id, question.id);
-  assert.ok(exported.attempts.some(item => item.id === attempt.id && item.status === 'submitted' && item.objectiveScore === 2));
-  assert.ok(exported.study.some(item => item.questionId === questionId && item.notes === note));
+  assert.ok(
+    exported.attempts.some(
+      (item) => item.id === attempt.id && item.status === 'submitted' && item.objectiveScore === 2,
+    ),
+  );
+  assert.ok(exported.study.some((item) => item.questionId === questionId && item.notes === note));
   checks.push('真实/api/export转Blob下载完成，JSON包含题库与已保存笔记');
+  const packet = await api('/api/packages/export', 'POST', { kind: 'migration' });
+  assert.equal(packet.mimeType, 'application/zip');
+  const preview = await api('/api/packages/preview', 'POST', { dataBase64: packet.dataBase64 });
+  const imported = await api('/api/packages/import', 'POST', {
+    dataBase64: packet.dataBase64,
+    expectedFingerprint: preview.fingerprint,
+    confirmed: true,
+    confirmedTrusted: true,
+  });
+  assert.equal(imported.ok, true);
+  assert.equal((await api('/api/bootstrap')).stats.totalQuestions, 1);
+  assert.equal((await api(`/api/attempts/${encodeURIComponent(attempt.id)}`)).status, 'submitted');
+  checks.push('manifest ZIP题库导出、预览与可信迁移导入往返，不重复题目或丢失整卷');
 
-  await close(); checks.push('窗口关闭后应用进程退出，本地服务端口释放');
+  const pdfDownload = join(temporary, 'portable-export.pdf');
+  await electronApp.evaluate(({ BrowserWindow }, savePath) => {
+    globalThis.__noeticSmokeDownload = { done: false, state: '' };
+    BrowserWindow.getAllWindows()[0].webContents.session.once('will-download', (_event, item) => {
+      item.setSavePath(savePath);
+      item.once('done', (_event, state) => {
+        globalThis.__noeticSmokeDownload = { done: true, state };
+      });
+    });
+  }, pdfDownload);
+  await page.evaluate((id) => {
+    location.hash = '#/papers/' + encodeURIComponent(id);
+  }, paper.id);
+  await page.getByRole('button', { name: '导出与分享', exact: true }).click();
+  await page.getByRole('menuitem', { name: '导出题集', exact: true }).click();
+  const exportDialog = page.getByRole('dialog', { name: '导出题集', exact: true });
+  await exportDialog.getByRole('button', { name: '下载文件', exact: true }).click();
+  await until(
+    () => electronApp.evaluate(() => globalThis.__noeticSmokeDownload.done),
+    'Portable PDF export did not finish',
+    60000,
+  );
+  assert.equal(
+    await electronApp.evaluate(() => globalThis.__noeticSmokeDownload.state),
+    'completed',
+  );
+  assert.ok((await PDFDocument.load(await readFile(pdfDownload))).getPageCount() > 0);
+  await exportDialog.getByRole('button', { name: '取消', exact: true }).click();
+  checks.push('桌面Renderer使用编译资源与离线完整字体实际生成PDF，服务端无需重复PDF依赖');
+
+  const sourcePdf = await PDFDocument.create();
+  const font = await sourcePdf.embedFont(StandardFonts.Helvetica);
+  sourcePdf
+    .addPage([360, 480])
+    .drawText('Portable offline PDF reading', { x: 30, y: 410, size: 16, font });
+  const asset = await api('/api/assets', 'POST', {
+    filename: 'portable-source.pdf',
+    mimeType: 'application/pdf',
+    dataBase64: Buffer.from(await sourcePdf.save()).toString('base64'),
+  });
+  const uploadedDocument = await api('/api/documents', 'POST', {
+    title: '便携包PDF兼容验收',
+    kind: '书籍',
+    format: 'pdf',
+    assetId: asset.id,
+  });
+  const source = await api('/api/documents/' + encodeURIComponent(uploadedDocument.id));
+  assert.equal(source.assetId, asset.id);
+  await page.evaluate(
+    ({ id, version }) => {
+      location.hash = '#/documents/' + encodeURIComponent(id) + '/source?version=' + version;
+    },
+    { id: uploadedDocument.id, version: source.contentVersion },
+  );
+  // Canvas has an explicit label but no implicit img role in all Chromium versions.
+  const pageCanvas = page.locator('canvas[aria-label="PDF文件第1页"]');
+  await pageCanvas.waitFor();
+  await until(
+    () => pageCanvas.getAttribute('aria-busy').then((value) => value === 'false'),
+    'Portable PDF page did not render',
+  );
+  assert.ok(await pageCanvas.evaluate((element) => element.width > 100 && element.height > 100));
+  await page.screenshot({ path: join(output, 'pdf-reading.png'), fullPage: true });
+  checks.push('PDF资料上传与元数据保存、浏览器PDF.js worker及离线字体实际阅读正常');
+  const ai = await api('/api/ai/settings');
+  assert.equal(ai.enabled, false);
+  assert.equal(ai.hasKey, false);
+  const disabled = await fetch(origin + '/api/ai/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(disabled.status, 409);
+  assert.equal((await disabled.json()).error.code, 'AI_DISABLED');
+  checks.push('AI基础入口保留且初装关闭，无供应商调用或预置凭据');
+
+  await close();
+  checks.push('窗口关闭后应用进程退出，本地服务端口释放');
   await start();
-  await page.evaluate(href => { location.hash = href; }, questionHref);
-  const restored = page.getByRole('textbox', { name: '我的学习笔记' }); await restored.waitFor();
-  await until(async () => await restored.inputValue() === note, 'Saved learning note was not restored after desktop restart');
+  await page.evaluate((href) => {
+    location.hash = href;
+  }, questionHref);
+  const restored = page.getByRole('textbox', { name: '我的学习笔记' });
+  await restored.waitFor();
+  await until(
+    async () => (await restored.inputValue()) === note,
+    'Saved learning note was not restored after desktop restart',
+  );
   assert.equal((await api('/api/bootstrap')).stats.totalQuestions, 1);
   assert.equal((await api(`/api/attempts/${encodeURIComponent(attempt.id)}`)).status, 'submitted');
   checks.push('发布版重启后保留临时题目、交卷与笔记，不注入初装题库');
-  await close(); assert.deepEqual(errors, [], 'Renderer emitted errors');
-} catch (error) { failure = error; }
-finally {
-  try { await close(); }
-  catch (error) {
+  await close();
+  assert.deepEqual(errors, [], 'Renderer emitted errors');
+} catch (error) {
+  failure = error;
+} finally {
+  try {
+    await close();
+  } catch (error) {
     failure ||= error;
     if (processId && alive(processId)) {
-      try { execFileSync(join(systemPath, 'taskkill.exe'), ['/PID', String(processId), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); }
-      catch (killError) { if (alive(processId)) failure = new AggregateError([failure, killError], 'Portable QA process cleanup failed'); }
+      try {
+        execFileSync(join(systemPath, 'taskkill.exe'), ['/PID', String(processId), '/T', '/F'], {
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+      } catch (killError) {
+        if (alive(processId))
+          failure = new AggregateError([failure, killError], 'Portable QA process cleanup failed');
+      }
     }
   }
-  const target = resolve(temporary); assert.equal(dirname(target), temporaryRoot); assert.ok(basename(target).startsWith('noetic-windows-smoke-'));
-  try { await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 }); }
-  catch (error) { failure ||= error; }
-  await writeFile(join(output, 'report.json'), JSON.stringify({ version: project.version, artifact: basename(executable), passed: checks.length, checks, status: failure ? 'failed' : 'passed', ...(failure ? { error: failure.message } : {}) }, null, 2));
+  const target = resolve(temporary);
+  assert.equal(dirname(target), temporaryRoot);
+  assert.ok(basename(target).startsWith('noetic-windows-smoke-'));
+  try {
+    await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 });
+  } catch (error) {
+    failure ||= error;
+  }
+  await writeFile(
+    join(output, 'report.json'),
+    JSON.stringify(
+      {
+        version: project.version,
+        artifact: basename(executable),
+        isolatedDistribution: true,
+        executableOutsideCheckout: true,
+        cwdOutsideCheckout: true,
+        passed: checks.length,
+        checks,
+        status: failure ? 'failed' : 'passed',
+        ...(failure ? { error: failure.message } : {}),
+      },
+      null,
+      2,
+    ),
+  );
 }
 if (failure) throw failure;
-process.stdout.write(JSON.stringify({ version: project.version, passed: checks.length, status: 'passed', screenshots: 'test-results/windows-smoke' }) + '\n');
+process.stdout.write(
+  JSON.stringify({
+    version: project.version,
+    passed: checks.length,
+    status: 'passed',
+    screenshots: 'test-results/windows-smoke',
+  }) + '\n',
+);

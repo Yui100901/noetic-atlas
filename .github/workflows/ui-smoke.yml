@@ -29,18 +29,14 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/noetic-playwright" --no-save --package-lock=false playwright@1.62.1
           "$RUNNER_TEMP/noetic-playwright/node_modules/.bin/playwright" install --with-deps chromium
           echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/noetic-playwright/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
-      - run: node scripts/qa/check-form-save-bar-focus-ui.mjs
-      - run: node scripts/qa/check-library-compact-ui.mjs
-      - run: node scripts/qa/check-learning-reader-layout-ui.mjs
-      - run: node --import tsx scripts/qa/check-settings-save-bar-ui.mjs
-      - run: node --import tsx scripts/qa/check-domain-export-ui.mjs
-      - run: node --import tsx scripts/qa/check-data-package-ui.mjs
+      - run: node scripts/qa/run.mjs --group smoke
       - name: Keep synthetic screenshots and failure diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: isolated-browser-smoke
           path: |
+            test-results/qa-runs/
             test-results/form-save-bar-focus-ui/
             test-results/library-compact-ui/
             test-results/learning-reader-layout/

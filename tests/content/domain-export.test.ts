@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readStoredZip } from '../helpers/stored-zip.js';
+import { unzipSync } from 'fflate';
 import { readDataPackage } from '../../shared/packages/data-package.js';
 import { Store } from '../../server/core/store.js';
 import { questionSchema } from '../../server/core/validation.js';
@@ -161,7 +161,7 @@ async function fixture(t: TestContext, version = '1.0.0') {
   return { root, database, drug };
 }
 function unzip(bytes: Buffer) {
-  return new Map([...readStoredZip(bytes)].map(([name, data]) => [name, Buffer.from(data)]));
+  return new Map(Object.entries(unzipSync(bytes)).map(([name, data]) => [name, Buffer.from(data)]));
 }
 
 for (const version of ['1.0.0', '1.5']) {

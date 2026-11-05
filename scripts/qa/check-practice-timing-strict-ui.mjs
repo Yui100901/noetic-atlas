@@ -4,16 +4,15 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { pathToFileURL } from 'node:url';
+import { createQaBrowser, waitForQaReady } from './helpers/browser-runtime.mjs';
 const folder = resolve('test-results/practice-timing-strict-ui'); await mkdir(folder, { recursive: true });
 const server = spawn(process.execPath, ['--import', 'tsx', 'scripts/qa/serve-practice-timing.ts'], { env: { ...process.env, QA_PRACTICE_DEV: '1' }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
 let stdout = '', stderr = '', browser, page; const checks = [], pageErrors = [], unexpectedNetwork = [], timingDiagnostics = [];
 const diagnostic = async (phase, state) => timingDiagnostics.push({ phase, at: new Date().toISOString(), backend: state?.attempt?.practiceTiming, calls: state?.calls?.length, client: page ? await page.evaluate(() => ({ visibility: document.visibilityState, performance: performance.now(), date: Date.now(), clock: document.querySelector('[data-testid="attempt-clock"]')?.textContent, timerText: document.querySelector('.attempt-timer p')?.textContent })) : undefined });
 server.stdout.on('data', chunk => stdout += chunk); server.stderr.on('data', chunk => stderr += chunk);
 try {
-  for (let index = 0; index < 900 && !stdout.includes('PRACTICE_TIMING_READY '); index++) { if (server.exitCode !== null) throw new Error(stderr); await delay(100); }
-  const line = stdout.split(/\r?\n/).find(value => value.startsWith('PRACTICE_TIMING_READY ')); assert.ok(line, stdout + stderr); const { origin } = JSON.parse(line.slice('PRACTICE_TIMING_READY '.length));
-  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href : 'playwright'); browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge', headless: true });
+  const { origin } = await waitForQaReady(server, { prefix: 'PRACTICE_TIMING_READY ', stdout: () => stdout, stderr: () => stderr });
+  browser = await createQaBrowser();
   page = await browser.newPage(); page.setDefaultTimeout(60_000); page.on('pageerror', error => pageErrors.push(error.message)); page.on('dialog', dialog => void dialog.accept());
   await page.route('**/*', route => { const url = new URL(route.request().url()); if (url.origin === origin || ['data:', 'blob:'].includes(url.protocol)) return route.continue(); unexpectedNetwork.push(url.href); return route.abort(); });
   page.on('requestfinished', request => { if (/\/api\/attempts\/[^/]+\/timing$/.test(new URL(request.url()).pathname)) timingDiagnostics.push({ phase: 'timing-response-finished', at: new Date().toISOString(), body: request.postDataJSON() }); });

@@ -1,6 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { base64ToBytes, bytesToBase64 } from '../assets/assets.js';
-import { createStoredZip } from '../exports/zip.js';
+import { createCompressedZip } from '../exports/zip.js';
 import { readPackageArchive } from './archive-reader.js';
 import {
   packageError,
@@ -148,12 +148,13 @@ export async function buildDataPackage(input: DataPackageInput): Promise<Uint8Ar
   const manifestBytes = encoder.encode(JSON.stringify(manifest, null, 2) + '\n');
   if (manifestBytes.length > limits.maxManifestBytes) packageError('manifest.json超过大小限制');
   try {
-    return createStoredZip(
+    return createCompressedZip(
       [
         { name: 'manifest.json', bytes: manifestBytes },
         ...Array.from(files, ([name, file]) => ({ name, bytes: file.bytes })),
       ],
       limits.maxBytes,
+      limits.maxExpandedBytes + limits.maxManifestBytes,
     );
   } catch (reason) {
     return packageError((reason as Error).message);

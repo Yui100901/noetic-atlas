@@ -1,0 +1,8 @@
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.android.buildTypes.debug.applicationIdSuffix = '.qa'
+            project.android.buildTypes.debug.versionNameSuffix = '-qa'
+        }
+    }
+}

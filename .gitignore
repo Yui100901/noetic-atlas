@@ -3,6 +3,7 @@ node_modules/
 /dist/
 /mobile/assets/
 /public/pdfjs/
+/public/fonts/
 # Content and private state are released separately; never track local data.
 /data/
 /config/*

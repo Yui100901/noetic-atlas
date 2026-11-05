@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {createQaBrowser,waitForQaReady} from './helpers/browser-runtime.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 
 const folder=resolve('test-results/ai-question-edit-ui');await mkdir(folder,{recursive:true});
@@ -11,10 +11,8 @@ const server=spawn(process.execPath,['--import','tsx','scripts/qa/serve-ai-quest
 let stdout='',stderr='',browser,page;const checks=[],errors=[],external=[],questionWrites=[];
 server.stdout.on('data',value=>stdout+=value);server.stderr.on('data',value=>stderr+=value);
 try{
- for(let i=0;i<600&&!stdout.includes('AI_QUESTION_EDIT_READY ');i++){if(server.exitCode!==null)throw Error(stderr+stdout);await delay(100);}
- const ready=stdout.split(/\r?\n/).find(line=>line.startsWith('AI_QUESTION_EDIT_READY '));assert.ok(ready,stderr);const {origin}=JSON.parse(ready.slice('AI_QUESTION_EDIT_READY '.length));
- const {chromium}=await import(process.env.PLAYWRIGHT_MODULE?pathToFileURL(resolve(process.env.PLAYWRIGHT_MODULE)).href:'playwright');
- browser=await chromium.launch({channel:'msedge',headless:true});page=await browser.newPage({viewport:{width:1440,height:1000},locale:'zh-CN'});page.setDefaultTimeout(25000);
+ const {origin}=await waitForQaReady(server,{prefix:'AI_QUESTION_EDIT_READY ',stdout:()=>stdout,stderr:()=>stderr});
+ browser=await createQaBrowser();page=await browser.newPage({viewport:{width:1440,height:1000},locale:'zh-CN'});page.setDefaultTimeout(25000);
  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
  page.on('request',request=>{if(['POST','PUT','DELETE'].includes(request.method())&&/^\/api\/questions(?:\/EDIT-[SGP])?$/.test(new URL(request.url()).pathname))questionWrites.push(request.url());});
  await page.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin===origin||['data:','blob:'].includes(url.protocol))return route.continue();external.push(url.href);return route.abort();});

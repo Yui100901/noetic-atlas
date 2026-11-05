@@ -7,12 +7,7 @@ import remarkMath from 'remark-math';
 import type { ExportDocument } from '../../../shared/models/export-types';
 import { exportModeLabels } from '../../../shared/models/export-types';
 
-import type {
-  PdfNode as Node,
-  PdfImageData,
-  PdfImageResolver,
-  PdfFormulaResolver,
-} from './pdf-types';
+import type { PdfNode as Node, PdfImageResolver, PdfFormulaResolver } from './pdf-types';
 export type {
   PdfImageData,
   PdfImageResolver,
@@ -251,7 +246,10 @@ export async function renderExportPdf(
     }
     gap(10);
   };
-  const imageCache = new Map<string, Promise<PdfImageData | null>>();
+  const imageCache = new Map<
+    string,
+    Promise<Awaited<ReturnType<PDFDocument['embedPng']>> | null>
+  >();
   const renderImage = async (node: Node, indent = 0) => {
     const url = node.url || '';
     let image: Awaited<ReturnType<PDFDocument['embedPng']>> | null = null;
@@ -260,13 +258,16 @@ export async function renderExportPdf(
       if (resolveImage) {
         let request = imageCache.get(url);
         if (!request) {
-          request = resolveImage(url);
+          request = (async () => {
+            const source = await resolveImage(url);
+            if (source?.mimeType === 'image/png') return pdf.embedPng(source.data);
+            if (source?.mimeType === 'image/jpeg') return pdf.embedJpg(source.data);
+            return null;
+          })();
           imageCache.set(url, request);
         }
-        const source = await request;
-        if (source?.mimeType === 'image/png') image = await pdf.embedPng(source.data);
-        else if (source?.mimeType === 'image/jpeg') image = await pdf.embedJpg(source.data);
-        else if (source) reason = '此格式无法转换为 PNG 或 JPEG';
+        image = await request;
+        if (!image) reason = '此格式无法转换为 PNG 或 JPEG';
       }
     } catch {
       reason = '图片读取或转换失败';

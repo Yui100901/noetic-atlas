@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {buildApp} from '../../server/index.js';
 import {Store} from '../../server/core/store.js';
 import {exportData,importData} from '../../server/modules/transfer/migration.js';
-import {exportShare} from '../../server/modules/sharing/routes.js';
+import {exportShare} from '../../server/modules/sharing/service.js';
 import {questionSchema} from '../../server/core/validation.js';
 import {aiWorkspaceDraftCreateSchema,aiWorkspaceDraftSchema} from '../../server/modules/ai/workspace-draft-schema.js';
 import {AI_WORKSPACE_DRAFT_MAX_BYTES} from '../../shared/ai/workspace-drafts.js';

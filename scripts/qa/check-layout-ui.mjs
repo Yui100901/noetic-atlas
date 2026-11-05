@@ -5,6 +5,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { SETTINGS_SECTIONS, settingsSubsections } from '../../web/features/settings/settings-navigation.ts';
 
 const root = resolve(import.meta.dirname, '../..');
 const baseline = process.argv.includes('--baseline');
@@ -44,6 +45,10 @@ const paper=buildPaper(staging,{id:'LAYOUT-PAPER',title:'基础知识练习与�
 staging.put('papers',paper.id,paper);
 const draft=createAttempt(staging,paper);saveAttempt(staging,draft,{});
 const completed=createAttempt(staging,paper);submitAttempt(staging,completed,{'LAYOUT-0':{value:'false'},'LAYOUT-1':{value:'隔离性限制事务之间的干扰。'}});
+const removedPaper=buildPaper(staging,{id:'LAYOUT-REMOVED',title:'已删除题集的保留学习记录',mode:'manual',questionIds:['LAYOUT-0'],scoring:{enabled:false}});
+staging.put('papers',removedPaper.id,removedPaper);
+const removedAttempt=createAttempt(staging,removedPaper);submitAttempt(staging,removedAttempt,{'LAYOUT-0':{value:'false'}});
+staging.remove('papers',removedPaper.id);
 staging.putStudy({...staging.study('LAYOUT-0'),favorite:true,notes:'注意隔离级别与数据库实现的区别。'});
 staging.put('settings','system',{...structuredClone(DEFAULT_SETTINGS),updatedAt:stamp,dailyPush:{...DEFAULT_SETTINGS.dailyPush,enabled:true,timeZone:'Asia/Shanghai',goals:[{id:'layout-goal',name:'基础概念每日复习',enabled:true,domainId:'layout-domain',categoryIds:['layout-child'],tagIds:[],tagMode:'all',weekdays:[1,2,3,4,5,6,7],priority:3,weight:1,reviewPoints:0,newPoints:3,mode:'practice',direction:'default'}]}});
 const data=exportData(staging);staging.db.close();
@@ -152,11 +157,22 @@ try {
     ['taxonomy', 'taxonomy'], ['search', 'search?q=事务'], ['analytics', 'analytics'], ['weekly', 'analytics?tab=weekly'],
     ['sharing', 'sharing'], ['ai', 'ai?tab=paper'],
   ];
+  // Derive the full settings inventory from product navigation so newly split
+  // settings panels cannot silently disappear from responsive regression QA.
+  if (full) for (const section of SETTINGS_SECTIONS) {
+    const subsections = settingsSubsections(section.id);
+    for (const sub of subsections.length ? subsections : [{ id: '' }]) {
+      const route = 'settings?tab=' + section.id + (sub.id ? '&sub=' + sub.id : '');
+      if (!routes.some(([, existing]) => existing === route))
+        routes.push(['settings-' + section.id + (sub.id ? '-' + sub.id : ''), route]);
+    }
+  }
   if(full)routes.push(
     ['question-new','questions/new'],['question-study','questions/LAYOUT-1?answer=1'],['vocabulary-reference','vocabulary/transaction'],
     ['quality','content-quality'],['quality-editor','questions/LAYOUT-0/edit?returnTo='+encodeURIComponent('#/content-quality')+'&issueId='+state.issueId],
     ['feedback-redirect','question-feedback?questionId=LAYOUT-0'],
     ['paper-manual','papers/new/manual'],['paper-reading','papers/'+state.paperId+'/questions/LAYOUT-0'],
+    ['deleted-paper-activity','papers/LAYOUT-REMOVED/activity'],
     ...['history','drafts','wrong','favorite','review'].map(tab=>['paper-'+tab,'papers/'+state.paperId+'?tab='+tab]),
     ...['wrong','favorite'].map(kind=>['global-'+kind,'learning/'+kind]),
     ['learning-reader','learning-reader?scope=global&kind=wrong&item='+encodeURIComponent(state.readerKey)+'&page=1&pageSize=20'],
@@ -208,7 +224,7 @@ try {
   for (let index = 0; index < 30 && (await api('/api/settings')).examDurationMinutes !== 90; index++) await delay(100);
   assert.equal((await api('/api/settings')).examDurationMinutes, 90);
   await page.getByRole('navigation', { name: '系统配置分区', exact: true }).getByRole('link', { name: '数据与迁移', exact: false }).click();
-  await page.getByRole('heading', { name: '完整 JSON 备份', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '完整数据迁移包', exact: true }).waitFor();
   await geometry('settings-backup-tab-click');
   checks.push('设置保存及分区切换通过真实按钮操作，复用样式未影响表单与导航');
   assert.deepEqual(errors, [], 'browser errors'); assert.deepEqual(externalRequests, [], 'unexpected external request');

@@ -18,7 +18,7 @@ import {
   paperExportDocument,
   attemptExportDocument,
 } from '../../server/modules/transfer/exports.js';
-import { exportShare, importShare } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare } from '../../server/modules/sharing/service.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
 import { questionHistory } from '../../server/modules/questions/history.js';
 import { reverseVocabularyQuestion } from '../../server/modules/practice/vocabulary-practice.js';

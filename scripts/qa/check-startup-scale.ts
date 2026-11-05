@@ -41,7 +41,15 @@ try{
    const healthAt=performance.now(),health=await app.inject('/api/health');assert.equal(health.statusCode,200);const healthMs=performance.now()-healthAt;
    const firstAt=performance.now(),bootstrap=await app.inject('/api/bootstrap');assert.equal(bootstrap.statusCode,200);assert.equal(bootstrap.json().stats.totalQuestions,count);const firstBootstrapMs=performance.now()-firstAt;
    const nextAt=performance.now(),next=await app.inject('/api/bootstrap');assert.equal(next.statusCode,200);const warmBootstrapMs=performance.now()-nextAt;
-   runs.push({kind:index===0?'freshly_seeded':'clean_reopen',buildAppMs,healthMs,firstBootstrapMs,warmBootstrapMs,bootstrapBytes:Buffer.byteLength(bootstrap.body),profile});
+   let learningProfile;
+   if(index===2){
+    const learningCount=Math.min(count,10000),writer=new Store(path);
+    try{writer.transaction(()=>{for(let i=0;i<learningCount;i++)writer.put('study','STARTUP-'+i,{questionId:'STARTUP-'+i,favorite:i%5===0,wrongCount:i%3===0?1:0,nextReviewAt:i%2===0?'2000-01-01T00:00:00.000Z':null,notes:'学习笔记'.repeat(100)});});}finally{writer.db.close();}
+    const timings=[];
+    for(let sample=0;sample<5;sample++){const at=performance.now(),result=await app.inject('/api/bootstrap');assert.equal(result.statusCode,200);const stats=result.json().stats;assert.equal(stats.favoriteCount,Math.ceil(learningCount/5));assert.equal(stats.wrongCount,Math.ceil(learningCount/3));assert.equal(stats.dueCount,Math.ceil(learningCount/2));timings.push(performance.now()-at);}
+    learningProfile={studyRecords:learningCount,firstAfterExternalCommitMs:timings[0],warmMedianMs:timings.slice(1).sort((a,b)=>a-b)[1],allMs:timings};
+   }
+   runs.push({kind:index===0?'freshly_seeded':'clean_reopen',buildAppMs,healthMs,firstBootstrapMs,warmBootstrapMs,bootstrapBytes:Buffer.byteLength(bootstrap.body),profile,...(learningProfile?{learningProfile}:{})});
   }finally{await app.close();}
  }
  const report={label,isolated:true,questions:count,seedMs,runs,note:'Synthetic file-backed SQLite timings after code import; first run includes pending read/search projection refresh. No real work data. Run without builds/full tests for comparable timings.'};

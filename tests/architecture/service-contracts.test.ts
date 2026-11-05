@@ -25,11 +25,12 @@ function sourceFiles(directory: string): string[] {
   );
 }
 
-test('asset, library and settings HTTP adapters are not service dependencies', () => {
+test('asset, library, settings and sharing HTTP adapters are not service or content CLI dependencies', () => {
   const violations: string[] = [];
   for (const file of [
     ...sourceFiles(join(root, 'server/modules')),
     ...sourceFiles(join(root, 'mobile')),
+    ...sourceFiles(join(root, 'scripts/content')),
   ]) {
     const source = ts.createSourceFile(
       file,
@@ -44,12 +45,14 @@ test('asset, library and settings HTTP adapters are not service dependencies', (
         !ts.isStringLiteral(statement.moduleSpecifier)
       )
         continue;
-      if (/(?:assets|library|settings)\/routes(?:\.js)?$/.test(statement.moduleSpecifier.text))
+      if (
+        /(?:assets|library|settings|sharing)\/routes(?:\.js)?$/.test(statement.moduleSpecifier.text)
+      )
         violations.push(file + ': ' + statement.moduleSpecifier.text);
     }
   }
   assert.deepEqual(violations, []);
-  for (const module of ['assets', 'library', 'settings']) {
+  for (const module of ['assets', 'library', 'settings', 'sharing']) {
     const source = ts.createSourceFile(
       module,
       readFileSync(join(root, 'server/modules', module, 'routes.ts'), 'utf8'),

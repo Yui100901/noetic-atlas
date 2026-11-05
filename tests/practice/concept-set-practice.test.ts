@@ -6,7 +6,7 @@ import type { Question } from '../../shared/models/types.js';
 import { conceptPromptIsSafe } from '../../shared/questions/concept.js';
 import { attemptView, buildPaper, createAttempt, reviewAttempt, saveAttempt, submitAttempt, validateAttemptSnapshot } from '../../server/modules/practice/service.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
-import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/service.js';
 import { archiveAttemptQuestionHistory } from '../../server/modules/questions/history-store.js';
 import { learningMetadata } from '../../server/modules/practice/learning-results.js';
 import { questionHistory, questionStatistics } from '../../server/modules/questions/history.js';

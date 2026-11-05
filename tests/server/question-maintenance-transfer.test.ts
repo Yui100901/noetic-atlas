@@ -12,7 +12,7 @@ import {
   executeCleanup,
 } from '../../server/modules/maintenance/cleanup.js';
 import { dataHealth } from '../../server/modules/maintenance/health.js';
-import { exportShare } from '../../server/modules/sharing/routes.js';
+import { exportShare } from '../../server/modules/sharing/service.js';
 
 const old = '2020-01-01T00:00:00.000Z';
 const png =

@@ -42,7 +42,7 @@ async function fixture(t: test.TestContext) {
     if (customize) result = await customize(input.untrustedMaterial, input.task);
     else if (input.task.includes('连通性测试')) result = { ok: true, message: '本地模型正常' };
     else if (input.outputSchema.items?.[0]?.reason) result = { title: '事务递进复习', description: '由基础理解到应用', items: input.untrustedMaterial.candidates.slice(0,input.untrustedMaterial.requestedCount).map((q:any)=>({questionId:q.id,reason:'检验基础知识与边界'})) };
-    else if (input.task.includes('逐项评价')) result = { items: input.untrustedMaterial.items.map((i: any) => ({ questionId: i.questionId, score: i.maxPoints == null ? null : i.maxPoints / 2, maxPoints: i.maxPoints, comment: `作答包含核心概念，需补充示例：${i.answer || '未作答'}`, strengths: ['提到了事务边界'], improvements: ['结合转账说明回滚'] })) };
+    else if (input.task.includes('逐项评价')) result = { items: input.untrustedMaterial.items.map((i: any) => ({ questionId: i.questionId, score: i.maxPoints == null ? null : i.maxPoints / 2, maxPoints: i.maxPoints, comment: `作答包含核心概念，需补充示例：${i.userAnswer || '未作答'}`, strengths: ['提到了事务边界'], improvements: ['结合转账说明回滚'] })) };
     else if (input.outputSchema.items?.[0]?.verdict) result = { items: input.untrustedMaterial.questions.map((q: any) => ({ questionId: q.id, verdict: 'valid', issues: [] })) };
     else if (input.outputSchema.questions) result = { questions: [question('AI-CANDIDATE', { status: 'published' })], taxonomySuggestions: { domains: ['计算机'], categories: ['事务'], tags: ['数据库'] } };
     else result = { explanationMarkdown: '事务原子性意味着整组操作要么全部提交，要么全部回滚。', followUpsMarkdown: '日志支持恢复。', pitfallsMarkdown: '原子性不等于所有并发操作完全串行。' };
@@ -137,6 +137,36 @@ test('AI grades selected subjective items as suggestions, explicit apply uses ac
   await f.api('/api/ai/grade', 'POST', { attemptId: a.id, questionIds: ['O1'] }, 400);
   const direct = await f.api('/api/ai/grade', 'POST', { questionId: 'S1', answer: '我的作答' }); assert.equal(direct.result.items[0].score, null);
   await f.api(`/api/ai/runs/${direct.id}/apply`, 'POST', { confirmed: true, applyScores: true }, 400);
+});
+
+test('AI grading distinguishes a reference-identical learner response from a genuinely blank response for single and paper grading', async t => {
+  const f = await fixture(t); await f.enable();
+  const reference = f.store.require<any>('questions', 'S1').answerMarkdown;
+  f.customize((material: any, task: string) => {
+    assert.match(task, /userAnswer是本次用户实际作答/);
+    return { items: material.items.map((item: any) => {
+      assert.equal(Object.hasOwn(item, 'answer'), false);
+      assert.equal(typeof item.question.answerMarkdown, 'string');
+      assert.equal(typeof item.userAnswer, 'string');
+      const answered = !!item.userAnswer.trim();
+      if (answered) assert.equal(item.userAnswer, item.question.answerMarkdown);
+      return { questionId: item.questionId, verdict: answered ? 'correct' : 'incorrect', score: item.maxPoints == null ? null : answered ? item.maxPoints : 0, maxPoints: item.maxPoints, comment: answered ? '本次作答覆盖参考要点' : '空白作答', strengths: [], improvements: [] };
+    }) };
+  });
+  for (const maxPoints of [5, undefined]) {
+    const answered = await f.api('/api/ai/grade', 'POST', { questionId: 'S1', answer: reference, maxPoints });
+    assert.equal(answered.result.items[0].verdict, 'correct');
+    assert.equal(answered.result.items[0].score, maxPoints ?? null);
+    const blank = await f.api('/api/ai/grade', 'POST', { questionId: 'S1', answer: ' \n ', maxPoints });
+    assert.equal(blank.result.items[0].verdict, 'incorrect');
+    assert.equal(blank.result.items[0].score, maxPoints == null ? null : 0);
+  }
+  const paper = buildPaper(f.store, { title: '作答角色回归', mode: 'manual', description: '', questionIds: ['S1', 'S2'], scoring: { enabled: true, questionPoints: { S1: 5, S2: 5 } } });
+  f.store.put('papers', paper.id, paper);
+  const attempt = submitAttempt(f.store, createAttempt(f.store, paper), { S1: { value: reference } });
+  const run = await f.api(`/api/attempts/${attempt.id}/ai-review`, 'POST', {});
+  assert.deepEqual(run.result.items.map((item: any) => [item.questionId, item.verdict, item.score]), [['S1', 'correct', 5], ['S2', 'incorrect', 0]]);
+  assert.deepEqual(f.store.require('attempts', attempt.id), attempt);
 });
 
 test('AI grading rejects out-of-range model output and concurrent manual grading before explicit apply', async t => {

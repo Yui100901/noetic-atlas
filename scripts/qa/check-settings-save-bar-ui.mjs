@@ -1,3 +1,4 @@
+import { buildDataPackage } from '../../shared/packages/data-package.ts';
 /** Shared configuration draft, stable category URLs and safe retention saves. */
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
@@ -191,13 +192,19 @@ try {
   const bundle = await api('/api/settings/export');
   bundle.system.examDurationMinutes = 45;
   bundle.ai.model = '导入后的模型';
-  await page.getByLabel('选择配置JSON文件', { exact: true }).setInputFiles({
-    name: 'settings-qa.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify(bundle)),
+  await page.getByLabel('选择 ZIP 数据包', { exact: true }).setInputFiles({
+    name: 'settings-qa.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(
+      await buildDataPackage({
+        kind: 'configuration',
+        title: '配置验收',
+        payloads: [{ path: 'data/settings.json', data: bundle }],
+      }),
+    ),
   });
-  await page.getByRole('button', { name: '确认应用配置', exact: true }).click();
-  await page.getByText('配置导入完成', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '确认导入整个数据包', exact: true }).click();
+  await page.getByText('数据包已完整导入。', { exact: false }).waitFor();
   await tab('练习与计分');
   assert.equal(await duration().inputValue(), '65');
   await save().click();

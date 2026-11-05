@@ -1,18 +1,17 @@
-import { reverseCardGradingRequirements } from '../../../shared/questions/directional-grading.js';
-import {literalMathMarkdown} from '../../../shared/math/markdown.js';
-import {questionStemMarkdown} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { typeLabels, type Question } from '../../../shared/models/types.js';
-import { exportModeLabels, type ExportDocument, type ExportMode, type ExportQuestion } from '../../../shared/models/export-types.js';
-import { attemptView, expandPaper, isCorrect, type StoredAttempt, type StoredPaper } from '../practice/service.js';
-import { isSubjectiveType } from '../../../shared/questions/question-utils.js';
-import type { StoredLeafQuestion } from '../questions/structure.js';
-import { normalizeScoring } from '../practice/scoring.js';
-import { Store, now } from '../../core/store.js';
-import { fail, id, parse } from '../../core/validation.js';
+import { literalMathMarkdown } from '../../../shared/math/markdown.js';
+import { exportModeLabels,type ExportDocument,type ExportMode,type ExportQuestion } from '../../../shared/models/export-types.js';
+import { typeLabels,type Question } from '../../../shared/models/types.js';
+import { questionStemMarkdown } from '../../../shared/questions/blank-markers.js';
 import { extractContentNotices } from '../../../shared/questions/content-notices.js';
+import { reverseCardGradingRequirements } from '../../../shared/questions/directional-grading.js';
+import { isSubjectiveType } from '../../../shared/questions/question-utils.js';
 import { vocabularyPronunciationMarkdown } from '../../../shared/questions/vocabulary.js';
+import { Store,now } from '../../core/store.js';
+import { fail,id,parse } from '../../core/validation.js';
+import { attemptView,expandPaper,isCorrect,type StoredAttempt,type StoredPaper } from '../practice/service.js';
+import type { StoredLeafQuestion } from '../questions/structure.js';
 
 const labelValue = (value: string) => value === 'true' ? '正确' : value === 'false' ? '错误' : value;
 const answerText = (value: string | string[] | undefined, type: Question['type']) => {

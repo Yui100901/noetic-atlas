@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../../server/core/store.js';
 import { buildApp } from '../../server/index.js';
-import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/service.js';
 import { normalizeDocument } from '../../server/modules/library/service.js';
 import { parse, questionSchema } from '../../server/core/validation.js';
 import { buildPaper, expandPaper } from '../../server/modules/practice/service.js';

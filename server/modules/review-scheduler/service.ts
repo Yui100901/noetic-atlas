@@ -1,19 +1,18 @@
-import type { Store } from '../../core/store.js';
-import { recordPlanEvidence } from '../learning-plans/progress.js';
-import { fail, parse, id as identifier } from '../../core/validation.js';
-import { now, nextStamp } from '../../core/store.js';
 import { createHash } from 'node:crypto';
-import type { Question, VocabularyDirection } from '../../../shared/models/types.js';
-import type { AttemptReviewOverview, FsrsMemory, ReviewCard, ReviewCardView, ReviewDirection, ReviewEvent, ReviewIdentity, ReviewQueue, ReviewQueueItem, ReviewRating } from '../../../shared/models/adaptive-review.js';
-import { REVIEW_RATINGS, REVIEW_RATING_LABELS } from '../../../shared/models/adaptive-review.js';
-import { getSettings } from '../settings/service.js';
-import type { StoredAttempt } from '../practice/service.js';
+import type { AttemptReviewOverview,ReviewCard,ReviewCardView,ReviewDirection,ReviewEvent,ReviewIdentity,ReviewQueue,ReviewQueueItem,ReviewRating } from '../../../shared/models/adaptive-review.js';
+import { REVIEW_RATINGS,REVIEW_RATING_LABELS } from '../../../shared/models/adaptive-review.js';
 import { isAnswerPresent } from '../../../shared/practice/attempt-timing.js';
-import { getObjectiveCorrect, isSubjectiveType } from '../../../shared/questions/question-utils.js';
-import { learningJudgment } from '../practice/learning-state.js';
+import { getObjectiveCorrect,isSubjectiveType } from '../../../shared/questions/question-utils.js';
+import type { Store } from '../../core/store.js';
+import { nextStamp,now } from '../../core/store.js';
+import { fail,id as identifier,parse } from '../../core/validation.js';
 import { dailyCalendar } from '../daily-push/calendar.js';
-import { emptyMemory, retrievability, reviewMemory } from './engine.js';
-import { reviewCardSchema, reviewEventSchema } from './schema.js';
+import { recordPlanEvidence } from '../learning-plans/progress.js';
+import { learningJudgment } from '../practice/learning-state.js';
+import type { StoredAttempt } from '../practice/service.js';
+import { getSettings } from '../settings/service.js';
+import { emptyMemory,retrievability,reviewMemory } from './engine.js';
+import { reviewCardSchema,reviewEventSchema } from './schema.js';
 
 export const reviewCardId = (identity: ReviewIdentity) => JSON.stringify([identity.questionId, identity.partId ?? null, identity.direction]);
 export const attemptReviewId = (attemptId: string, leafId: string, direction: ReviewDirection) => JSON.stringify(['attempt', attemptId, leafId, direction]);
@@ -21,7 +20,6 @@ const manualId = (requestId: string) => JSON.stringify(['manual', requestId]);
 const canonical = (value: unknown) => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
 const eventOrder = (a: ReviewEvent, b: ReviewEvent) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || a.id.localeCompare(b.id);
-const identityOf = (card: ReviewIdentity): ReviewIdentity => ({ questionId: card.questionId, ...(card.partId ? { partId: card.partId } : {}), direction: card.direction });
 
 interface SourceHeader { id: string; status: string; type: string; hasVocabulary: boolean; hasConcept: boolean; reverseEnabled: boolean; hasLegacyStandard: boolean; leaves: Array<{ partId?: string; type: string }> }
 function sourceHeaders(store: Store, ids: string[]): Map<string, SourceHeader> {

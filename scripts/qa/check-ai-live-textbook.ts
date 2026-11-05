@@ -61,9 +61,14 @@ async function prepareTextbook() {
   let bytes: Uint8Array;
   try { bytes = new Uint8Array(await readFile(fullPath)); }
   catch {
-    const response = await fetch(sourceUrl, { signal: AbortSignal.timeout(60_000) });
-    assert.equal(response.status, 200, 'TEXTBOOK_DOWNLOAD_FAILED');
-    bytes = new Uint8Array(await response.arrayBuffer()); await writeFile(fullPath, bytes);
+    // The author's tagged release mirrors the same edition when the canonical
+    // book host is unavailable. Both are publisher-owned public sources.
+    let downloaded: Uint8Array | undefined;
+    for(const url of [sourceUrl,'https://github.com/AllenDowney/ThinkPython2/releases/download/v2.4.1/thinkpython2.pdf']) {
+      try { const response=await fetch(url,{signal:AbortSignal.timeout(30_000)});if(response.ok){downloaded=new Uint8Array(await response.arrayBuffer());break;} } catch { /* Try the author's release mirror. */ }
+    }
+    assert.ok(downloaded,'TEXTBOOK_DOWNLOAD_FAILED');
+    bytes = downloaded; await writeFile(fullPath, bytes);
   }
   const original = await PDFDocument.load(bytes);
   assert.equal(original.getPageCount(), 244, 'TEXTBOOK_SOURCE_CHANGED');
@@ -162,7 +167,7 @@ try {
     const input = page.getByLabel('AI导入原始文件', { exact: true });
     await input.setInputFiles(fullPath);
     await page.getByRole('alert').filter({ hasText: /最多150页/ }).waitFor();
-    assert.equal((await api('/api/ai/runs?kind=import')).length, 0, 'oversize PDF must not invoke AI');
+    assert.equal((await api('/api/ai/runs?kind=import&page=1&pageSize=20')).items.length, 0, 'oversize PDF must not invoke AI');
     await input.setInputFiles(excerptPath);
     await page.getByText(/已在本机提取5页文字/).waitFor();
     const extracted = await page.locator('.ai-source-text').inputValue();
@@ -185,7 +190,7 @@ try {
     await page.getByRole('button', { name: /生成.*预览/ }).first().click();
     const response = await responsePromise; streamContentType = response.headers()['content-type'] || '';
     await page.getByRole('button', { name: '确认新增到待审核', exact: true }).waitFor();
-    const runs = await api('/api/ai/runs?kind=import'); generatedRun = runs[0];
+    const runs = await api('/api/ai/runs?kind=import&page=1&pageSize=20'); generatedRun = await api('/api/ai/runs/'+runs.items[0].id);
     assert.ok(generatedRun?.result?.questions?.length >= 6 && generatedRun.result.questions.length <= 8);
     assert.equal((await api('/api/questions?status=all')).total, before, 'preview is not an import');
     const questions = generatedRun.result.questions;

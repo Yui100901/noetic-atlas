@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, Clock3, Pause, SkipForward } from 'lucide-react';
+import { ArrowLeft, BookOpen, Clock3, Pause, SkipForward } from 'lucide-react';
 import type { FocusView } from '../../../shared/models/focus-review';
 import type { ReviewRating } from '../../../shared/models/adaptive-review';
 import { REVIEW_RATING_LABELS } from '../../../shared/models/adaptive-review';

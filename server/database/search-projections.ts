@@ -31,6 +31,7 @@ const key = (source: Source, id: string) => JSON.stringify([source, id]);
 /** Independent disposable index. Its queue never consumes another projection's
  * dirtiness, and normal business records remain authoritative and unchanged. */
 export class SearchProjections {
+  private rows: Array<{data:string}&Record<string,string|number|null>> | undefined;
   constructor(private readonly db: DatabaseConnection) {}
   initialize(): boolean {
     const d = this.db, q = d.query;
@@ -70,7 +71,8 @@ export class SearchProjections {
       data: JSON.stringify(data), id_key: normalizeSearch(metadata.id), title_key: normalizeSearch(title), content_key: normalizeSearch(body),
       search_text: normalizeSearch([metadata.id, title, body, searchPlain(reference)].join(' ')), content: body,
       status: metadata.status || 'published', archived: Number(archived), updated_at: metadata.updatedAt && Number.isFinite(Date.parse(metadata.updatedAt)) ? new Date(metadata.updatedAt).toISOString() : '' };
-    d.run(d.query.insertInto('search_read_model').values(row).onConflict(c => c.column('key').doUpdateSet(row)));
+    if(this.rows)this.rows.push(row);
+    else d.upsertProjectionRows('search_read_model','key',[row]);
   }
   private metadata(record: any, id = record.id): Metadata {
     return { id, title: record.title || record.name || id, href: '', description: '', categoryIds: strings(record.categoryIds), domainIds: strings(record.domainIds), ...(typeof record.updatedAt === 'string' ? { updatedAt: record.updatedAt } : {}) };
@@ -132,12 +134,16 @@ export class SearchProjections {
         if (!pending.length) break;
         const ids = pending.map(row => row.source_id), records = new Map(d.all(q.selectFrom(source).select(['id', 'data']).where('id', 'in', ids)).map(row => [row.id, JSON.parse(row.data)]));
         d.run(q.deleteFrom('search_read_model').where('source_table', '=', source).where('source_id', 'in', ids));
+        this.rows=[];
+        try {
         if (source === 'questions') { for (const record of records.values()) this.question(record); this.refreshNotes(ids, records); }
         else if (source === 'study' || source === 'study_parts') {
           const parentIds = [...new Set([...records.values()].map(record => record.questionId || record.id))] as string[];
           const questions = new Map(parentIds.length ? d.all(q.selectFrom('questions').select(['id', 'data']).where(d.expressions.idInJson('id', parentIds))).map(row => [row.id, JSON.parse(row.data)]) : []);
           for (const [id, record] of records) this.note(source, id, record, questions.get(record.questionId || id));
         } else for (const record of records.values()) this.ordinary(source, record);
+        d.upsertProjectionRows('search_read_model','key',this.rows);
+        } finally { this.rows=undefined; }
         d.run(q.deleteFrom('search_projection_pending').where('source_table', '=', source).where('source_id', 'in', ids));
       }
     });

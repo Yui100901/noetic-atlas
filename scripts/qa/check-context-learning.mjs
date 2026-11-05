@@ -30,15 +30,16 @@ await app.listen({host:'127.0.0.1',port:0});console.log('CONTEXT_LEARNING_READY 
 const server=spawn(process.execPath,['--import','tsx','--input-type=module','-e',code],{windowsHide:true,stdio:['ignore','pipe','pipe']});
 let stdout='',stderr='',browser,page;server.stdout.on('data',value=>stdout+=value);server.stderr.on('data',value=>stderr+=value);
 const output='test-results/context-learning-ui';await mkdir(output,{recursive:true});
-const checks=[],errors=[],globalAttemptRequests=[];
+const checks=[],errors=[],globalAttemptRequests=[],navigationTrace=[];
 try{
   let state;
   for(let i=0;i<200;i++){if(server.exitCode!==null)throw Error(stderr);const line=stdout.split(/\r?\n/).find(value=>value.startsWith('CONTEXT_LEARNING_READY '));if(line){state=JSON.parse(line.slice('CONTEXT_LEARNING_READY '.length));break;}await new Promise(done=>setTimeout(done,100));}
   assert.ok(state,stderr);const {origin}=state;
   browser=await chromium.launch({channel:'msedge',headless:true});page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(20000);
+  page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigationTrace.push({event:'navigation',url:frame.url(),at:Date.now()});});
   page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>void dialog.accept());page.on('request',request=>{if(new URL(request.url()).pathname==='/api/attempts')globalAttemptRequests.push(request.url());});
   const api=async(path,method='GET',data)=>{const response=await page.request.fetch(origin+path,{method,...(data===undefined?{}:{data})});assert.ok(response.ok(),await response.text());return response.json();};
-  const openSet=async(id,tab='content')=>{await page.goto(origin+'/#/papers/'+id+'?tab='+tab);await page.getByRole('tab',{name:'题集内容',exact:true}).waitFor();};
+  const openSet=async(id,tab='content')=>{await page.goto(origin+'/#/papers/'+id+'?tab='+tab);await page.getByRole('tab',{name:'题集内容',exact:true}).waitFor();navigationTrace.push({event:'openSet-tab-ready',requestedId:id,tab,url:page.url(),title:await page.locator('h1').allTextContents(),at:Date.now()});};
   await openSet(state.a);assert.equal(await page.locator('.sidebar a[href="#/study"]').count(),0);
   await page.getByRole('tab',{name:'错题集',exact:true}).click();await page.getByRole('link',{name:'查看学习题目：共享判断题的原快照',exact:true}).waitFor();assert.equal(await page.locator('.context-learning-question').count(),1);
   const address=page.url();await page.getByRole('link',{name:'查看学习题目：共享判断题的原快照',exact:true}).click();const dialog=page.getByRole('article',{name:'特殊题集题目详情',exact:true});await dialog.getByRole('heading',{name:'共享判断题的原快照',exact:true}).waitFor();await dialog.getByRole('button',{name:'展开答案与解析',exact:true}).click();await dialog.getByText('需要明确的失效规则。',{exact:true}).waitFor();assert.equal(await dialog.getByText('新的原题答案',{exact:true}).count(),0);assert.notEqual(page.url(),address);assert.ok(page.url().includes('#/learning-reader?'));assert.equal(await page.getByRole('dialog').count(),0);
@@ -56,5 +57,5 @@ try{
   await page.goto(origin+'/#/study?tab=favorite');await page.waitForURL(/#\/questions\?favorite=true$/);await page.locator('.question-list .question-row').first().waitFor();checks.push('旧学习记录链接重定向到对应现有入口');
   assert.deepEqual(errors,[]);assert.deepEqual(globalAttemptRequests,[]);
   const report={passed:checks.length,checks,browserErrors:errors,unscopedAttemptRequests:globalAttemptRequests,isolated:true};await writeFile(output+'/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
-}catch(error){await page?.screenshot({path:output+'/failure.png'}).catch(()=>{});console.error({url:page?.url(),checks,stderr});throw error;}
+}catch(error){await page?.screenshot({path:output+'/failure.png'}).catch(()=>{});await writeFile(output+'/navigation-failure.json',JSON.stringify({url:page?.url(),checks,navigationTrace,error:String(error.stack||error)},null,2));console.error({url:page?.url(),checks,navigationTrace,stderr});throw error;}
 finally{await browser?.close();server.kill();}

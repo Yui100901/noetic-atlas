@@ -1,14 +1,14 @@
-import { recordPlanEvidence } from '../learning-plans/progress.js';
 import { z } from 'zod';
-import type { Store } from '../../core/store.js';
-import { fail, id, leafId, parse, snapshotQuestionSchema, types, gradingRequirementsSchema } from '../../core/validation.js';
-import type { StoredAttempt } from './service.js';
-import type { StoredLeafQuestion } from '../questions/structure.js';
-import { normalizeScoring } from './scoring.js';
-import { learningJudgment, learningQuestionKey, type LearningJudgingItem } from './learning-state.js';
+import type { PaperPracticeKind,VocabularyDirection } from '../../../shared/models/types.js';
 import { isAnswerPresent } from '../../../shared/practice/attempt-timing.js';
+import type { Store } from '../../core/store.js';
+import { fail,gradingRequirementsSchema,id,leafId,parse,snapshotQuestionSchema,types } from '../../core/validation.js';
+import { recordPlanEvidence } from '../learning-plans/progress.js';
 import { preserveQuestionHistory } from '../questions/history-store.js';
-import type { PaperPracticeKind, VocabularyDirection } from '../../../shared/models/types.js';
+import type { StoredLeafQuestion } from '../questions/structure.js';
+import { learningJudgment,learningQuestionKey,type LearningJudgingItem } from './learning-state.js';
+import { normalizeScoring } from './scoring.js';
+import type { StoredAttempt } from './service.js';
 
 const stamp = z.string().datetime({ offset: true });
 const itemSchema = z.object({
@@ -49,7 +49,7 @@ export type LearningResult = Omit<z.infer<typeof learningResultSchema>, 'questio
 export type LearningResultItem = z.infer<typeof itemSchema>;
 
 const orderedJson = (value: unknown): string => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
-export function validateLearningResult(store: Store, input: unknown, importedAttempt?: StoredAttempt): LearningResult {
+export function validateLearningResult(_store: Store, input: unknown, importedAttempt?: StoredAttempt): LearningResult {
   let result = parse(learningResultSchema, input);
   if (importedAttempt) {
     if (importedAttempt.status !== 'submitted') fail(400, 'LEARNING_RESULT_MISMATCH', '未提交作答不能携带已判学习结果');

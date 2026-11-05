@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { bytesToBase64 } from '../../../shared/assets/assets.js';
-import { createStoredZip, type ZipEntry } from '../../../shared/exports/zip.js';
+import { buildDataPackage } from '../../../shared/packages/data-package.js';
 import type {
   ContentExportBuildInput,
   ContentExportFile,
@@ -22,7 +22,7 @@ import { validateShareExport } from '../sharing/schema.js';
 import { contentExportBuildSchema, contentExportSelectionSchema } from './domain-export-schema.js';
 
 const MiB = 1024 * 1024;
-// Imports wrap this JSON in {data,mode}; reserve room beneath the 80MiB HTTP cap.
+// Payload JSON stays bounded; the package moves binary assets into separate files.
 export const CONTENT_EXPORT_LIMITS = Object.freeze({
   maxQuestions: 50000,
   maxPackageBytes: 128 * MiB,
@@ -162,12 +162,14 @@ function snapshot(store: Store, input: ContentExportSelection) {
       : '内容分享通过分享导入进入待审核；不会直接发布新题目。',
     '仅包含题目及分类、标签和题内附件；不含学习记录、笔记、历史作答、草稿、修订、配置或凭据。',
     '教材引用保留书名、定位和摘录，解除本机原文关联，不附整本教材或未选择的题目正文。',
-    '大小为题目源数据估算，不包含附件、分类和封包开销；生成时检查真实UTF-8字节：单份JSON小于80MiB，ZIP最多128MiB，超限请拆分或分次选择领域。',
+    '大小为题目源数据估算，不包含附件、分类和封包开销；生成时检查真实字节，ZIP最多128MiB，超限请拆分或分次选择领域。',
     ...(memberships > questionIds.length
       ? ['跨领域题目在合并文件内去重；按领域分文件时可重复附带，接收方合并导入会按题号复用。']
       : []),
     ...(scope.mode === 'per_domain'
-      ? ['按领域文件超过500题或80MiB时自动分片，每份JSON独立包含自身依赖；ZIP需解压后逐份导入。']
+      ? [
+          '按领域内容超过500题或80MiB时自动分片；选择整个ZIP即可按manifest一次预览和导入，无需解压。',
+        ]
       : []),
     ...(emptyDomainIds.length
       ? ['部分所选领域在当前范围没有题目；按领域拆分时会跳过空领域并在清单注明。']
@@ -199,10 +201,10 @@ export function previewContentExport(
   return snapshot(store, input).preview;
 }
 
-export function buildContentExport(
+export async function buildContentExport(
   store: Store,
   input: ContentExportBuildInput,
-): ContentExportFile {
+): Promise<ContentExportFile> {
   const source = snapshot(store, input),
     { preview, questionIds, membership, taxonomy } = source;
   if (input.expectedFingerprint !== preview.fingerprint)
@@ -232,11 +234,12 @@ export function buildContentExport(
   const exportedAt = now(),
     date = exportedAt.slice(0, 10),
     context = contentExportContext(store, taxonomy);
+  const exportedQuestionIds = new Set(questionIds);
   const payload = (ids: string[], title: string, selectedDomains: string[]) => {
     // Shared cross-domain duplicates must have identical authoring content in
     // every independently importable part. Keeping only in-part links would
     // vary their semantic graph and cause the recipient to remap duplicates.
-    const chosen = new Set(ids);
+    const chosen = preview.scope.mode === 'per_domain' ? exportedQuestionIds : new Set(ids);
     const linkMode =
       preview.scope.purpose === 'share' && preview.scope.mode === 'per_domain'
         ? 'search'
@@ -269,107 +272,107 @@ export function buildContentExport(
     purpose: preview.scope.purpose,
     mode: preview.scope.mode,
   };
+  const payloads: Array<{ path: string; data: unknown; domainIds: string[] }> = [];
+  const parts: Array<{
+    path: string;
+    domainId?: string;
+    domainName?: string;
+    part: number;
+    questionCount: number;
+  }> = [];
   if (preview.scope.mode === 'combined') {
-    const bytes = serialize(
-      payload(questionIds, `领域题库（${questionIds.length}题）`, preview.scope.domainIds),
+    const data = payload(
+      questionIds,
+      `领域题库（${questionIds.length}题）`,
+      preview.scope.domainIds,
     );
-    if (bytes.byteLength > CONTENT_EXPORT_LIMITS.maxCombinedBytes)
+    if (serialize(data).byteLength > CONTENT_EXPORT_LIMITS.maxCombinedBytes)
       fail(
         413,
         'CONTENT_EXPORT_COMBINED_TOO_LARGE',
-        '合并JSON超过80MiB导入上限，请选择按领域分文件，或分次选择更少领域',
+        '合并内容超过80MiB上限，请选择按领域组织，或分次选择更少领域',
       );
-    return {
-      filename: `noetic-atlas-${preview.scope.purpose}-${date}.json`,
-      mimeType: 'application/json',
-      dataBase64: bytesToBase64(bytes),
-      byteLength: bytes.byteLength,
-      summary,
-    };
-  }
-  const files: ZipEntry[] = [];
-  const manifest: Array<{
-    filename: string;
-    domainId: string;
-    domainName: string;
-    part: number;
-    questionCount: number;
-    byteLength: number;
-    sha256: string;
-  }> = [];
-  let totalFileBytes = 0;
-  for (const [domainIndex, domain] of preview.selectedDomains.entries()) {
-    const ids = membership.get(domain.id)!;
-    let offset = 0,
-      part = 1;
-    while (offset < ids.length) {
-      let size = Math.min(CONTENT_EXPORT_LIMITS.maxPartQuestions, ids.length - offset);
-      let bytes: Uint8Array;
-      while (true) {
-        bytes = serialize(
-          payload(
+    payloads.push({ path: 'data/combined.json', data, domainIds: preview.scope.domainIds });
+    parts.push({ path: 'data/combined.json', part: 1, questionCount: questionIds.length });
+  } else {
+    for (const [domainIndex, domain] of preview.selectedDomains.entries()) {
+      const ids = membership.get(domain.id)!;
+      let offset = 0,
+        part = 1;
+      while (offset < ids.length) {
+        let size = Math.min(CONTENT_EXPORT_LIMITS.maxPartQuestions, ids.length - offset);
+        let data: ReturnType<typeof payload>;
+        while (true) {
+          data = payload(
             ids.slice(offset, offset + size),
             `${domain.name} · ${offset + 1}–${offset + size}`,
             [domain.id],
-          ),
-        );
-        if (bytes.byteLength <= CONTENT_EXPORT_LIMITS.maxPartBytes) break;
-        if (size === 1)
-          fail(
-            413,
-            'CONTENT_EXPORT_SINGLE_QUESTION_TOO_LARGE',
-            `领域“${domain.name}”的一道题及附件超过80MiB分片上限，请缩小附件后重试`,
           );
-        size = Math.max(1, Math.floor(size / 2));
+          if (serialize(data).byteLength <= CONTENT_EXPORT_LIMITS.maxPartBytes) break;
+          if (size === 1)
+            fail(
+              413,
+              'CONTENT_EXPORT_SINGLE_QUESTION_TOO_LARGE',
+              `领域“${domain.name}”的一道题及附件超过80MiB分片上限，请缩小附件后重试`,
+            );
+          size = Math.max(1, Math.floor(size / 2));
+        }
+        const path = `data/domains/${String(domainIndex + 1).padStart(5, '0')}-${safeName(domain.id)}/part-${String(part).padStart(3, '0')}.json`;
+        payloads.push({ path, data, domainIds: [domain.id] });
+        parts.push({
+          path,
+          domainId: domain.id,
+          domainName: domain.name,
+          part,
+          questionCount: size,
+        });
+        offset += size;
+        part++;
       }
-      // A distinct ordinal avoids collisions even between a normalized ID and
-      // a deliberately chosen literal ID that mimics its hash suffix.
-      const filename = `${String(domainIndex + 1).padStart(5, '0')}-${safeName(domain.id)}/part-${String(part).padStart(3, '0')}.json`;
-      totalFileBytes += bytes.byteLength;
-      if (totalFileBytes > CONTENT_EXPORT_LIMITS.maxPackageBytes) tooLarge();
-      files.push({ name: filename, bytes });
-      manifest.push({
-        filename,
-        domainId: domain.id,
-        domainName: domain.name,
-        part,
-        questionCount: size,
-        byteLength: bytes.byteLength,
-        sha256: sha(bytes),
-      });
-      offset += size;
-      part++;
     }
   }
-  summary.fileCount = manifest.length;
-  files.push({
-    name: 'manifest.json',
-    bytes: serialize({
-      format: 'noetic-atlas-domain-export',
-      schemaVersion: 1,
-      exportedAt,
-      scope: preview.scope,
-      fingerprint: preview.fingerprint,
-      questionCount: preview.questionCount,
-      memberships: preview.memberships,
-      emptyDomainIds: preview.emptyDomainIds,
-      files: manifest,
-    }),
-  });
-  files.push({
-    name: 'README.md',
-    bytes: encoder.encode(
-      `# 认知星图领域题库\n\n用途：${preview.scope.purpose === 'migration' ? '可信迁移（保留审核和归属）' : '普通内容分享（新增题目待审核）'}。\n\n请先解压，按 manifest.json 的顺序逐个导入 JSON。${preview.scope.purpose === 'migration' ? '从系统配置 → 数据迁移的 JSON 合并导入，不要导入来源不明的迁移包。' : '从内容分享 → 导入分享包导入，并审核新增题目。'}\n\n每份 JSON 含自身分类祖先、标签和题内附件；超过500题或80MiB的领域自动分片。跨领域题目可能出现在多个文件，迁移合并会复用相同题号；分享导入按内容与关联关系安全复用。${preview.scope.purpose === 'share' ? '为保证跨领域及跨分片的同题内容一致，分享分包的全部关联题详情链接统一转为题号搜索；不直接跳转分包内题目。' : '未随文件附带的关联题链接已转为说明或题号搜索。'}\n\n教材引用保留书名、页码和摘录，不附教材原文。来源引用与许可信息保留在题目中，请遵守原始资料授权。\n\n不含学习记录、私有笔记、作答、配置、草稿、修订或AI凭据。\n`,
-    ),
-  });
+  summary.fileCount = payloads.length;
   let bytes: Uint8Array;
   try {
-    bytes = createStoredZip(files, CONTENT_EXPORT_LIMITS.maxPackageBytes);
-  } catch {
-    return tooLarge();
+    bytes = await buildDataPackage({
+      kind: preview.scope.purpose,
+      title: `领域题库（${questionIds.length}题）`,
+      createdAt: exportedAt,
+      payloads,
+      files: [
+        {
+          path: 'metadata/domain-export.json',
+          bytes: serialize({
+            scope: preview.scope,
+            fingerprint: preview.fingerprint,
+            questionCount: preview.questionCount,
+            memberships: preview.memberships,
+            emptyDomainIds: preview.emptyDomainIds,
+            parts,
+          }),
+          mediaType: 'application/json',
+        },
+        {
+          path: 'README.md',
+          bytes: encoder.encode(
+            `# 认知星图领域题库\n\n用途：${preview.scope.purpose === 'migration' ? '可信迁移（保留审核和归属）' : '普通内容分享（新增题目待审核）'}。\n\n选择整个ZIP数据包，系统读取根目录manifest.json后统一预览、检查依赖并整包导入；无需解压或逐份导入JSON。所有分片属于同一次事务，任一分片无效则不会部分导入。\n\n分类祖先、标签和题内附件随包提供，图片等二进制资源独立存放并由清单校验。跨领域重复题会统一去重。${preview.scope.purpose === 'share' ? '分享分片全部关联题详情链接统一转为题号搜索，新增题目仍需审核。' : '可信迁移保留原审核状态，不要导入来源不明的迁移包。'}\n\n教材引用只保留书名、位置和摘录，不附教材原文。来源与许可信息保留；不含学习记录、私有笔记、作答、配置、草稿、修订或AI凭据。\n`,
+          ),
+          mediaType: 'text/markdown',
+        },
+      ],
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (/大小|上限|超过|limit/i.test(message)) return tooLarge();
+    throw error;
   }
+  if (bytes.byteLength > CONTENT_EXPORT_LIMITS.maxPackageBytes) return tooLarge();
+  // Packaging hashes binary files asynchronously. Do not offer an artifact whose
+  // source changed while those awaits yielded to another authoring request.
+  if (snapshot(store, input).preview.fingerprint !== preview.fingerprint)
+    fail(409, 'CONTENT_EXPORT_STALE', '题库内容或依赖在封包期间变化，请重新预览后生成');
   return {
-    filename: `noetic-atlas-domains-${preview.scope.purpose}-${date}.zip`,
+    filename: `noetic-atlas-${preview.scope.mode === 'per_domain' ? 'domains-' : ''}${preview.scope.purpose}-${date}.zip`,
     mimeType: 'application/zip',
     dataBase64: bytesToBase64(bytes),
     byteLength: bytes.byteLength,

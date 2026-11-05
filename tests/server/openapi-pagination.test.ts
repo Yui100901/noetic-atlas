@@ -5,14 +5,14 @@ import { Store } from '../../server/core/store.js';
 import { ApiError } from '../../server/core/validation.js';
 import { registerApiDocs } from '../../server/http/openapi.js';
 import { registerLibraryRoutes } from '../../server/modules/library/routes.js';
-import { registerQuestionBankRoutes } from '../../server/modules/banks/routes.js';
+import { registerQuestionImportRoutes } from '../../server/modules/questions/import-routes.js';
 import { registerAiRoutes } from '../../server/modules/ai/routes.js';
 import { paginate } from '../../server/core/pagination.js';
 
 async function fixture(t:test.TestContext,native=false){
  const store=new Store(':memory:');const app=Fastify();t.after(async()=>{await app.close();store.db.close();});
  app.setErrorHandler((error,_req,reply)=>error instanceof ApiError?reply.code(error.status).send({error:{code:error.code}}):reply.code(500).send({error:{code:String(error)}}));
- await registerApiDocs(app,{native});registerLibraryRoutes(app,store);registerQuestionBankRoutes(app,store);registerAiRoutes(app,store);
+ await registerApiDocs(app,{native});registerLibraryRoutes(app,store);registerQuestionImportRoutes(app,store);registerAiRoutes(app,store);
  for(let i=0;i<25;i++){store.put('documents',`D${i}`,{id:`D${i}`,title:`资料${i.toString().padStart(2,'0')}`,kind:i%2?'书籍':'学习笔记',bodyMarkdown:'正文',format:'markdown',collection:'general',categoryIds:[],tagIds:[],updatedAt:`2026-10-${(i+1).toString().padStart(2,'0')}T00:00:00.000Z`});store.put('question_banks',`B${i}`,{id:`B${i}`,name:`集合${i.toString().padStart(2,'0')}`,description:i%2?'数据库':'网络',questionIds:[]});}
  const get=async(url:string,expected=200)=>{const r=await app.inject({method:'GET',url});assert.equal(r.statusCode,expected,r.body);return r;};return{app,store,get};
 }

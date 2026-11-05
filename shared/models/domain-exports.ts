@@ -44,13 +44,13 @@ export interface ContentExportBuildInput extends ContentExportSelection {
 }
 export interface ContentExportFile {
   filename: string;
-  mimeType: 'application/json' | 'application/zip';
+  mimeType: 'application/zip';
   dataBase64: string;
   byteLength: number;
   summary: {
     questionCount: number;
     domainCount: number;
-    /** Number of importable JSON files, excluding archive documentation. */
+    /** Number of manifest-declared JSON payloads, excluding attachments and documentation. */
     fileCount: number;
     purpose: ContentExportPurpose;
     mode: ContentExportMode;

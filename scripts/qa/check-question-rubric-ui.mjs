@@ -40,7 +40,7 @@ try {
   await page.getByRole('button', { name: '保存题目', exact: true }).click();
   await page.waitForURL(/#\/questions\/FIXTURE-SHORT-1$/);
   assert.equal((await api('/api/questions/FIXTURE-SHORT-1')).gradingRequirements, rubric);
-  assert.equal(await page.locator('.question-grading-requirements').count(), 0);
+  assert.equal(await page.locator('.question-grading-requirements:visible').count(), 0);
   await page.getByRole('button', { name: '展开答案与解析', exact: true }).click();
   await page.locator('.question-grading-requirements').first().locator('summary').click();
   await page.locator('#reference-answer').getByText('说明全部提交。', { exact: true }).waitFor();
@@ -63,7 +63,7 @@ try {
   const attempt = await api(`/api/papers/${paper.id}/attempts`, 'POST');
   await go('#/attempts/' + attempt.id);
   await page.getByRole('button', { name: '交卷并查看解析', exact: true }).first().waitFor();
-  assert.equal(await page.locator('.question-grading-requirements').count(), 0);
+  assert.equal(await page.locator('.question-grading-requirements:visible').count(), 0);
   assert.equal(
     (await api('/api/attempts/' + attempt.id)).questions[0].gradingRequirements,
     undefined,

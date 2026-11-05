@@ -8,6 +8,11 @@ export const questionIndexes = [
   {name:'question_read_status_frequency_idx',fields:['status','frequency']},
 ] as const;
 
+export function ensureQuestionIndexes(database:DatabaseConnection,indexes:readonly (typeof questionIndexes)[number][]=questionIndexes) {
+  for(const index of indexes)database.run(database.query.schema.createIndex(index.name).ifNotExists().on('question_read_model')
+    .expression(sql.join([...index.fields.map(key=>database.expressions.field('data',key)),sql.ref('id')])));
+}
+
 /** SQLite adapter optimization for the existing locale/numeric ID order.
  * Only IDs are sorted in JS and the cache is private TEMP data, so neither
  * database migration nor backups depend on a platform-specific collation. */
@@ -15,8 +20,7 @@ export class QuestionOrder {
   private readonly collator=new Intl.Collator(undefined,{numeric:true});
   private dataVersion=-1;
   constructor(private readonly database:DatabaseConnection){
-    for(const index of questionIndexes)database.run(database.query.schema.createIndex(index.name).ifNotExists().on('question_read_model')
-      .expression(sql.join([...index.fields.map(key=>database.expressions.field('data',key)),sql.ref('id')])));
+    ensureQuestionIndexes(database);
     this.initialize();
   }
   private initialize(){

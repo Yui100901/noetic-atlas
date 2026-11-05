@@ -1,22 +1,21 @@
-import { putCompletedAiRun } from '../ai/run-storage.js';
-import {isRetiredQualityRule,type QualityIssue} from '../../../shared/models/content-quality.js';
-import {feedbackFingerprint} from './fingerprint.js';
-import {ensureFeedbackQualityIssue,syncQualityIssueFromFeedback} from '../content-quality/feedback-links.js';
-import {resolveQualityIssue} from '../content-quality/service.js';
-import { createHash } from 'node:crypto';
-import type { Question, QuestionPart } from '../../../shared/models/types.js';
-import type { AiDiagnostics, AiFailure, AiRun } from '../../../shared/ai/ai.js';
 import type { AiExecutionContext } from '../../../shared/ai/ai-progress.js';
-import type { FeedbackCandidate, FeedbackCandidates, FeedbackReviewBatch, QuestionFeedback, QuestionFeedbackInput, QuestionFeedbackSummary, QuestionFeedbackView } from '../../../shared/models/question-feedback.js';
-import { Store, makeId, now, nextStamp } from '../../core/store.js';
-import { ApiError, fail } from '../../core/validation.js';
-import { unifiedSearch } from '../search/service.js';
-import { searchQuerySchema } from '../search/schema.js';
-import { readPrivateSettings } from '../ai/settings.js';
-import { requestAiJson } from '../ai/provider.js';
-import { auditAiOperation, auditedFailure, aiFailureFromError } from '../ai/audit.js';
+import type { AiDiagnostics,AiFailure,AiRun } from '../../../shared/ai/ai.js';
+import { isRetiredQualityRule,type QualityIssue } from '../../../shared/models/content-quality.js';
+import type { FeedbackCandidate,FeedbackCandidates,FeedbackReviewBatch,QuestionFeedback,QuestionFeedbackInput,QuestionFeedbackSummary,QuestionFeedbackView } from '../../../shared/models/question-feedback.js';
+import type { Question,QuestionPart } from '../../../shared/models/types.js';
+import { Store,makeId,nextStamp,now } from '../../core/store.js';
+import { fail } from '../../core/validation.js';
+import { aiFailureFromError,auditAiOperation,auditedFailure } from '../ai/audit.js';
 import { assertAiActive } from '../ai/execution.js';
-import { feedbackAiOutputSchema, questionFeedbackSchema } from './schema.js';
+import { requestAiJson } from '../ai/provider.js';
+import { putCompletedAiRun } from '../ai/run-storage.js';
+import { readPrivateSettings } from '../ai/settings.js';
+import { ensureFeedbackQualityIssue,syncQualityIssueFromFeedback } from '../content-quality/feedback-links.js';
+import { resolveQualityIssue } from '../content-quality/service.js';
+import { searchQuerySchema } from '../search/schema.js';
+import { unifiedSearch } from '../search/service.js';
+import { feedbackFingerprint } from './fingerprint.js';
+import { feedbackAiOutputSchema,questionFeedbackSchema } from './schema.js';
 
 const MAX_CANDIDATES = 8;
 type Source = { question: Question; part?: QuestionPart };
@@ -27,7 +26,7 @@ export function feedbackSource(store: Store, questionId: string, partId?: string
   const part = question.type === 'group' ? question.parts?.find(item => item.id === partId) : undefined;
   return part ? { question, part } : undefined;
 }
-export {feedbackFingerprint} from './fingerprint.js';
+export { feedbackFingerprint } from './fingerprint.js';
 
 export function requireFeedback(store: Store, id: string): QuestionFeedback {
   return store.database.getRecord<QuestionFeedback>('question_feedback', id) || fail(404, 'FEEDBACK_NOT_FOUND', '题目反馈不存在');

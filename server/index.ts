@@ -12,11 +12,11 @@ import { Store, now } from './core/store.js';
 import { importData } from './modules/transfer/migration.js';
 import { registerExportRoutes } from './modules/transfer/exports.js';
 import { migrateLegacyBanks } from './modules/banks/legacy-banks.js';
-import { registerQuestionBankRoutes } from './modules/banks/routes.js';
+import { registerQuestionImportRoutes } from './modules/questions/import-routes.js';
 import { registerSettingsRoutes } from './modules/settings/routes.js';
 import { ensureSettings, getSettings } from './modules/settings/service.js';
 import { registerAssetRoutes } from './modules/assets/routes.js';
-import { validateAllAssetReferences } from './modules/assets/service.js';
+import { validateStartupAssetReferences } from './modules/assets/service.js';
 import { registerLibraryRoutes } from './modules/library/routes.js';
 import { registerDocumentDraftRoutes } from './modules/library/document-drafts.js';
 import { registerSharingRoutes } from './modules/sharing/routes.js';
@@ -38,6 +38,7 @@ import { registerContextLearningRoutes } from './modules/practice/learning.js';
 import { registerGlobalLearningRoutes } from './modules/practice/global-learning.js';
 import { registerTransferRoutes } from './modules/transfer/routes.js';
 import { registerContentExportRoutes } from './modules/transfer/domain-exports.js';
+import { registerDataPackageRoutes } from './modules/transfer/packages.js';
 import { migrateLearningResults } from './modules/practice/learning-results.js';
 import { registerLearningResetRoutes } from './modules/study/reset.js';
 import { migrateQuestionHistory } from './modules/questions/history-store.js';
@@ -73,7 +74,7 @@ export async function buildApp(options: AppOptions = {}) {
       importData(store, JSON.parse(readFileSync(seedPath, 'utf8')));
       store.database.run(store.database.query.insertInto('metadata').values({key:'seed_initialized',value:now()}).onConflict(c=>c.column('key').doUpdateSet({value:now()})));
     }
-    const migrated = store.transaction(() => { store.normalizeLegacyTags(); store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); const retired=retireMissingSourceIssues(store)+retireMissingExplanationIssues(store),quality=migrateFeedbackQualityIssues(store);validateAllAssetReferences(store); return store.database.schemaChanged || migrated || learning > 0 || history>0 || retired>0 || quality>0; });
+    const migrated = store.transaction(() => { store.normalizeLegacyTags(); if(store.database.startupValidation.pending())store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); const retired=retireMissingSourceIssues(store)+retireMissingExplanationIssues(store),quality=migrateFeedbackQualityIssues(store);validateStartupAssetReferences(store);store.database.startupValidation.complete(); return store.database.schemaChanged || migrated || learning > 0 || history>0 || retired>0 || quality>0; });
     if (migrated) options.onDataMigrated?.();
     store.database.projections.refreshAll();
   } catch (error) { store.db.close(); throw error; }
@@ -88,7 +89,7 @@ export async function buildApp(options: AppOptions = {}) {
     return { ...store.taxonomy(), settings: getSettings(store), stats: dashboardStats(store), ai: { available: ai.enabled, message: ai.enabled ? 'AI辅助已开启，操作时将所选资料发送给你配置的模型服务。' : 'AI辅助未开启，可在系统配置中设置模型服务。' } };
   });
 
-  registerQuestionBankRoutes(app, store);
+  registerQuestionImportRoutes(app, store);
   registerSettingsRoutes(app, store);
   registerAssetRoutes(app, store);
   registerLibraryRoutes(app, store);
@@ -120,6 +121,7 @@ export async function buildApp(options: AppOptions = {}) {
 
   registerTransferRoutes(app, store);
   registerContentExportRoutes(app, store);
+  registerDataPackageRoutes(app, store);
   registerDailyPushRoutes(app, store, { now: options.dailyPushNow || options.dailyPushSchedulerClock?.now.bind(options.dailyPushSchedulerClock) });
   registerAnalyticsRoutes(app, store);
   registerSearchRoutes(app, store);

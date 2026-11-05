@@ -31,7 +31,7 @@ import {
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
 import { prepareAiQuestionMath, AI_MATH_INSTRUCTIONS } from '../../shared/ai/math.js';
 import { finalizeImport } from '../../server/modules/ai/import.js';
-import { exportShare, importShare } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare } from '../../server/modules/sharing/service.js';
 import { aiImportInputSchema } from '../../server/modules/ai/schema.js';
 import type { Question, DocumentRecord } from '../../shared/models/types.js';
 

@@ -61,6 +61,8 @@ test('Android restores validated SQLite copies atomically with independent recov
   await call(target, `/api/study/${questionId}`, 'PUT', { notes: '本机原始数据' });
   await call(target, '/api/ai/settings', 'PUT', { enabled: true, baseUrl: 'https://local.example.com/v1', model: 'local-model', supportsImages: false, sendImages: false, timeoutSeconds: 60, maxTokens: 4096, key: 'local-secret-restore-test' });
   const initialTarget = targetStorage.bytes();
+  const originalStats=await call(target,'/api/bootstrap');
+  assert.notEqual(originalStats.stats.totalQuestions,sourceSeed.questions.length);
 
   const empty = new sql.Database(); const emptyBytes = empty.export(); empty.close();
   for (const bytes of [new TextEncoder().encode('not a SQLite database'), emptyBytes,
@@ -113,6 +115,7 @@ test('Android restores validated SQLite copies atomically with independent recov
   const beforeRestore = targetStorage.bytes();
   const finalPreview = await target.previewRestore(candidate, 'complete.sqlite');
   const result = await target.restore(finalPreview.token);
+  assert.equal((await call(target,'/api/bootstrap')).stats.totalQuestions,sourceSeed.questions.length,'restoring replaces cached content aggregates');
   assert.equal((await call(target, `/api/questions/${questionId}`)).study.notes, '来自整库备份');
   assert.equal((await call(target, '/api/settings')).randomQuestionCount, 7);
   const ai = await call(target, '/api/ai/settings'); assert.equal(ai.enabled, false); assert.equal(ai.hasKey, false); assert.equal(ai.model, 'foreign-model');

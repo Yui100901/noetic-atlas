@@ -54,7 +54,7 @@ export const contentExportPreviewSchema = z
 export const contentExportFileSchema = z
   .object({
     filename: z.string(),
-    mimeType: z.enum(['application/json', 'application/zip']),
+    mimeType: z.literal('application/zip'),
     dataBase64: z.string(),
     byteLength: z.number().int().nonnegative(),
     summary: z

@@ -96,7 +96,7 @@ try {
     else if (url.pathname === '/api/questions') data = { items: [{ ...question, study: { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 } }], total: 1, page: 1, pageSize: 20 };
     else if (url.pathname === '/api/questions/' + question.id) data = { ...question, study: { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 } };
     else if (url.pathname === '/api/questions/' + question.id + '/statistics') data = { answered: 0, correct: 0, partial: 0, incorrect: 0, ungraded: 0, lastAnsweredAt: null };
-    else if (url.pathname === '/api/ai/runs') data = [];
+    else if (url.pathname === '/api/ai/runs') data = { items: [], total: 0, page: 1, pageSize: 20 };
     else if (url.pathname === '/api/paper-drafts') data = [];
     else if (url.pathname === '/api/study/' + question.id && request.method() === 'PUT') {
       favorite = request.postDataJSON().favorite; data = { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 };

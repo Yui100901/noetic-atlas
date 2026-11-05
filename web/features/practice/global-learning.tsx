@@ -38,7 +38,7 @@ export function GlobalLearningPage({ kind }: { kind: GlobalLearningKind }) {
     {kind==='due'&&<FocusHistory/>}
     {!adaptive && <>
     <p className="global-learning-rule">{kind === 'wrong' ? '每题阅读最近一次错误的题目快照，保留当时的共用材料；清理整卷历史、修改或删除原题不影响错误内容与来源摘要。' : '每题展示当前原题内容。收藏共享原题；组合小题分别记录笔记、掌握程度和复习日期。关联来源不代表收藏或复习发生的位置。'} 这是动态汇总视图，同一原题的同一小题只列一次，来源可展开查看。</p>
-    {questions.loading ? <Loading text={`正在读取${view.title}…`} /> : questions.error ? <ErrorNotice message={questions.error} retry={questions.refresh} /> : questions.data?.items.length ? <div className="global-learning-questions">{questions.data.items.map((item, index) => <article className="card global-learning-question" key={item.key}>
+    {questions.loading ? <Loading text={`正在读取${view.title}…`} /> : questions.error ? <ErrorNotice message={questions.error} retry={questions.refresh} /> : questions.data?.items.length ? <div className="global-learning-questions">{questions.data.items.map(item => <article className="card global-learning-question" key={item.key}>
       <QuestionMeta question={item.question} /><a className="text-button global-question-title" href={learningReaderHref(context,item.key)}>{item.question.title}</a>
       {item.question.groupTitle && <p className="muted">共用材料 · {item.question.groupTitle}</p>}
       <p className="global-question-state">{kind === 'wrong' ? <><span className="badge global-wrong-state">{item.answerState === 'unanswered' ? '客观题漏答' : '回答错误'}</span>累计错误 {item.wrongCount} 次</> : item.study?.mastery != null ? `掌握程度 ${item.study.mastery}/3` : '尚未记录掌握程度'}{kind === 'due' && item.study?.nextReviewAt && <> · 复习日期 {localDate(item.study.nextReviewAt)}</>}</p>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowRight, BookOpen, ClipboardList, FileText, FolderTree, Globe2, LibraryBig, Search, StickyNote, Tag, X } from 'lucide-react';
-import type { SearchItem, SearchResponse, SearchType } from '../../../shared/models/search';
+import type { SearchItem, SearchResponse } from '../../../shared/models/search';
 import { qs, useResource } from '../../shared/lib/api';
 import { Empty, ErrorNotice, Field, Loading, PageHeader, Pagination, useApp } from '../../shared/ui/components';
 import { readSearchState, searchHighlights, searchHref, searchInputError, searchResultHref,  searchTypeLabels, searchTypes, type SearchState } from './search-navigation';

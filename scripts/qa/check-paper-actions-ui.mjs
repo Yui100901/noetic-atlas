@@ -76,7 +76,7 @@ try {
   await exported.locator('input[value="answers"]').check(); await exported.getByRole('button', { name: '取消', exact: true }).click();
   await outputTrigger().click(); await item(/^分享题集/).click();
   const shared = page.getByRole('dialog', { name: '分享内容', exact: true }); await shared.waitFor();
-  await shared.getByRole('button', { name: '导出完整JSON分享包', exact: true }).waitFor(); assert.equal(await outputTrigger().getAttribute('aria-expanded'), 'false');
+  await shared.getByRole('button', { name: '导出完整分享数据包（ZIP）', exact: true }).waitFor(); assert.equal(await outputTrigger().getAttribute('aria-expanded'), 'false');
   await page.keyboard.press('Escape'); await shared.waitFor({ state: 'hidden' });
   checks.push('导出与分享合并入口，选择后菜单关闭且独立弹窗正常保留与关闭');
 

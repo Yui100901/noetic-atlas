@@ -16,7 +16,7 @@ import java.util.Arrays;
 @CapacitorPlugin(name = "LearningFileShare")
 public class LearningFileSharePlugin extends Plugin {
     private static final List<String> ALLOWED_MIME = Arrays.asList(
-        "application/pdf", "application/json", "text/markdown", "text/plain",
+        "application/pdf", "application/json", "application/zip", "application/x-zip-compressed", "text/markdown", "text/plain",
         "application/vnd.sqlite3", "application/x-sqlite3", "application/octet-stream"
     );
 

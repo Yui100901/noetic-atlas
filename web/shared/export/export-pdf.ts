@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, type PDFPage, type PDFFont } from 'pdf-lib';
+import { PDFDocument, rgb, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';

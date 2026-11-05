@@ -54,6 +54,16 @@
 .page-size-label select { width: auto; min-height: 36px; padding: 5px 8px; }
 .table-scroll { width: 100%; overflow: auto; overscroll-behavior: contain; margin: var(--space-4) 0; border: 1px solid var(--border); border-radius: 6px; }
 
+/* Secondary guidance uses the same keyboard-accessible disclosure treatment.
+   Errors, data-loss notices and confirmations remain outside these details. */
+.help-disclosure { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 0 13px; background: var(--theme-inset, var(--surface)); }
+.help-disclosure > summary { padding: 11px 0; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--muted); overflow-wrap: anywhere; }
+.help-disclosure[open] { padding-bottom: 13px; }
+.help-disclosure[open] > summary { margin-bottom: 4px; color: var(--theme-text, var(--text)); }
+.help-disclosure > p { margin: 0; line-height: 1.8; }
+.help-disclosure > ul { padding-left: 20px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.help-disclosure > ul > li + li { margin-top: 7px; }
+
 .modal-backdrop { position: fixed; inset: 0; background: var(--theme-backdrop, #152c2470); backdrop-filter: blur(3px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: var(--space-6); }
 .modal { width: 480px; max-width: 100%; max-height: 92vh; overflow: auto; padding: var(--space-6); scrollbar-width: thin; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 25px 100px var(--theme-shadow-color, #162b2640); }
 .modal-wide { width: 760px; }
@@ -77,6 +87,7 @@
   .ui-grid { grid-template-columns: 1fr; }
   .form-actions { justify-content: flex-start; }
   .button { min-height: 44px; }
+  .help-disclosure > summary { min-height: 44px; }
   .pagination { gap: var(--space-3); padding-block: var(--space-4); }
   .pagination button, .page-size-label select { min-height: 40px; }
   .pagination > div { gap: 6px; }

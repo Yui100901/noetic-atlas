@@ -26,6 +26,8 @@
     "content:validate": "tsx scripts/content/manage.ts validate",
     "content:package": "tsx scripts/content/manage.ts package",
     "content:domains": "tsx scripts/content/export-domains.ts",
+    "data:pack": "node dist/server/commands/pack-legacy-data.js",
+    "data:unpack": "node dist/server/commands/extract-database-package.js",
     "content:import": "tsx scripts/content/manage.ts import",
     "content:review": "tsx scripts/content/review.ts",
     "release": "node scripts/release.mjs",
@@ -44,14 +46,17 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/share": "^8.0.3",
-    "@fastify/static": "^10.1.6",
+    "@fastify/static": "^10.1.9",
     "@fastify/swagger": "^9.9.2",
     "@fastify/swagger-ui": "^6.1.2",
+    "@noble/hashes": "2.2.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "fastify": "^5.12.7",
+    "fflate": "0.8.3",
     "html-to-image": "^1.11.13",
     "katex": "^0.19.1",
     "kysely": "0.29.7",
@@ -68,6 +73,13 @@
     "ts-fsrs": "5.4.2",
     "unified": "^11.0.5",
     "zod": "^4.6.7"
+  },
+  "overrides": {
+    "katex": "$katex",
+    "@electron/asar": {
+      "glob": "^14.0.3",
+      "minimatch": "^11.0.4"
+    }
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

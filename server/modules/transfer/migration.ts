@@ -76,8 +76,15 @@ const envelopeSchema = z.object({
   questionFeedback: z.array(questionFeedbackSchema).default([]),
   qualityScans: z.array(qualityScanSchema).default([]), qualityIssues: z.array(qualityIssueSchema).default([]),
 });
-const dataKey = (table: Table) => table === 'document_versions' ? 'documentVersions' : table==='learning_days'?'learningDays':table==='learning_task_results'?'learningTaskResults': table === 'focus_sessions' ? 'focusSessions' : table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'question_drafts' ? 'questionDrafts' : table === 'question_revisions' ? 'questionRevisions' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
+export const migrationDataKey = (table: Table) => table === 'document_versions' ? 'documentVersions' : table==='learning_days'?'learningDays':table==='learning_task_results'?'learningTaskResults': table === 'focus_sessions' ? 'focusSessions' : table === 'question_banks' ? 'questionBanks' : table === 'paper_drafts' ? 'paperDrafts' : table === 'document_drafts' ? 'documentDrafts' : table === 'question_drafts' ? 'questionDrafts' : table === 'question_revisions' ? 'questionRevisions' : table === 'ai_workspace_drafts' ? 'aiWorkspaceDrafts' : table === 'study_parts' ? 'studyParts' : table === 'learning_results' ? 'learningResults' : table==='question_history'?'questionHistory':table==='daily_pushes'?'dailyPushes':table==='review_cards'?'reviewCards':table==='review_events'?'reviewEvents':table==='question_feedback'?'questionFeedback':table==='quality_scans'?'qualityScans':table==='quality_issues'?'qualityIssues':table;
+const dataKey = migrationDataKey;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
+
+/** Keep legacy normalization identical for JSON and manifest package imports. */
+export const migrationEnvelopeSchema = z.preprocess(
+  raw => cleanLegacyBankFilters(cleanLearningEnvelope(raw)),
+  envelopeSchema,
+);
 
 export function exportData(store: Store) {
   const papers = store.all<StoredPaper>('papers');
@@ -89,7 +96,7 @@ export function exportData(store: Store) {
 }
 export function importData(store: Store, raw: unknown) {
   if (raw && typeof raw === 'object' && Object.hasOwn(raw, 'format')) fail(400, 'CONTENT_IMPORT_PURPOSE_MISMATCH', '此入口只接受可信迁移备份。分享包或新增题目包请使用对应导入入口，新增题目仍须审核');
-  const data = parse(envelopeSchema, cleanLegacyBankFilters(cleanLearningEnvelope(raw)));
+  const data = parse(migrationEnvelopeSchema, raw);
   const revisionSequences = data.questionRevisions.map(value => JSON.stringify([value.questionId, value.sequence]));
   if (new Set(revisionSequences).size !== revisionSequences.length) fail(400, 'DUPLICATE_QUESTION_REVISION_SEQUENCE', '导入数据包含相同题目的重复修订序号');
   for (const table of tables) {

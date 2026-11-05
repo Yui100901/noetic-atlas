@@ -11,7 +11,7 @@ import {
   Pagination,
   useApp,
 } from '../../shared/ui/components';
-import { launchPlan, planHref, PlanProgress } from './learning-plan-card';
+import { launchPlan, PlanProgress } from './learning-plan-card';
 import { LearningPlanHistory } from './learning-plan-history';
 import './learning-plan.css';
 

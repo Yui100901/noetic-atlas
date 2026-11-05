@@ -14,7 +14,7 @@ import {
   attemptExportDocument,
 } from '../../server/modules/transfer/exports.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
-import { exportShare, importShare } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare } from '../../server/modules/sharing/service.js';
 import { archiveAttemptQuestionHistory } from '../../server/modules/questions/history-store.js';
 import { questionHistory, questionStatistics } from '../../server/modules/questions/history.js';
 import {

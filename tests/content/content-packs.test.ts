@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { validatePack, validatePackSet, assertImportCompatible, wordlistPapers, asShare } from '../../scripts/content/manage.js';
 import { Store } from '../../server/core/store.js';
 import { importData } from '../../server/modules/transfer/migration.js';
-import { planShareImport, importShare } from '../../server/modules/sharing/routes.js';
+import { planShareImport, importShare } from '../../server/modules/sharing/service.js';
 
 const driving=()=>validatePack(JSON.parse(readFileSync('tests/fixtures/driving-content.json','utf8')));
 function vocabulary(count:number) {

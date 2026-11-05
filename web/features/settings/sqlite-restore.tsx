@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Database, FolderInput, HardDriveDownload, Upload } from 'lucide-react';
 import { nativeConfirmSQLiteRestore, nativeDownloadRecoveryBackup, nativeLatestRecoveryBackup, nativePreviewSQLiteRestore } from '@platform';
 import type { SQLiteRecoveryBackup, SQLiteRestorePreview } from '../../../shared/models/sqlite-restore';
+import { readDataPackage, SQLITE_PACKAGE_LIMITS } from '../../../shared/packages/data-package';
 import { ErrorNotice } from '../../shared/ui/components';
 import './sqlite-restore.css';
 
@@ -20,7 +21,19 @@ export function SQLiteRestore() {
   async function select(file?: File) {
     if (!file) return;
     const selected = ++generation.current; setPreview(null); setAcknowledged(false); setError(''); setBusy(true);
-    try { const value = await nativePreviewSQLiteRestore(file); if (selected === generation.current) setPreview(value); }
+    try {
+      if (file.size > SQLITE_PACKAGE_LIMITS.maxBytes) throw new Error('完整数据库数据包超过1 GiB上限。');
+      const packet = await readDataPackage(new Uint8Array(await file.arrayBuffer()), SQLITE_PACKAGE_LIMITS);
+      if (selected !== generation.current) return;
+      if (packet.manifest.kind !== 'sqlite-backup') throw new Error('这是内容或配置数据包，请使用数据包合并导入；完整恢复仅接收SQLite数据库包。');
+      const entries = packet.manifest.files.filter(entry => entry.mediaType === 'application/vnd.sqlite3');
+      if (entries.length !== 1) throw new Error('数据库数据包必须包含唯一SQLite文件。');
+      const bytes = packet.files.get(entries[0].path);
+      if (!bytes) throw new Error('清单中的数据库文件缺失。');
+      const database = new File([new Uint8Array(bytes).buffer], entries[0].path.split('/').pop() || 'backup.sqlite', { type: 'application/vnd.sqlite3' });
+      const value = await nativePreviewSQLiteRestore(database);
+      if (selected === generation.current) setPreview({ ...value, filename: file.name });
+    }
     catch (reason) { if (selected === generation.current) setError((reason as Error).message); }
     finally { if (selected === generation.current) setBusy(false); }
   }
@@ -40,9 +53,9 @@ export function SQLiteRestore() {
   }
   async function exportBackup() { if (!backup) return; setBusy(true); setError(''); try { await nativeDownloadRecoveryBackup(backup.id); } catch (reason) { setError((reason as Error).message); } finally { setBusy(false); } }
   return <section className="card import-card" aria-label="SQLite 完整恢复">
-    <div className="import-heading"><Database size={23} /><div><h2>从 SQLite 备份完整恢复</h2><p>用备份整体替换本机内容和学习数据。先检查文件与数据引用并展示预览，确认后保留独立的恢复前副本；保存失败会撤销替换。</p></div></div>
-    <input ref={input} type="file" accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3,application/octet-stream" className="sr-only" aria-label="选择 SQLite 数据库备份" disabled={busy} onChange={event => void select(event.target.files?.[0])} />
-    <button className="import-dropzone" type="button" disabled={busy} onClick={() => { if (input.current) input.current.value = ''; input.current?.click(); }}><Upload size={27} /><strong>{busy ? '正在处理数据库，请保持应用打开…' : '选择 SQLite 数据库备份'}</strong><span>直接读取 SQLite 二进制，不受 JSON 的 80 MiB 限制；处理容量取决于手机可用内存和存储。</span></button>
+    <div className="import-heading"><Database size={23} /><div><h2>从数据库数据包完整恢复</h2><p>用备份整体替换本机内容和学习数据。先检查文件与数据引用并展示预览，确认后保留独立的恢复前副本；保存失败会撤销替换。</p></div></div>
+    <input ref={input} type="file" accept=".zip,application/zip,application/x-zip-compressed" className="sr-only" aria-label="选择 SQLite 数据库数据包（ZIP）" disabled={busy} onChange={event => void select(event.target.files?.[0])} />
+    <button className="import-dropzone" type="button" disabled={busy} onClick={() => { if (input.current) input.current.value = ''; input.current?.click(); }}><Upload size={27} /><strong>{busy ? '正在处理数据库，请保持应用打开…' : '选择 SQLite 数据库数据包（ZIP）'}</strong><span>直接上传ZIP数据包，由manifest定位并校验SQLite数据库；无需手工解压。上限1 GiB，实际容量取决于手机内存和存储。</span></button>
     {error && <ErrorNotice message={error} />}
     {preview && <div className="import-preview sqlite-restore-preview"><h3>已通过校验：{preview.filename}</h3><p className="muted">{size(preview.byteLength)} · 数据库版本 {preview.schemaVersion} · 本预览固定使用已检查的文件副本。</p>
       <div className="table-scroll"><table><thead><tr><th>数据</th><th>本机当前</th><th>恢复后</th></tr></thead><tbody>{Object.entries(labels).map(([key, label]) => <tr key={key}><td>{label}</td><td>{preview.currentCounts[key] || 0}</td><td>{preview.counts[key] || 0}</td></tr>)}</tbody></table></div>

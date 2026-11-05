@@ -200,7 +200,7 @@ export async function prepareGithubRelease({
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const notes = `# 认知星图 ${version}\n\n本地优先的通用学习平台，支持知识题库、组卷练习、考试、学习记录和 AI 辅助。\n\n${changes ? `## 本次更新\n\n${changes}\n\n` : ''}## 下载\n\n${files.map((file) => `- \`${file.file}\``).join('\n')}\n\n软件首次启动为空题库，不内置领域、分类、标签或任何题目。包内仅附干净基础配置 config/defaults.json；AI 默认关闭，没有预设端点或凭据。题库按领域作为独立附件选择下载，解压后从“分享与导入”导入 part-*.json，再确认审核。软件附件不含工作数据库、学习记录或个人配置。\n\n## 配置与升级\n\n系统配置 → 数据与迁移 → 配置迁移，可单独导出/导入常规配置及 AI 非敏感参数；密钥不会进入配置 JSON，换设备后重新填写。完整学习数据使用 JSON/SQLite 备份迁移。升级前备份，Windows 保留原 data/，Web 保留数据库，Android 使用相同签名覆盖安装。\n\n${excluded.length ? `本次未附 Android 调试包或未签名包：${excluded.map((name) => `\`${name}\``).join('、')}。Android 正式安装包需完成签名。\n\n` : ''}使用和部署见仓库 README 与 docs/发布与部署.md；各附件 SHA256 见 SHA256SUMS.txt。\n`;
+  const notes = `# 认知星图 ${version}\n\n本地优先的通用学习平台，支持知识题库、组卷练习、考试、学习记录和 AI 辅助。\n\n${changes ? `## 本次更新\n\n${changes}\n\n` : ''}## 下载\n\n${files.map((file) => `- \`${file.file}\``).join('\n')}\n\n软件首次启动为空题库，不内置领域、分类、标签或任何题目。包内仅附干净基础配置 config/defaults.json；AI 默认关闭，没有预设端点或凭据。题库按领域作为独立附件选择下载，直接从“分享与导入”上传领域 ZIP，再确认审核。软件附件不含工作数据库、学习记录或个人配置。\n\n## 配置与升级\n\n系统配置 → 数据与迁移 → 配置迁移，可单独导出/导入常规配置及 AI 非敏感参数；密钥不会进入配置包，换设备后重新填写。完整学习数据使用 JSON/SQLite 备份迁移。升级前备份，Windows 保留原 data/，Web 保留数据库，Android 使用相同签名覆盖安装。\n\n${excluded.length ? `本次未附 Android 调试包或未签名包：${excluded.map((name) => `\`${name}\``).join('、')}。Android 正式安装包需完成签名。\n\n` : ''}使用和部署见仓库 README 与 docs/发布与部署.md；各附件 SHA256 见 SHA256SUMS.txt。\n`;
   await writeFile(join(destination, 'release-files.json'), JSON.stringify(release, null, 2) + '\n');
   await writeFile(
     join(destination, 'SHA256SUMS.txt'),

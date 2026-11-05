@@ -157,7 +157,7 @@ try {
   await history.getByRole('button', { name: '本题的详细历史作答', exact: true }).click();
   let record = history.locator('.question-history-record').first();
   await record.locator(':scope > summary').click();
-  await record.getByText('当时的判题要求', { exact: true }).click();
+  await record.getByText('当时的全卷补充判题要求', { exact: true }).click();
   assert.equal(await record.locator('.paper-grading-requirements p').innerText(), relaxed);
   checks.push('知识题库详细历史展示当时的判题要求，不混用题集现值');
   const latest = await api('/api/papers/' + paperId + '/attempts', 'POST', {});
@@ -185,7 +185,7 @@ try {
     .click();
   record = page.locator('.question-history-record').nth(1);
   await record.locator(':scope > summary').click();
-  await record.getByText('当时的判题要求', { exact: true }).click();
+  await record.getByText('当时的全卷补充判题要求', { exact: true }).click();
   assert.equal(await record.locator('.paper-grading-requirements p').innerText(), relaxed);
   await record.getByText('整卷历史已清理，本题完整作答仍保留。', { exact: true }).waitFor();
   await record.screenshot({ path: resolve(h.folder, 'history-grading-after-prune.png') });

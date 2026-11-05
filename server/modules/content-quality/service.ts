@@ -1,15 +1,15 @@
-import type {QuestionFeedback} from '../../../shared/models/question-feedback.js';
-import {currentFeedbackView,syncFeedbacksFromQualityIssue} from './feedback-links.js';
-import {feedbackFingerprint} from '../quality-feedback/fingerprint.js';
 import { createHash } from 'node:crypto';
-import type { Question, Category } from '../../../shared/models/types.js';
-import { QUALITY_RULE_VERSION, RETIRED_QUALITY_RULES, qualityIssueOrigin, type QualityScan, type QualityFilters, type QualityIssue, type QualityIssueView, type QualityIssueDetail, type QualityFingerprint, type QualityOverview, type QualitySeverity, type QualityRule } from '../../../shared/models/content-quality.js';
-import { Store, makeId, now, nextStamp } from '../../core/store.js';
-import { ApiError, fail } from '../../core/validation.js';
-import { qualityIssueQuerySchema, qualityResolveSchema } from './schema.js';
-import { inspectQuestionQuality, qualityContentFingerprint, qualitySignatures, type QualityFinding } from './rules.js';
 import type { z } from 'zod';
+import { QUALITY_RULE_VERSION,RETIRED_QUALITY_RULES,qualityIssueOrigin,type QualityFilters,type QualityFingerprint,type QualityIssue,type QualityIssueDetail,type QualityIssueView,type QualityOverview,type QualityScan,type QualitySeverity } from '../../../shared/models/content-quality.js';
+import type { QuestionFeedback } from '../../../shared/models/question-feedback.js';
+import type { Category,Question } from '../../../shared/models/types.js';
+import { Store,makeId,nextStamp,now } from '../../core/store.js';
+import { ApiError,fail } from '../../core/validation.js';
 import { validateAssetReferences } from '../assets/service.js';
+import { feedbackFingerprint } from '../quality-feedback/fingerprint.js';
+import { currentFeedbackView,syncFeedbacksFromQualityIssue } from './feedback-links.js';
+import { inspectQuestionQuality,qualityContentFingerprint,qualitySignatures,type QualityFinding } from './rules.js';
+import { qualityIssueQuerySchema,qualityResolveSchema } from './schema.js';
 
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const scanning=new WeakMap<Store,Set<string>>();

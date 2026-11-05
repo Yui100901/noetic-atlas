@@ -1,19 +1,18 @@
-import { readOnlyOperation } from '../../http/operation.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Question, StudyState } from '../../../shared/models/types.js';
+import type { Question } from '../../../shared/models/types.js';
 import type { LearningSource } from '../../../shared/practice/context-learning.js';
-import type { GlobalLearningKind, GlobalLearningQuestion, GlobalLearningSummary, LearningCardSummaries, LearningOrigin } from '../../../shared/practice/global-learning.js';
-import type { Paged } from '../../../shared/utils/pagination.js';
+import type { GlobalLearningKind,GlobalLearningQuestion,GlobalLearningSummary,LearningCardSummaries,LearningOrigin } from '../../../shared/practice/global-learning.js';
 import { cleanLearningRecord } from '../../../shared/questions/learning-records.js';
-import type { Store } from '../../core/store.js';
-import { id, parse } from '../../core/validation.js';
+import type { Paged } from '../../../shared/utils/pagination.js';
 import { paginationFields } from '../../core/pagination.js';
+import type { Store } from '../../core/store.js';
+import { id,parse } from '../../core/validation.js';
+import { readOnlyOperation } from '../../http/operation.js';
 import { flattenQuestions } from '../questions/structure.js';
-import { learningJudgment, learningQuestionKey, type LearningJudgingItem } from './learning-state.js';
-import { QUICK_PAPER_ID, type StoredAttempt } from './service.js';
-import { learningMetadata, learningSnapshots, type LearningMetadata } from './learning-results.js';
 import { loadLeafStudies } from '../study/state.js';
+import { learningMetadata,learningSnapshots,type LearningMetadata } from './learning-results.js';
+import { learningQuestionKey } from './learning-state.js';
 
 export const globalLearningSummaryQuerySchema=z.object({}).strict();
 export const globalLearningQuestionsQuerySchema=z.object({kind:z.enum(['wrong','favorite','due']),...paginationFields,page:paginationFields.page.default(1),pageSize:paginationFields.pageSize.default(20)}).strict();

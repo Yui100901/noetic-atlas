@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {validatePack,asShare} from '../../scripts/content/manage.js';
 import {Store} from '../../server/core/store.js';
-import {planShareImport,importShare} from '../../server/modules/sharing/routes.js';
+import {planShareImport,importShare} from '../../server/modules/sharing/service.js';
 import {inspectQuestionQuality} from '../../server/modules/content-quality/rules.js';
 test('author packs and portable sharing accept schema-optional prose and taxonomy without weakening answer-key validation',t=>{
  const raw=JSON.parse(readFileSync('tests/fixtures/driving-content.json','utf8'));

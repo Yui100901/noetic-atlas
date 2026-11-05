@@ -1,3 +1,4 @@
+import { buildDataPackage } from '../../shared/packages/data-package.ts';
 /** Isolated Android restore UI regression check. No installed app/data is used.
  * Run: node scripts/qa/check-sqlite-restore-ui.mjs
  * Optional PLAYWRIGHT_MODULE: module specifier or absolute Playwright index.mjs.
@@ -79,18 +80,18 @@ try {
  const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  try {
- await page.goto('http://127.0.0.1:'+port+'/restore-qa');await page.getByRole('heading',{name:'从 SQLite 备份完整恢复'}).waitFor();
- const file=page.getByLabel('选择 SQLite 数据库备份');const choose=page.getByRole('button',{name:'选择 SQLite 数据库备份',exact:true});
- await file.setInputFiles({name:'invalid.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('invalid')});await page.getByRole('alert').filter({hasText:'不是 SQLite'}).waitFor();assert.equal(await choose.isEnabled(),true);
- await file.setInputFiles({name:'fail.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('SQLite format 3 mock')});await page.getByRole('heading',{name:'已通过校验：fail.sqlite'}).waitFor();
+ await page.goto('http://127.0.0.1:'+port+'/restore-qa');await page.getByRole('heading',{name:'从数据库数据包完整恢复'}).waitFor();
+ const file=page.getByLabel('选择 SQLite 数据库数据包（ZIP）');const choose=page.getByRole('button',{name:'选择 SQLite 数据库数据包（ZIP）',exact:true});
+ await file.setInputFiles({name:'invalid.zip',mimeType:'application/zip',buffer:Buffer.from('invalid')});await page.getByRole('alert').filter({hasText:'有效ZIP'}).waitFor();assert.equal(await choose.isEnabled(),true);
+ await file.setInputFiles({name:'fail.zip',mimeType:'application/zip',buffer:Buffer.from(await buildDataPackage({kind:'sqlite-backup',title:'数据库验收',payloads:[],files:[{path:'database/fail.sqlite',bytes:Buffer.from('SQLite format 3 mock'),mediaType:'application/vnd.sqlite3'}]}))});await page.getByRole('heading',{name:'已通过校验：fail.zip'}).waitFor();
  const restore=page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true});assert.equal(await restore.isDisabled(),true);assert.equal(await page.locator('tbody tr').count(),32);
  for(const [label,count]of [['题目编辑草稿',2],['题目修订历史',5],['每日学习计划',2],['计划任务进度',6],['专注复习会话',3],['资料引用版本',4],['自适应复习卡片',3],['自适应复习事件',8],['每日推荐记录',1],['AI 教材处理任务',2],['AI工作台草稿',3],['题目反馈',4]])assert.deepEqual(await page.getByRole('row').filter({has:page.getByRole('cell',{name:label,exact:true})}).getByRole('cell').allTextContents(),[label,'0',String(count)]);
  await page.getByRole('checkbox').check();assert.equal(await restore.isEnabled(),true);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'mobile preview has no horizontal page overflow');
  await page.screenshot({path:resolve(folder,'preview-mobile.png'),fullPage:true});
- await restore.click();await page.getByRole('alert').filter({hasText:'原数据已保留'}).waitFor();assert.equal(await choose.isEnabled(),true);assert.equal(await page.getByRole('heading',{name:'已通过校验：fail.sqlite'}).count(),0);
+ await restore.click();await page.getByRole('alert').filter({hasText:'原数据已保留'}).waitFor();assert.equal(await choose.isEnabled(),true);assert.equal(await page.getByRole('heading',{name:'已通过校验：fail.zip'}).count(),0);
  await page.screenshot({path:resolve(folder,'rollback-mobile.png'),fullPage:true});await page.getByRole('button',{name:'保存或分享恢复前副本'}).click();assert.equal(await page.evaluate(()=>localStorage.getItem('qa-exported')),'qa-original');assert.equal(await page.evaluate(()=>localStorage.getItem('qa-restored')),null);
- await page.setViewportSize({width:1280,height:900});await file.setInputFiles({name:'success.sqlite',mimeType:'application/vnd.sqlite3',buffer:Buffer.from('SQLite format 3 mock')});await page.getByRole('heading',{name:'已通过校验：success.sqlite'}).waitFor();await page.getByRole('checkbox').check();await page.screenshot({path:resolve(folder,'preview-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:1280,height:900});await file.setInputFiles({name:'success.zip',mimeType:'application/zip',buffer:Buffer.from(await buildDataPackage({kind:'sqlite-backup',title:'数据库验收',payloads:[],files:[{path:'database/success.sqlite',bytes:Buffer.from('SQLite format 3 mock'),mediaType:'application/vnd.sqlite3'}]}))});await page.getByRole('heading',{name:'已通过校验：success.zip'}).waitFor();await page.getByRole('checkbox').check();await page.screenshot({path:resolve(folder,'preview-desktop.png'),fullPage:true});
  await Promise.all([page.waitForEvent('load'),page.getByRole('button',{name:'保留当前副本并完整恢复',exact:true}).click()]);
  await page.getByRole('button',{name:'保存或分享恢复前副本'}).waitFor();assert.equal(await page.evaluate(()=>localStorage.getItem('qa-restored')),'yes');assert.equal(await page.getByRole('checkbox').count(),0);assert.deepEqual(errors,[]);
  const report={passed:6,checks:['拒绝无效SQLite文件，选择器保持可用','预览32类数据及题目草稿/修订历史/学习计划/专注复习/资料引用版本/FSRS/每日推荐/教材任务/AI草稿/反馈数量，显式勾选后才允许替换','390px恢复预览无页面横向溢出','恢复失败保持原数据及页面可用，可导出恢复前副本','成功恢复重载页面并保留恢复前副本入口','全程无浏览器异常'],browserErrors:errors,isolatedNativeBridge:true};

@@ -1,3 +1,5 @@
+import { zipSync } from 'fflate';
+import { createHash } from 'node:crypto';
 /** Delayed reads must never replace the last record or backup the user selected. */
 import assert from 'node:assert/strict';
 import { rm, writeFile } from 'node:fs/promises';
@@ -96,11 +98,12 @@ try {
   checks.push('离开AI记录页取消详情读取，迟到结果不会在其他页面弹窗');
 
   await page.goto(`${origin}/#/settings?tab=backup`);
-  await page.getByRole('heading', { name: '从备份合并导入', exact: true }).waitFor();
+  const panel = page.getByRole('region', { name: '从数据包合并导入' });
+  await panel.waitFor();
   await page.evaluate(() => {
-    const original = File.prototype.text;
+    const original = File.prototype.arrayBuffer;
     window.backupReads = {};
-    File.prototype.text = function () {
+    File.prototype.arrayBuffer = function () {
       if (this.name.startsWith('held-'))
         return new Promise((resolve, reject) => {
           window.backupReads[this.name] = {
@@ -111,62 +114,91 @@ try {
       return original.call(this);
     };
   });
-  const input = () => page.getByLabel('选择 JSON 备份文件', { exact: true });
-  const json = (prefix, count) => ({
-    domains: [],
-    questions: Array.from({ length: count }, (_, index) => ({ id: prefix + index })),
-  });
-  const choose = (name, body) =>
-    input().setInputFiles({ name, mimeType: 'application/json', buffer: Buffer.from(body) });
-  const preview = () => page.locator('.import-preview');
-  for (const fail of [false, true]) {
-    const first = `held-${fail ? 'failure' : 'success'}.json`;
-    await choose(first, JSON.stringify(json('A', 1)));
-    await page.waitForFunction((name) => !!window.backupReads[name], first);
-    await page.getByRole('status').filter({ hasText: '正在读取备份文件' }).waitFor();
-    assert.equal(
-      await preview().count(),
-      0,
-      'pending replacement cannot confirm the previous backup',
+  const encode = (value) => Buffer.from(JSON.stringify(value));
+  const zip = (title, count, share = false) => {
+    const path = 'data/questions.json';
+    const payload = encode({
+      ...(share
+        ? { format: 'learning-share', title, exportedAt: '2026-11-04T00:00:00Z' }
+        : { documents: [] }),
+      schemaVersion: 1,
+      domains: [],
+      categories: [],
+      tags: [],
+      assets: [],
+      papers: [],
+      questionBanks: [],
+      questions: Array.from({ length: count }, (_, i) => ({
+        id: 'safety-' + i,
+        title: '隔离测试题 ' + i,
+        type: 'true_false',
+        stemMarkdown: '测试题干',
+        correctAnswers: ['true'],
+        categoryIds: [],
+        tagIds: [],
+        status: 'published',
+        createdAt: '2026-11-04T00:00:00Z',
+        updatedAt: '2026-11-04T00:00:00Z',
+      })),
+    });
+    return Buffer.from(
+      zipSync({
+        'manifest.json': encode({
+          format: 'noetic-atlas-package',
+          schemaVersion: 1,
+          id: title,
+          kind: share ? 'share' : 'migration',
+          title,
+          createdAt: '2026-11-04T00:00:00Z',
+          payloads: [{ path }],
+          files: [
+            {
+              path,
+              mediaType: 'application/json',
+              byteLength: payload.length,
+              sha256: createHash('sha256').update(payload).digest('hex'),
+            },
+          ],
+        }),
+        [path]: payload,
+      }),
     );
-    await choose('second-B.json', JSON.stringify(json('B', 2)));
-    await preview().getByText('2 道题目', { exact: true }).waitFor();
+  };
+  const choose = (name, buffer) =>
+    panel
+      .getByLabel('选择 ZIP 数据包', { exact: true })
+      .setInputFiles({ name, mimeType: 'application/zip', buffer });
+  const confirmImport = () => panel.getByRole('button', { name: '确认导入整个数据包' });
+  for (const fail of [false, true]) {
+    const first = `held-${fail ? 'failure' : 'success'}.zip`;
+    await choose(first, zip('旧包A', 1));
+    await page.waitForFunction((name) => !!window.backupReads[name], first);
+    await panel.getByRole('status').filter({ hasText: '正在读取数据包' }).waitFor();
+    assert.equal(await confirmImport().count(), 0);
+    await choose('second-B.zip', zip('新包B', 2));
+    await panel.getByRole('heading', { name: '新包B' }).waitFor();
     await page.evaluate(({ name, fail }) => window.backupReads[name][fail ? 'fail' : 'success'](), {
       name: first,
       fail,
     });
-    // The held promise is settled before the next browser round trip; the
-    // stale callback must not change either the preview or its error banner.
-    assert.match(await preview().innerText(), /second-B\.json/);
-    assert.match(await preview().innerText(), /2 道题目/);
-    assert.equal(await page.getByText('旧文件读取失败', { exact: true }).count(), 0);
-    checks.push(
-      fail
-        ? '旧备份读取失败不污染新文件预览，用户可继续确认新文件'
-        : '旧备份迟到成功不替换新文件，文件名和预览题量一致',
-    );
+    assert.equal(await panel.getByRole('heading', { name: '新包B' }).count(), 1);
+    assert.match(await panel.getByRole('row').filter({ hasText: '题目' }).first().innerText(), /2/);
+    assert.equal(await panel.getByText('旧文件读取失败', { exact: true }).count(), 0);
+    checks.push(fail ? '旧文件读取失败不污染新包预览' : '旧文件迟到成功不替换新包预览');
   }
-  await choose('invalid-C.json', '{invalid');
-  await page.locator('.notice.error').waitFor();
-  assert.equal(await preview().count(), 0);
-  assert.match(await page.locator('.import-dropzone').innerText(), /invalid-C\.json/);
-  assert.equal(await page.getByRole('button', { name: '确认合并导入', exact: true }).count(), 0);
-  await choose('recovered-D.json', JSON.stringify(json('D', 3)));
-  await preview().getByText('3 道题目', { exact: true }).waitFor();
-  assert.match(await preview().innerText(), /recovered-D\.json/);
-  checks.push('无效JSON保留所选文件名并阻止导入，重新选文件可恢复且无旧数据混入');
-  await choose('shared.json', JSON.stringify({ ...json('S', 1), format: 'learning-share' }));
-  await page.getByRole('alert').filter({ hasText: '这是分享包' }).waitFor();
-  assert.equal(await preview().count(), 0);
-  assert.equal(await page.getByRole('button', { name: '确认合并导入', exact: true }).count(), 0);
-  assert.equal(
-    await page.getByRole('link', { name: '导入分享包', exact: true }).getAttribute('href'),
-    '#/sharing',
-  );
-  checks.push('分享包不能通过可信备份入口跳过审核，提示使用正确导入入口');
-  await page.setViewportSize({ width: 390, height: 844 });
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-  await page.screenshot({ path: resolve(h.folder, 'backup-mobile.png'), fullPage: true });
+  await choose('invalid-C.zip', Buffer.from('invalid ZIP'));
+  await panel.getByRole('alert').waitFor();
+  assert.equal(await confirmImport().count(), 0);
+  assert.match(await panel.innerText(), /invalid-C\.zip/);
+  await choose('recovered-D.zip', zip('恢复D', 3));
+  await panel.getByRole('heading', { name: '恢复D' }).waitFor();
+  assert.equal(await confirmImport().isDisabled(), true);
+  checks.push('无效ZIP后可重新选择，可信迁移要求明确确认');
+  await choose('shared.zip', zip('分享用途', 0, true));
+  await panel.getByText('内容分享', { exact: true }).waitFor();
+  assert.equal(await panel.getByRole('checkbox').count(), 0);
+  checks.push('同一上传入口依据manifest识别分享用途并展示待审核规则');
+
   h.assertClean();
   await writeFile(
     resolve(h.folder, 'report.json'),

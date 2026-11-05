@@ -83,6 +83,21 @@ export function validateAllAssetReferences(store: Store) {
     }
   }
 }
+/** Startup checks only changed owners. An asset mutation can invalidate any
+ * existing owner, so it deliberately requires the full source validation. */
+export function validateStartupAssetReferences(store: Store) {
+  const d = store.database;
+  if (d.startupValidation.pending('assets')) return validateAllAssetReferences(store);
+  for (const source of assetReferenceSources)
+    for (const ids of d.startupValidation.ids(source)) {
+      const rows = d.all(d.query.selectFrom(source).select('data').where('id', 'in', ids));
+      for (const row of rows) {
+        const record = JSON.parse(row.data);
+        if (source === 'question_revisions' && record.origin === 'baseline') continue;
+        validateAssetReferences(store, assetReferenceContent(source, record));
+      }
+    }
+}
 /** Derived references use the same structural collector as writes/migration;
  * a file page never scans source bodies or historical snapshots. */
 function referencedAssetIds(store: Store, wanted: Set<string>): Set<string> {

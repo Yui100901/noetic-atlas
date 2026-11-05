@@ -14,6 +14,15 @@ import {
 } from '../../core/validation.js';
 import { assetRecordSchema } from '../assets/schema.js';
 
+export const shareSelectionSchema = z
+  .object({
+    kind: z.enum(['questions', 'paper']),
+    id: id.optional(),
+    ids: z.array(id).min(1).max(50000).optional(),
+    filters: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
 export const shareQuestionSchema = questionSchema.safeExtend({ id });
 const shareQuestion = shareQuestionSchema;
 const paperSchema = z

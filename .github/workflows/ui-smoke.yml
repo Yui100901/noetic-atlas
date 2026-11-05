@@ -32,8 +32,9 @@ jobs:
       - run: node scripts/qa/check-form-save-bar-focus-ui.mjs
       - run: node scripts/qa/check-library-compact-ui.mjs
       - run: node scripts/qa/check-learning-reader-layout-ui.mjs
-      - run: node scripts/qa/check-settings-save-bar-ui.mjs
-      - run: node scripts/qa/check-domain-export-ui.mjs
+      - run: node --import tsx scripts/qa/check-settings-save-bar-ui.mjs
+      - run: node --import tsx scripts/qa/check-domain-export-ui.mjs
+      - run: node --import tsx scripts/qa/check-data-package-ui.mjs
       - name: Keep synthetic screenshots and failure diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -45,5 +46,6 @@ jobs:
             test-results/learning-reader-layout/
             test-results/settings-save-bar-ui/
             test-results/domain-export-ui/
+            test-results/data-package-ui/
           retention-days: 7
           if-no-files-found: ignore

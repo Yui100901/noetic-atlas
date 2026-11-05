@@ -8,6 +8,9 @@ for (const target of ['public/licenses', 'mobile/assets/licenses']) {
   await copyFile(resolve(root, 'node_modules/ts-fsrs/LICENSE'), resolve(root, target, 'ts-fsrs-MIT.txt'));
   await copyFile(resolve(root, 'node_modules/katex/LICENSE'), resolve(root, target, 'KaTeX-MIT.txt'));
   await copyFile(resolve(root, 'node_modules/html-to-image/LICENSE'), resolve(root, target, 'html-to-image-MIT.txt'));
+  await copyFile(resolve(root, 'node_modules/fflate/LICENSE'), resolve(root, target, 'fflate-MIT.txt'));
+  await copyFile(resolve(root, 'node_modules/@noble/hashes/LICENSE'), resolve(root, target, 'noble-hashes-MIT.txt'));
+  await copyFile(resolve(root, 'node_modules/@capacitor/app/LICENSE'), resolve(root, target, 'capacitor-app-MIT.txt'));
   const mhchem=await readFile(resolve(root,'node_modules/katex/contrib/mhchem/mhchem.js'),'utf8'),start=mhchem.indexOf('/********');
   await writeFile(resolve(root,target,'mhchem-NOTICE.txt'),mhchem.slice(start,mhchem.indexOf('*/',start)+2)+'\nFull Apache 2.0 text: PDFjs-Apache-2.0.txt\n');
 }

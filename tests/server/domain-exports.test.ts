@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
-import { createHash } from 'node:crypto';
 import { Store } from '../../server/core/store.js';
 import { questionSchema } from '../../server/core/validation.js';
 import { buildApp } from '../../server/index.js';
@@ -13,13 +12,14 @@ import {
   registerContentExportRoutes,
 } from '../../server/modules/transfer/domain-exports.js';
 import { importData } from '../../server/modules/transfer/migration.js';
-import { exportShare, importShare } from '../../server/modules/sharing/routes.js';
+import { importDataPackage, previewDataPackage } from '../../server/modules/transfer/packages.js';
+import { exportShare, importShare } from '../../server/modules/sharing/service.js';
 import {
   contentExportContext,
   detachQuestionLinks,
 } from '../../server/modules/sharing/export-content.js';
 import { sharePackageSchema, validateShareExport } from '../../server/modules/sharing/schema.js';
-import { readStoredZip } from '../helpers/stored-zip.js';
+import { readDataPackage } from '../../shared/packages/data-package.js';
 import type { ContentExportSelection } from '../../shared/models/domain-exports.js';
 import type { Question } from '../../shared/models/types.js';
 
@@ -110,7 +110,12 @@ const decode = (file: { dataBase64: string; byteLength: number }) => {
   return value;
 };
 
-test('domain catalog has metadata-only scoped counts and stable scope-bound fingerprints', (t) => {
+async function unpack(file: ReturnType<typeof build>) {
+  const parsed = await readDataPackage(decode(await file));
+  return parsed.payloads[0]!.data as any;
+}
+
+test('domain catalog has metadata-only scoped counts and stable scope-bound fingerprints', async (t) => {
   const store = fixture(t);
   seed(store);
   add(store, 'shared', { categoryIds: ['backend', 'english-root'] });
@@ -144,7 +149,7 @@ test('domain catalog has metadata-only scoped counts and stable scope-bound fing
   assert.equal(sharing.questionCount, 1);
   assert.equal(sharing.scope.status, 'published');
   assert.equal(sharing.scope.collection, 'general');
-  assert.throws(
+  await assert.rejects(
     () =>
       buildContentExport(store, {
         domainIds: ['computer'],
@@ -156,7 +161,7 @@ test('domain catalog has metadata-only scoped counts and stable scope-bound fing
   assert.throws(() => previewContentExport(store, { domainIds: ['missing'] }), /领域不存在/);
 });
 
-test('trusted domain migration keeps admission, taxonomy ancestors and images without private state or textbook originals', (t) => {
+test('trusted domain migration keeps admission, taxonomy ancestors and images without private state or textbook originals', async (t) => {
   const store = fixture(t);
   seed(store);
   add(store, 'selected', {
@@ -203,14 +208,14 @@ test('trusted domain migration keeps admission, taxonomy ancestors and images wi
   store.put('documents', secret, { id: secret, bodyMarkdown: secret, assetId: 'unused-book' });
   store.put('question_drafts', secret, { id: secret, secret });
   store.put('question_revisions', secret, { id: secret, secret });
-  const file = build(store, { domainIds: ['computer'] }),
+  const file = await build(store, { domainIds: ['computer'] }),
     bytes = decode(file),
-    pack = json(bytes);
+    pack = await unpack(Promise.resolve(file));
   assert.ok(
     !JSON.stringify(exportShare(store, { kind: 'questions', ids: ['selected'] })).includes(secret),
     'ordinary shares use the same positive authoring boundary',
   );
-  assert.equal(file.mimeType, 'application/json');
+  assert.equal(file.mimeType, 'application/zip');
   assert.ok(!bytes.toString().includes(secret));
   assert.equal(pack.format, undefined);
   assert.equal(pack.schemaVersion, 1);
@@ -245,12 +250,12 @@ test('trusted domain migration keeps admission, taxonomy ancestors and images wi
   assert.equal(target.all('documents').length, 0);
 });
 
-test('share exports are admitted through the sharing gate; backup imports reject every formatted content package', (t) => {
+test('share exports are admitted through the sharing gate; backup imports reject every formatted content package', async (t) => {
   const source = fixture(t);
   seed(source);
   add(source, 'source');
   add(source, 'private', { collection: 'personal' });
-  const pack = json(decode(build(source, { domainIds: ['computer'], purpose: 'share' })));
+  const pack = await unpack(build(source, { domainIds: ['computer'], purpose: 'share' }));
   assert.equal(pack.format, 'learning-share');
   assert.deepEqual(
     pack.questions.map((q: Question) => q.id),
@@ -269,7 +274,7 @@ test('share exports are admitted through the sharing gate; backup imports reject
     assert.throws(() => importData(target, { ...pack, format }), /只接受可信迁移/);
 });
 
-test('per-domain ZIP parts are independently importable, complete beyond 500 and retain cross-domain memberships', (t) => {
+test('per-domain ZIP imports the whole package beyond 500, deduplicates memberships and keeps package-wide links', async (t) => {
   const source = fixture(t);
   seed(source);
   source.transaction(() => {
@@ -280,11 +285,16 @@ test('per-domain ZIP parts are independently importable, complete beyond 500 and
           '[外部分片](#/questions/q-01000) [网页](https://example.test/#/questions/external)',
       });
   });
-  const combined = json(decode(build(source, { domainIds: ['computer', 'english'] })));
+  const combined = await unpack(build(source, { domainIds: ['computer', 'english'] }));
   assert.equal(combined.questions.length, 1001, 'combined does not inherit the part size cap');
-  const file = build(source, { domainIds: ['computer', 'english', 'empty'], mode: 'per_domain' });
-  const files = readStoredZip(decode(file)),
-    manifest = json(files.get('manifest.json')!);
+  const file = await build(source, {
+    domainIds: ['computer', 'english', 'empty'],
+    mode: 'per_domain',
+  });
+  const parsed = await readDataPackage(decode(file)),
+    files = parsed.files,
+    manifest = json(files.get('metadata/domain-export.json')!);
+  const payloads = new Map(parsed.payloads.map((entry) => [entry.path, entry.data as any]));
   assert.equal(file.mimeType, 'application/zip');
   assert.equal(file.summary.fileCount, 4);
   assert.equal(manifest.questionCount, 1001);
@@ -292,43 +302,47 @@ test('per-domain ZIP parts are independently importable, complete beyond 500 and
   assert.deepEqual(manifest.emptyDomainIds, ['empty']);
   const target = fixture(t),
     all = new Set<string>();
-  for (const entry of manifest.files) {
-    const bytes = files.get(entry.filename)!,
-      pack = json(bytes),
+  for (const entry of manifest.parts) {
+    const pack = payloads.get(entry.path)!,
       independent = fixture(t);
     assert.ok(entry.questionCount <= 500);
-    assert.equal(entry.byteLength, bytes.byteLength);
-    assert.equal(entry.sha256, createHash('sha256').update(bytes).digest('hex'));
+    assert.ok(files.has(entry.path), 'every metadata part is a manifest-declared payload');
     importData(independent, pack);
     assert.equal(independent.all('questions').length, entry.questionCount);
-    importData(target, pack);
     for (const q of pack.questions) all.add(q.id);
   }
   assert.equal(all.size, 1001);
+  const preview = await previewDataPackage(target, { dataBase64: file.dataBase64 });
+  await importDataPackage(target, {
+    dataBase64: file.dataBase64,
+    confirmed: true,
+    confirmedTrusted: true,
+    expectedFingerprint: preview.fingerprint,
+  });
   assert.equal(target.all('questions').length, 1001);
-  const firstComputerPart = manifest.files.find(
+  const firstComputerPart = manifest.parts.find(
     (file: any) => file.domainId === 'computer' && file.part === 1,
-  ).filename;
+  ).path;
   assert.match(
-    json(files.get(firstComputerPart)!).questions[0].explanationMarkdown,
-    /关联题未包含在本文件/,
+    payloads.get(firstComputerPart)!.questions[0].explanationMarkdown,
+    /#\/questions\/q-01000/,
   );
   assert.match(
-    json(files.get(firstComputerPart)!).questions[0].explanationMarkdown,
+    payloads.get(firstComputerPart)!.questions[0].explanationMarkdown,
     /https:\/\/example.test\/#\/questions\/external/,
   );
 });
 
-test('source body, assets, taxonomy, mode and scope changes invalidate the preview without mutations', (t) => {
+test('source body, assets, taxonomy, mode and scope changes invalidate the preview without mutations', async (t) => {
   const store = fixture(t);
   seed(store);
   const q = add(store, 'source');
   const scope = { domainIds: ['computer'] },
     preview = previewContentExport(store, scope);
   const original = JSON.stringify(store.all('questions'));
-  buildContentExport(store, { ...scope, expectedFingerprint: preview.fingerprint });
+  await buildContentExport(store, { ...scope, expectedFingerprint: preview.fingerprint });
   assert.equal(JSON.stringify(store.all('questions')), original);
-  assert.throws(
+  await assert.rejects(
     () =>
       buildContentExport(store, {
         ...scope,
@@ -338,25 +352,25 @@ test('source body, assets, taxonomy, mode and scope changes invalidate the previ
     /重新预览/,
   );
   store.put('questions', q.id, { ...q, answerMarkdown: '更改含义。' });
-  assert.throws(
+  await assert.rejects(
     () => buildContentExport(store, { ...scope, expectedFingerprint: preview.fingerprint }),
     /重新预览/,
   );
   const afterQuestion = previewContentExport(store, scope);
   store.put('assets', 'diagram', { ...store.get('assets', 'diagram'), filename: '新图.png' });
-  assert.throws(
+  await assert.rejects(
     () => buildContentExport(store, { ...scope, expectedFingerprint: afterQuestion.fingerprint }),
     /重新预览/,
   );
   const afterAsset = previewContentExport(store, scope);
   store.put('categories', 'backend', { ...store.get('categories', 'backend'), name: '新分类名' });
-  assert.throws(
+  await assert.rejects(
     () => buildContentExport(store, { ...scope, expectedFingerprint: afterAsset.fingerprint }),
     /重新预览/,
   );
 });
 
-test('shared cross-domain parts keep the same semantic question content and reuse duplicates on import', (t) => {
+test('shared cross-domain parts keep the same semantic question content and reuse duplicates on import', async (t) => {
   const source = fixture(t);
   seed(source);
   add(source, 'shared', {
@@ -364,17 +378,19 @@ test('shared cross-domain parts keep the same semantic question content and reus
     explanationMarkdown: '[参考](#/questions/neighbor) #/questions/neighbor',
   });
   add(source, 'neighbor');
-  const file = build(source, {
+  const file = await build(source, {
     domainIds: ['computer', 'english'],
     purpose: 'share',
     mode: 'per_domain',
   });
-  const files = readStoredZip(decode(file)),
-    manifest = json(files.get('manifest.json')!);
+  const parsed = await readDataPackage(decode(file)),
+    files = parsed.files,
+    manifest = json(files.get('metadata/domain-export.json')!);
+  const payloads = new Map(parsed.payloads.map((entry) => [entry.path, entry.data as any]));
   const target = fixture(t),
     exported = [] as Question[];
-  for (const entry of manifest.files) {
-    const pack = json(files.get(entry.filename)!);
+  for (const entry of manifest.parts) {
+    const pack = payloads.get(entry.path)!;
     exported.push(pack.questions.find((q: Question) => q.id === 'shared'));
     const result = importShare(target, pack);
     assert.equal(result.counts.questions!.remapped, 0);
@@ -393,12 +409,12 @@ test('shared cross-domain parts keep the same semantic question content and reus
 test('empty ranges, invalid dependencies and malformed HTTP selections fail clearly', async (t) => {
   const store = fixture(t);
   seed(store);
-  assert.throws(() => build(store, { domainIds: [] }), /至少选择/);
-  assert.throws(() => build(store, { domainIds: ['empty'] }), /没有题目/);
+  await assert.rejects(() => build(store, { domainIds: [] }), /至少选择/);
+  await assert.rejects(() => build(store, { domainIds: ['empty'] }), /没有题目/);
   const q = add(store, 'missing-image', { stemMarkdown: '![缺图](/api/assets/missing/content)' });
-  assert.throws(() => build(store, { domainIds: ['computer'] }), /附件 missing/);
+  await assert.rejects(() => build(store, { domainIds: ['computer'] }), /附件 missing/);
   store.put('questions', q.id, { ...q, stemMarkdown: '普通内容', tagIds: ['missing-tag'] });
-  assert.throws(() => build(store, { domainIds: ['computer'] }), /标签 missing-tag/);
+  await assert.rejects(() => build(store, { domainIds: ['computer'] }), /标签 missing-tag/);
   const app = Fastify();
   registerHttpSecurity(app, store);
   registerContentExportRoutes(app, store);
@@ -419,7 +435,7 @@ test('empty ranges, invalid dependencies and malformed HTTP selections fail clea
   assert.equal(CONTENT_EXPORT_LIMITS.maxCombinedBytes, 80 * 1024 * 1024 - 1024);
 });
 
-test('reusable export helpers do not resolve unselected question bodies or missing local links', (t) => {
+test('reusable export helpers do not resolve unselected question bodies or missing local links', async (t) => {
   const store = fixture(t);
   seed(store);
   const q = add(store, 'source');
@@ -436,11 +452,11 @@ test('reusable export helpers do not resolve unselected question bodies or missi
   assert.match(result, /https:\/\/example.test\/#\/questions\/raw/);
 });
 
-test('share producer and recipient enforce the same attachment-count limit even for small payloads', (t) => {
+test('share producer and recipient enforce the same attachment-count limit even for small payloads', async (t) => {
   const source = fixture(t);
   seed(source);
   add(source, 'source', { stemMarkdown: '![图](/api/assets/diagram/content)' });
-  const pack = json(decode(build(source, { domainIds: ['computer'], purpose: 'share' })));
+  const pack = await unpack(build(source, { domainIds: ['computer'], purpose: 'share' }));
   // Reuse the tiny record in this schema boundary fixture, avoiding a large
   // database or binary allocation while crossing the real recipient limit.
   pack.assets = Array.from({ length: 10001 }, (_, index) => ({
@@ -475,7 +491,7 @@ test('production routes expose accurate OpenAPI and stay behind exam access lock
   const imported = await app.inject({
     method: 'POST',
     url: '/api/import',
-    payload: { data: json(decode(build(source, { domainIds: ['computer'] }))), mode: 'merge' },
+    payload: { data: await unpack(build(source, { domainIds: ['computer'] })), mode: 'merge' },
   });
   assert.equal(imported.statusCode, 200, imported.body);
   const catalog = await app.inject({

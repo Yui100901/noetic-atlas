@@ -141,14 +141,9 @@ export function DomainExport() {
           signal: controller.signal,
         });
         if (!isCurrent()) return;
-        if (file.mimeType !== (scope.mode === 'combined' ? 'application/json' : 'application/zip'))
+        if (file.mimeType !== 'application/zip')
           throw new Error('导出文件格式与所选格式不一致，请重新预览。');
-        const bytes = exportFileBytes(
-          file,
-          scope.mode === 'combined'
-            ? currentPreview!.limits.maxCombinedBytes
-            : currentPreview!.limits.maxPackageBytes,
-        );
+        const bytes = exportFileBytes(file, currentPreview!.limits.maxPackageBytes);
         if (!isCurrent()) return;
         setPhase('saving');
         const filename = portableExportFilename(file.filename, file.mimeType);
@@ -353,11 +348,15 @@ export function DomainExport() {
         <legend>文件组织</legend>
         {(
           [
-            ['combined', '合并为一个 JSON 文件', '多个领域一起导入，同一道题只收录一次。'],
+            [
+              'combined',
+              '合并为一个数据包（ZIP）',
+              '多个领域合并去重，通过manifest一次导入全部内容。',
+            ],
             [
               'per_domain',
-              '按领域分别导出（ZIP）',
-              '按领域存放 JSON，大领域自动分卷；解压后逐份导入 JSON。',
+              '数据包内按领域分组',
+              '包内按领域与分片组织，导入时解析manifest，整包一次完成。',
             ],
           ] as const
         ).map(([value, title, description]) => (
@@ -468,7 +467,7 @@ export function DomainExport() {
           onClick={() => void perform(true)}
         >
           <Download size={17} />
-          生成并下载{scope.mode === 'per_domain' ? ' ZIP' : ' JSON'}
+          生成并下载 ZIP
         </button>
         {phase && (
           <span role="status" className="domain-export-work">

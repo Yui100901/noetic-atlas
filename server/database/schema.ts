@@ -11,5 +11,6 @@ export type AtlasDatabase = { [K in RecordTable]: DocumentRow } & {
   search_read_model: { key: string; source_table: string; source_id: string; kind: string; entity_id: string; question_id: string | null; data: string; id_key: string; title_key: string; content_key: string; search_text: string; content: string; status: string; archived: number; updated_at: string };
   search_projection_pending: { source_table: string; source_id: string };
   projection_pending: { source_table: string; source_id: string };
+  startup_validation_pending: { source_table: string; source_id: string };
   asset_references: { source_table: string; source_id: string; asset_id: string };
 };

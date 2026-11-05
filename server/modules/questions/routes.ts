@@ -1,21 +1,21 @@
-import { questionSaveSchema } from './maintenance-schema.js';
-import { requireQuestionDraftVersion } from './drafts.js';
-import { captureQuestionRevision } from './revisions.js';
-import { readOnlyOperation } from '../../http/operation.js';
-import {normalizeQuestionBlankStems} from '../../../shared/questions/blank-markers.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Question } from '../../../shared/models/types.js';
 import type { PaperDraft } from '../../../shared/practice/paper-drafts.js';
-import { Store, makeId, now, nextStamp } from '../../core/store.js';
-import { fail, parse, id, types, questionSchema, questionReviewSchema, selectedIdsSchema, pendingEnvelopeSchema, questionMetadataInputSchema } from '../../core/validation.js';
-import type { StoredPaper } from '../practice/service.js';
-import { assertNewQuestionId } from '../banks/routes.js';
-import { validateAssetReferences } from '../assets/service.js';
-import { getSettings } from '../settings/service.js';
+import { normalizeQuestionBlankStems } from '../../../shared/questions/blank-markers.js';
+import { Store,makeId,nextStamp,now } from '../../core/store.js';
+import { fail,parse,pendingEnvelopeSchema,questionMetadataInputSchema,questionReviewSchema,selectedIdsSchema } from '../../core/validation.js';
+import { readOnlyOperation } from '../../http/operation.js';
 import { getId } from '../../http/request.js';
-import { questionQuerySchema } from './query-schema.js';
+import { validateAssetReferences } from '../assets/service.js';
 import { validateDocumentCitations } from '../library/sources.js';
+import type { StoredPaper } from '../practice/service.js';
+import { getSettings } from '../settings/service.js';
+import { requireQuestionDraftVersion } from './drafts.js';
+import { assertNewQuestionId,exportPendingQuestions,importPendingQuestions } from './import-export.js';
+import { questionSaveSchema } from './maintenance-schema.js';
+import { questionQuerySchema } from './query-schema.js';
+import { captureQuestionRevision } from './revisions.js';
 
 export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/questions', async request => {
@@ -50,27 +50,11 @@ export function registerQuestionRoutes(app: FastifyInstance, store: Store) {
   });
   app.post('/api/questions/pending/export', readOnlyOperation, async (request, reply) => {
     const { ids } = parse(selectedIdsSchema, request.body);
-    const questions = ids.map(qid => {
-      const q = store.require<Question>('questions', qid);
-      if (q.status !== 'pending') fail(409, 'QUESTION_NOT_PENDING', `只能导出待审核题目：${qid}`);
-      return q;
-    });
-    return reply.header('Content-Disposition', 'attachment; filename="pending-questions.json"').send({ format: 'learning-pending-questions', schemaVersion: 1, exportedAt: now(), questions });
+    return reply.header('Content-Disposition', 'attachment; filename="pending-questions.json"').send(exportPendingQuestions(store, ids));
   });
   app.post('/api/questions/pending/import', async request => {
     const { data } = parse(z.object({ data: pendingEnvelopeSchema, confirmed: z.literal(true) }).strict(), request.body);
-    return store.transaction(() => {
-      const entries = data.questions.map(raw => {
-        const input=normalizeQuestionBlankStems(raw);
-        const q = store.require<Question>('questions', input.id!);
-        if (q.status !== 'pending') fail(409, 'QUESTION_NOT_PENDING', `只能更新现有待审核题目：${q.id}`);
-        if (q.updatedAt !== input.updatedAt) fail(409, 'QUESTION_VERSION_CONFLICT', `题目已被修改，未覆盖更新：${q.id}`);
-        store.validateRefs(input); validateAssetReferences(store, input, getSettings(store));
-        return { ...input, id: q.id, status: 'pending' as const, createdAt: q.createdAt || now(), updatedAt: nextStamp(q.updatedAt) };
-      });
-      for (const q of entries) {validateDocumentCitations(store,q,true);captureQuestionRevision(store,store.require<Question>('questions',q.id),q,'pending_import','待审核题JSON批量修订');store.put('questions', q.id, q);}
-      return { ok: true, updated: entries.length, items: entries.map(q => store.question(q.id)) };
-    });
+    return importPendingQuestions(store, data);
   });
   app.delete('/api/questions/:id', async request => {
     const qid = getId(request); store.require<Question>('questions', qid);

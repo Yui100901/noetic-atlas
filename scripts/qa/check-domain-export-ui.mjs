@@ -1,6 +1,6 @@
+import { readDataPackage } from '../../shared/packages/data-package.ts';
 /** Real domain migration/share downloads, clean receivers and bounded stale-response checks. */
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { startBrowserHarness } from './helpers/browser-harness.mjs';
@@ -11,14 +11,12 @@ const h = await startBrowserHarness({
 app.post('/__qa/check-export-import',async request=>{
  const receiver=await buildApp({databasePath:':memory:',seedPath:'test-results/domain-export-ui/no-receiver-seed',staticRoot:'test-results/domain-export-ui/no-receiver-web',dailyPushScheduler:false,logger:false});
  try{
-  for(const data of request.body.files){
-   if(data.format==='learning-share'){
-    const inspect=await receiver.inject({method:'POST',url:'/api/sharing/preview',payload:{data}});assert.equal(inspect.statusCode,200,inspect.body);
-    const imported=await receiver.inject({method:'POST',url:'/api/sharing/import',payload:{data,confirmed:true,expectedFingerprint:inspect.json().fingerprint}});assert.equal(imported.statusCode,200,imported.body);
-   }else{
-    const imported=await receiver.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data}});assert.equal(imported.statusCode,200,imported.body);
-   }
-  }
+  const dataBase64=request.body.dataBase64;
+  const inspect=await receiver.inject({method:'POST',url:'/api/packages/preview',payload:{dataBase64}});
+  assert.equal(inspect.statusCode,200,inspect.body);
+  const preview=inspect.json();
+  const imported=await receiver.inject({method:'POST',url:'/api/packages/import',payload:{dataBase64,confirmed:true,expectedFingerprint:preview.fingerprint,...(preview.kind==='migration'?{confirmedTrusted:true}:{})}});
+  assert.equal(imported.statusCode,200,imported.body);
   const exported=await receiver.inject('/api/export');assert.equal(exported.statusCode,200,exported.body);
   const data=exported.json();return {questions:data.questions.map(({id,status,collection})=>({id,status,collection})),domains:data.domains.length,categories:data.categories.length,tags:data.tags.length,assets:data.assets.length};
  }finally{await receiver.close();}
@@ -59,9 +57,9 @@ async function takeDownload() {
   const [file] = await Promise.all([page.waitForEvent('download'), download().click()]);
   return { name: file.suggestedFilename(), bytes: await readFile(await file.path()) };
 }
-async function importIntoCleanReceiver(files) {
+async function importIntoCleanReceiver(bytes) {
   const response = await page.request.post(origin + '/__qa/check-export-import', {
-    data: { files },
+    data: { dataBase64: bytes.toString('base64') },
   });
   assert.ok(response.ok(), await response.text());
   return response.json();
@@ -79,23 +77,6 @@ function verifyPrivateExclusion(data) {
   ])
     assert.equal(Object.hasOwn(data, key), false, `Unexpected private key ${key}`);
 }
-function unzipStored(buffer) {
-  const files = new Map();
-  let offset = 0;
-  while (buffer.readUInt32LE(offset) === 0x04034b50) {
-    assert.equal(buffer.readUInt16LE(offset + 8), 0, 'Expected portable stored ZIP');
-    const size = buffer.readUInt32LE(offset + 18),
-      nameLength = buffer.readUInt16LE(offset + 26),
-      extraLength = buffer.readUInt16LE(offset + 28);
-    const name = buffer.subarray(offset + 30, offset + 30 + nameLength).toString('utf8');
-    const start = offset + 30 + nameLength + extraLength;
-    assert.ok(!files.has(name) && !name.includes('..') && !name.startsWith('/'));
-    files.set(name, buffer.subarray(start, start + size));
-    offset = start + size;
-  }
-  assert.equal(buffer.readUInt32LE(offset), 0x02014b50);
-  return files;
-}
 try {
   await page.goto(origin + '/#/settings?tab=backup&sub=content');
   await ui.getByRole('heading', { name: '按领域导出题库', exact: true }).waitFor();
@@ -106,7 +87,7 @@ try {
     /所有审核状态.*通用与个人专项/s,
   );
   assert.ok(await download().isDisabled());
-  assert.equal(await page.getByRole('heading', { name: '完整 JSON 备份', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('heading', { name: '完整数据迁移包', exact: true }).count(), 0);
   checks.push('内容迁移页聚焦领域导出；默认可信迁移保留审核/个人内容，预览前不可下载');
 
   await field('搜索导出领域').fill('语言');
@@ -119,12 +100,12 @@ try {
   await inspect();
   assert.equal(await questionCount().innerText(), String(h.state.singleCount));
   const singleDownload = await takeDownload(),
-    single = JSON.parse(singleDownload.bytes.toString('utf8'));
-  assert.match(singleDownload.name, /\.json$/);
+    single = (await readDataPackage(singleDownload.bytes)).payloads[0].data;
+  assert.match(singleDownload.name, /\.zip$/);
   verifyPrivateExclusion(single);
   assert.equal(single.questions.length, h.state.singleCount);
   assert.equal(single.assets.length, 1);
-  const singleImported = await importIntoCleanReceiver([single]);
+  const singleImported = await importIntoCleanReceiver(singleDownload.bytes);
   assert.equal(singleImported.questions.length, h.state.singleCount);
   assert.equal(singleImported.questions.find((q) => q.id === 'FIXTURE-PENDING').status, 'pending');
   assert.equal(
@@ -132,7 +113,7 @@ try {
     'personal',
   );
   assert.equal(singleImported.assets, 1);
-  checks.push('可搜索单/多选并保留选择；单领域JSON真实导入空库，保留原审核/个人属性和图片');
+  checks.push('可搜索单/多选并保留选择；单领域ZIP真实导入空库，保留原审核/个人属性和图片');
 
   await selectDomain('测试语言学');
   assert.equal(await ui.getByRole('region', { name: '导出预览' }).count(), 0);
@@ -143,50 +124,48 @@ try {
     await ui.getByRole('region', { name: '导出预览' }).innerText(),
     /1 次跨领域重复归属/,
   );
-  const combined = JSON.parse((await takeDownload()).bytes.toString('utf8'));
+  const combinedDownload = await takeDownload();
+  const combined = (await readDataPackage(combinedDownload.bytes)).payloads[0].data;
   assert.equal(new Set(combined.questions.map((q) => q.id)).size, h.state.combinedCount);
-  assert.equal((await importIntoCleanReceiver([combined])).questions.length, h.state.combinedCount);
+  assert.equal(
+    (await importIntoCleanReceiver(combinedDownload.bytes)).questions.length,
+    h.state.combinedCount,
+  );
   checks.push('多领域合并去重、显示分类标签依赖及跨域重复，修改选择立即使旧预览失效');
 
   await ui.getByRole('button', { name: '全选领域', exact: true }).click();
-  await ui.getByRole('radio', { name: /按领域分别导出/ }).check();
+  await ui.getByRole('radio', { name: /数据包内按领域分组/ }).check();
   await inspect();
   assert.match(
     await ui.getByRole('region', { name: '导出预览' }).innerText(),
     /1 个在当前范围内没有题目/,
   );
-  const zipDownload = await takeDownload(),
-    entries = unzipStored(zipDownload.bytes);
+  const zipDownload = await takeDownload();
+  const opened = await readDataPackage(zipDownload.bytes);
   assert.match(zipDownload.name, /\.zip$/);
-  const manifest = JSON.parse(entries.get('manifest.json').toString('utf8'));
-  assert.deepEqual(manifest.emptyDomainIds, ['fixture-empty']);
-  assert.equal(manifest.files.length, 2);
-  assert.ok(entries.has('README.md'));
-  const packages = manifest.files.map((part) => {
-    const bytes = entries.get(part.filename);
-    assert.equal(bytes.length, part.byteLength);
-    assert.equal(createHash('sha256').update(bytes).digest('hex'), part.sha256);
-    const data = JSON.parse(bytes.toString('utf8'));
-    verifyPrivateExclusion(data);
-    return data;
-  });
-  const zipImported = await importIntoCleanReceiver(packages);
+  const metadata = JSON.parse(
+    new TextDecoder().decode(opened.files.get('metadata/domain-export.json')),
+  );
+  assert.deepEqual(metadata.emptyDomainIds, ['fixture-empty']);
+  assert.equal(opened.manifest.payloads.length, 2);
+  assert.ok(opened.files.has('README.md'));
+  for (const { data } of opened.payloads) verifyPrivateExclusion(data);
+  const zipImported = await importIntoCleanReceiver(zipDownload.bytes);
   assert.equal(zipImported.questions.length, h.state.combinedCount);
   assert.equal(zipImported.assets, 1);
-  checks.push(
-    '按领域ZIP实际包含独立可导入JSON与完整依赖、清单SHA256；跳过空领域，合并导入复用跨域题',
-  );
+  checks.push('按领域ZIP实际包含分片与完整依赖、清单SHA256；跳过空领域，合并导入复用跨域题');
 
   await ui.getByRole('radio', { name: /分享题库/ }).check();
   assert.match(await ui.locator('.domain-export-scope').innerText(), /已通过审核.*仅通用题目/s);
   assert.match(await ui.locator('.domain-export-domain-heading').innerText(), /已选 3 个/);
-  await ui.getByRole('radio', { name: /合并为一个 JSON/ }).check();
+  await ui.getByRole('radio', { name: /合并为一个数据包/ }).check();
   await inspect();
   assert.equal(await questionCount().innerText(), String(h.state.shareCount));
-  const share = JSON.parse((await takeDownload()).bytes.toString('utf8'));
+  const shareDownload = await takeDownload();
+  const share = (await readDataPackage(shareDownload.bytes)).payloads[0].data;
   assert.equal(share.format, 'learning-share');
   assert.ok(share.questions.every((q) => q.status === 'pending' && q.collection === 'general'));
-  const shareImported = await importIntoCleanReceiver([share]);
+  const shareImported = await importIntoCleanReceiver(shareDownload.bytes);
   assert.equal(shareImported.questions.length, h.state.shareCount);
   assert.ok(shareImported.questions.every((q) => q.status === 'pending'));
   checks.push('分享用途恢复published/general默认范围、保留领域选择；真实分享导入全部待审');
@@ -288,7 +267,7 @@ try {
   await page.route('**/api/content-exports', lateBuild);
   await download().click();
   await buildStarted;
-  await ui.getByRole('radio', { name: /按领域分别导出/ }).check();
+  await ui.getByRole('radio', { name: /数据包内按领域分组/ }).check();
   releaseBuild();
   await buildHandled;
   assert.ok(await download().isDisabled());

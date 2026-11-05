@@ -22,7 +22,7 @@ node --import tsx --test tests/mobile/mobile-storage-effects.test.ts
 
 ## 浏览器隔离 harness
 
-新脚本优先使用 `scripts/qa/helpers/browser-harness.mjs`。目前已迁移保存条、设置保存和资料筛选三份脚本，既有业务断言保持原范围。
+新脚本使用 `scripts/qa/helpers/browser-harness.mjs`，保存条、设置、资料筛选、题目阅读和数据包等专项共用这套隔离流程。已有独立`serve-*.ts`的专项仍由其检查脚本创建和关闭夹具进程。
 
 - 每次启动独立 `:memory:` 数据库，禁用每日推题定时器，显式不加载本地题库种子，只监听 `127.0.0.1` 的动态空闲端口。不能连接用户的 4317 服务。
 - `setup` 只构造合成 fixture，可返回少量题目／题集 ID；不能读取用户数据库、配置或真实 AI 密钥。AI 协议测试另建本机假 provider；真实模型测试保留在专门且显式运行的脚本中。
@@ -34,15 +34,18 @@ Playwright 不加入应用依赖。可用 `PLAYWRIGHT_MODULE` 指向已安装的
 
 ```bash
 # 已安装 Playwright 和浏览器时
-node scripts/qa/check-form-save-bar-focus-ui.mjs
-node scripts/qa/check-library-compact-ui.mjs
-node scripts/qa/check-settings-save-bar-ui.mjs
+node --import tsx scripts/qa/check-form-save-bar-focus-ui.mjs
+node --import tsx scripts/qa/check-library-compact-ui.mjs
+node --import tsx scripts/qa/check-settings-save-bar-ui.mjs
+node --import tsx scripts/qa/check-data-package-ui.mjs
 ```
 
 ## GitHub Actions
 
 `.github/workflows/ci.yml` 在 push、pull request 或手动运行时执行 Web／移动类型检查、文档、单元测试，以及 Web／移动构建。测试先准备 native bundle，再分别运行独立测试进程。这个工作流不创建 Release、不签名 APK、不运行 Windows 桌面打包，也不需要发布密钥。
 
-`.github/workflows/ui-smoke.yml` 是独立的手动浏览器冒烟流程。它临时安装固定版本 Playwright 和官方 Chromium，执行两个已迁移的页面脚本，并保留合成截图和失败诊断七天。临时工具位于 runner 的临时目录，不改项目依赖锁。
+`.github/workflows/ui-smoke.yml` 是独立的手动浏览器冒烟流程。它临时安装固定版本 Playwright 和官方 Chromium，检查保存条、资料筛选、题目阅读、设置保存、领域导出和数据包交互，并保留合成截图和失败诊断七天。临时工具位于 runner 的临时目录，不改项目依赖锁。
 
 工作流参考 [GitHub checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node) 和 [Playwright CI 文档](https://playwright.dev/docs/ci-intro)。本机定向验证不等于 GitHub Linux 工作流已经执行成功；首次推送后需查看 Actions 实际结果。Android 真机、桌面便携包、签名和真实模型验收仍按发布检查单独执行。
+
+各脚本的用途、输入和数据写入范围见[脚本与维护工具](./脚本与维护工具.md)。

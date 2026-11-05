@@ -9,7 +9,7 @@ import { parse, questionSchema } from '../../server/core/validation.js';
 import { buildApp } from '../../server/index.js';
 import { legacyBankPaper, migrateLegacyBanks } from '../../server/modules/banks/legacy-banks.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
-import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/service.js';
 import { buildPaper, createAttempt } from '../../server/modules/practice/service.js';
 
 const stamp = '2026-10-21T00:00:00.000Z';

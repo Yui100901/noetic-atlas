@@ -8,7 +8,7 @@ import { resolveVocabularyQuestion, reverseVocabularyQuestion } from '../../serv
 import { questionStatistics } from '../../server/modules/questions/history.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
 import { attemptExportDocument } from '../../server/modules/transfer/exports.js';
-import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/service.js';
 import { buildApp } from '../../server/index.js';
 
 const vocabulary:VocabularyData={language:'en',headword:'abandon',meaningPrompt:'放弃；遗弃；离弃',acceptedAnswers:['abandon'],pronunciations:[{label:'美式',ipa:'/əˈbændən/',sourceLabel:'IPA source',sourceUrl:'https://example.org/ipa',license:'MIT',method:'source'}]};

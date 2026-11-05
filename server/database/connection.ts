@@ -5,6 +5,7 @@ import { createQueryBuilder } from './query-builder.js';
 import { SqliteExpressions } from './sqlite-expressions.js';
 import { recordTables, type RecordTable } from './schema.js';
 import { RecordProjections } from './projections.js';
+import { StartupValidation } from './startup-validation.js';
 
 /** The only native-driver boundary. Services use compiled, bound queries.
  * SQLite maintenance SQL is intentionally confined to this directory. */
@@ -13,6 +14,9 @@ export class DatabaseConnection {
   readonly query = createQueryBuilder();
   readonly expressions = new SqliteExpressions();
   readonly projections: RecordProjections;
+  readonly startupValidation: StartupValidation;
+  private readonly statements = new Map<string, ReturnType<DatabaseSync['prepare']>>();
+  private readEpoch=0;
   private readonly client: DatabaseSync;
   readonly maintenance: Pick<DatabaseSync,'exec' | 'prepare' | 'function'>;
   constructor(path: string, initialize = true) {
@@ -21,9 +25,10 @@ export class DatabaseConnection {
     this.client.function('atlas_record_fingerprint',{deterministic:true},value=>createHash('sha256').update(String(value)).digest('hex'));
     this.client.function('atlas_unicode_contains',{deterministic:true},(value,needle)=>Number(String(value).toLowerCase().includes(String(needle))));
     this.projections=new RecordProjections(this);
+    this.startupValidation=new StartupValidation(this);
     const missingTables = initialize && recordTables.some(table => !this.hasTable(table));
     this.schemaChanged = false;
-    if (initialize) { this.initialize(); this.schemaChanged = this.projections.initialize() || missingTables; }
+    if (initialize) { this.initialize(); const projectionsChanged=this.projections.initialize(), validationChanged=this.startupValidation.initialize(); this.schemaChanged = projectionsChanged || validationChanged || missingTables; }
   }
   private initialize() {
     // Single-user portable storage deliberately keeps one-file DELETE journals.
@@ -77,15 +82,39 @@ export class DatabaseConnection {
     ])));
   }
   private compiled<T>(value: Compilable<T> | CompiledQuery<T>): CompiledQuery<T> { return 'compile' in value ? value.compile() : value; }
-  all<T>(value: Compilable<T> | CompiledQuery<T>): T[] { const q=this.compiled(value);return this.client.prepare(q.sql).all(...q.parameters as SQLInputValue[]) as T[]; }
-  one<T>(value: Compilable<T> | CompiledQuery<T>): T | undefined { const q=this.compiled(value);return this.client.prepare(q.sql).get(...q.parameters as SQLInputValue[]) as T | undefined; }
-  run<T>(value: Compilable<T> | CompiledQuery<T>) { const q=this.compiled(value);return this.client.prepare(q.sql).run(...q.parameters as SQLInputValue[]); }
+  private statement(text: string) {
+    let statement=this.statements.get(text);
+    if (statement) this.statements.delete(text);
+    else statement=this.client.prepare(text);
+    this.statements.set(text,statement);
+    if(this.statements.size>256)this.statements.delete(this.statements.keys().next().value!);
+    return statement;
+  }
+  all<T>(value: Compilable<T> | CompiledQuery<T>): T[] { const q=this.compiled(value);return this.statement(q.sql).all(...q.parameters as SQLInputValue[]) as T[]; }
+  one<T>(value: Compilable<T> | CompiledQuery<T>): T | undefined { const q=this.compiled(value);return this.statement(q.sql).get(...q.parameters as SQLInputValue[]) as T | undefined; }
+  run<T>(value: Compilable<T> | CompiledQuery<T>) { const q=this.compiled(value);return this.statement(q.sql).run(...q.parameters as SQLInputValue[]); }
+  /** Bounded batches stay below SQLite's conservative 999-parameter limit;
+   * identifiers come only from the code-owned projection row builders. */
+  upsertProjectionRows(table:'question_read_model'|'paper_read_model'|'document_read_model'|'search_read_model',key:'id'|'key',rows:Array<{data:string}&Record<string,string|number|null>>) {
+    if(!rows.length)return;
+    const columns=Object.keys(rows[0]!),size=Math.max(1,Math.min(100,Math.floor(900/columns.length)));
+    const updates=Object.fromEntries(columns.filter(column=>column!==key).map(column=>[column,sql.ref(`excluded.${column}`)]));
+    for(let offset=0;offset<rows.length;offset+=size)this.run(this.query.insertInto(table).values(rows.slice(offset,offset+size)).onConflict(c=>c.column(key).doUpdateSet(updates)));
+  }
+  /** Cross-connection commits and local writes invalidate cached aggregates.
+   * WASM additionally supplies an epoch when its underlying DB is replaced. */
+  readVersion(): string {
+    const external=this.statement('PRAGMA data_version').get() as {data_version:number};
+    const local=this.statement('SELECT total_changes() AS changes').get() as {changes:number};
+    return `${external.data_version}:${local.changes}:${this.readEpoch}:${(this.client as DatabaseSync & {cacheEpoch?:number}).cacheEpoch || 0}`;
+  }
   explain<T>(value: Compilable<T> | CompiledQuery<T>) { const q=this.compiled(value);return this.client.prepare(`EXPLAIN QUERY PLAN ${q.sql}`).all(...q.parameters as SQLInputValue[]); }
   transaction<T>(fn:()=>T):T {
     // Savepoints allow nested imports, maintenance and application writes.
     this.client.exec('SAVEPOINT atlas_repository_transaction');
     try { const value=fn();this.client.exec('RELEASE SAVEPOINT atlas_repository_transaction');return value; }
     catch(error) { this.client.exec('ROLLBACK TO SAVEPOINT atlas_repository_transaction; RELEASE SAVEPOINT atlas_repository_transaction');throw error; }
+    finally { this.readEpoch++; }
   }
   private assertTable(table:RecordTable) { if(!(recordTables as readonly string[]).includes(table))throw new Error('Unknown record table'); }
   getRecord<T=any>(table:RecordTable,id:string):T|undefined { this.assertTable(table);const row=this.one(this.query.selectFrom(table).select('data').where('id','=',id));return row?JSON.parse(row.data):undefined; }
@@ -103,7 +132,7 @@ export class DatabaseConnection {
   compact() { this.client.exec('VACUUM'); }
   backupTo(path:string) { return backup(this.client,path); }
   snapshotTo(path:string) { this.client.prepare('VACUUM INTO ?').run(path); }
-  close() { this.client.close(); }
+  close() { this.statements.clear(); this.client.close(); }
   /** Diagnostic compatibility for tests/offline maintenance, never services. */
   prepare(value:string) { return this.client.prepare(value); }
   exec(value:string) { this.client.exec(value); }

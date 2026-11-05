@@ -293,13 +293,16 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 
 ## 分享、导出与迁移
 
-- `POST /api/sharing/export`：按 ShareSelection 导出单题、筛选题目或题集的自包含 learning-share JSON，包含领域、分类、标签、题目、必要图片及卷配置。
-- `POST /api/sharing/preview`：预检分享包、冲突映射与 fingerprint；`POST /api/sharing/import`：确认后按预检 fingerprint 导入。自动补齐知识归类并处理 ID 冲突；不会因对方缺少分类而要求手工先建完整目录。
+- `POST /api/packages/export` 生成应用可导入的 ZIP。请求包含 `kind`。分享传 `selection`，配置可传 `includeAi`，待审核修改传 `ids`。响应包含 `filename`、`mimeType`、`dataBase64`、`byteLength`。
+- `POST /api/packages/preview` 上传 `{dataBase64}`。读取根 manifest 后返回用途、标题、变更统计、警告和绑定当前包及目标数据的 `fingerprint`。
+- `POST /api/packages/import` 提交同一包及 `{expectedFingerprint,confirmed:true}`。可信迁移还需 `confirmedTrusted:true`，配置清理超限记录时需 `confirmedRetention:true`。分片共用一个事务。
+- `/api/sharing/export`、`/api/sharing/preview` 和 `/api/sharing/import` 继续提供内部 JSON 数据接口，应用的文件界面使用 ZIP。协议见[数据包格式](./数据包格式.md)。
+
 - `POST /api/sharing/export-document`：同一选择返回 ExportDocument，由网页／Android 共用渲染器生成含答案的 PDF 或 Markdown；普通题目选择单批最多500题，题集分享受封包大小和完整性校验。
 - `GET /api/papers/:id/export-document?mode=blank|answers`：空白卷或答案卷；`GET /api/attempts/:id/export-document?mode=blank|answers|completed`：已提交会话的快照卷。
 - `GET /api/papers/:id/export?answers=true|false`：Markdown 卷。网页下载转换托管图片为 data URI；PDF 中 PNG/JPEG 直嵌，GIF/WebP 使用首帧。
 - `POST /api/content-exports/preview`：传`{domainIds,purpose?,mode?,status?,collection?}`，返回领域题量目录、范围、去重题量、归属次数、空领域、分类／标签数量、预计题目字节及`fingerprint`。领域空数组只查询目录，不默认导出全部。`purpose=migration|share`，默认迁移；`mode=combined|per_domain`，默认合并。迁移默认`all/all`状态与属性，分享默认`published/general`。
-- `POST /api/content-exports`：相同范围加`expectedFingerprint`，返回`{filename,mimeType,dataBase64,byteLength,summary}`。合并返回一份JSON；按领域返回ZIP，内含独立可导入的JSON、SHA256清单及说明。每片最多500题，实际JSON字节小于80MiB（预留请求包装空间），ZIP最多128MiB，单次去重题量最多50000；超限明确拒绝。源题、依赖、范围变化返回409，重新预览；接口只读。
+- `POST /api/content-exports`：相同范围加 `expectedFingerprint`，返回 `{filename,mimeType,dataBase64,byteLength,summary}`。两种模式都返回带 manifest 的 ZIP，`combined` 合并去重，`per_domain` 在包内分领域及分片。实际ZIP上限128MiB，单次去重题量最多50000。源题、依赖、范围变化返回409，需重新预览。
 - `GET /api/export`：完整 JSON；`POST /api/import`：`{data,mode:'merge'}`。迁移保留题目原审核状态，与新增题目导入区分；同 ID 内容不静默覆盖。仅接收无`format`的可信迁移封包，拒绝`learning-share`等专用格式，避免通过迁移绕过新增审核。
 - `GET /api/backup.sqlite`：可迁移 SQLite 下载副本，清除 AI 密钥，保留本机源库。JSON 备份／分享不包含 AI 凭据；附件较多时优先 SQLite。
 

@@ -96,7 +96,7 @@ export function AiDocumentWorkspace() {
       <DocumentPicker disabled={busy} label="从资料库选择教材并关联原文" onSelect={document=>switchWork(()=>void fromLibrary(document))}/>
       <AiServiceNotice />
       <div className="form-grid"><Field label="PDF起始页（可选）" hint="文件中的页码，从1开始；留空从首页。"><input type="number" min="1" value={first} disabled={busy} onChange={event => setFirst(event.target.value)} /></Field><Field label="PDF结束页（可选）" hint="留空到末页；范围用于本次选择的每份PDF。"><input type="number" min="1" value={last} disabled={busy} onChange={event => setLast(event.target.value)} /></Field></div>
-      <p className="muted">每次最多20份文件，单文件30MiB，PDF最多2000页；提取正文总计不超过400万字符／12MB／600块。不含OCR，扫描图、复杂公式和多栏内容需先识别或校对。</p>
+      <details className="help-disclosure"><summary>文件容量与提取说明</summary><p className="muted">每次最多20份文件，单文件30MiB，PDF最多2000页。提取正文总计不超过400万字符／12MB／600块。扫描图需先OCR识别，复杂公式和多栏内容请核对原文。</p></details>
       {extractProgress && <div className="notice info" role="status"><span>正在本机读取 {extractProgress.file}/{extractProgress.totalFiles}：{extractProgress.filename}{extractProgress.page ? ` · 第${extractProgress.page}/${extractProgress.totalPages}页` : ''}</span><button className="button" onClick={() => extraction.current?.abort()}><Square size={14} />停止提取</button></div>}
       {local && <>
         <div className="notice info">已读取{local.files}份资料{local.pages ? `、${local.pages}页PDF` : ''}，共{local.characters.toLocaleString()}字符，整理为{local.sections.length}个初始块。尚未请求模型。</div>

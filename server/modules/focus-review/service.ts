@@ -1,36 +1,36 @@
-import { recordPlanEvidence } from '../learning-plans/progress.js';
 import { createHash, randomInt } from 'node:crypto';
 import type { z } from 'zod';
-import type { Question, AttemptAnswer, StudyState } from '../../../shared/models/types.js';
+import type { ReviewDirection } from '../../../shared/models/adaptive-review.js';
 import type {
   FocusItem,
   FocusSession,
   FocusSummary,
   FocusView,
 } from '../../../shared/models/focus-review.js';
-import type { ReviewDirection } from '../../../shared/models/adaptive-review.js';
-import { Store, makeId, nextStamp, now } from '../../core/store.js';
-import { fail, parse } from '../../core/validation.js';
+import type { Question, StudyState } from '../../../shared/models/types.js';
 import { isAnswerPresent } from '../../../shared/practice/attempt-timing.js';
 import { getObjectiveCorrect, isSubjectiveType } from '../../../shared/questions/question-utils.js';
-import { flattenQuestions } from '../questions/structure.js';
+import { studyPartKey } from '../../../shared/questions/study-state.js';
+import { Store, makeId, nextStamp, now } from '../../core/store.js';
+import { fail, parse } from '../../core/validation.js';
+import { validateAssetReferences } from '../assets/service.js';
+import { recordPlanEvidence } from '../learning-plans/progress.js';
+import { reverseConceptQuestion } from '../practice/concept-practice.js';
+import { freezePracticeTiming, initialPracticeTiming } from '../practice/practice-timing.js';
+import { normalizeScoring } from '../practice/scoring.js';
 import {
-  examQuestion,
-  submitAttempt,
-  reviewAttempt,
   QUICK_PAPER_ID,
+  examQuestion,
+  reviewAttempt,
+  submitAttempt,
   type StoredAttempt,
   type StoredPaper,
 } from '../practice/service.js';
-import { normalizeScoring } from '../practice/scoring.js';
-import { initialPracticeTiming, freezePracticeTiming } from '../practice/practice-timing.js';
 import { reverseVocabularyQuestion } from '../practice/vocabulary-practice.js';
-import { reverseConceptQuestion } from '../practice/concept-practice.js';
-import { recordManualReview, reviewQueue, reviewCardId } from '../review-scheduler/service.js';
+import { flattenQuestions } from '../questions/structure.js';
+import { recordManualReview, reviewCardId, reviewQueue } from '../review-scheduler/service.js';
 import { getSettings } from '../settings/service.js';
-import { validateAssetReferences } from '../assets/service.js';
 import { focusRetentionCandidates } from './retention.js';
-import { studyPartKey } from '../../../shared/questions/study-state.js';
 import { createFocusSchema, focusActionSchema, focusSessionSchema } from './schema.js';
 
 /** Key order can change during JSON migration without changing question content. */

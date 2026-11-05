@@ -80,7 +80,7 @@ for (const version of ['1.0.0', '1.5']) {
     );
     assert.match(
       await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8'),
-      /密钥不会进入配置 JSON/,
+      /密钥不会进入配置包/,
     );
     await assert.rejects(() => prepareGithubRelease({ root }), /已存在/);
   });

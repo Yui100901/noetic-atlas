@@ -13,6 +13,8 @@ export function databaseForPath(path: string) { const database = copies.get(path
 // It is real SQLite (WASM), not a JSON imitation of SQL.
 export class DatabaseSync {
   private value: Database;
+  private epoch = 0;
+  get cacheEpoch() { return this.epoch; }
   private readonly functions = new Map<string,(...args: any[])=>any>();
   constructor(path: string, _options?: unknown) {
     if (!engine) throw new Error('SQLite 尚未初始化');
@@ -39,23 +41,23 @@ export class DatabaseSync {
   private restoreConnectionState(value = this.value) { value.run('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');for(const [name,callback] of this.functions)value.create_function(name,callback); }
   // sql.js export closes/reopens the connection internally. TEMP caches and
   // registered functions disappear just as they do after a rollback restore.
-  export() { const bytes=this.value.export();this.restoreConnectionState();return bytes; }
+  export() { const bytes=this.value.export();this.restoreConnectionState();this.epoch++;return bytes; }
   restore(bytes: Uint8Array) {
     // Allocation/opening can fail. Keep the old connection usable until the
     // replacement has opened and restored every registered SQL function.
     const replacement = new engine.Database(bytes);
     try { this.restoreConnectionState(replacement); } catch (error) { replacement.close(); throw error; }
-    this.value.close(); this.value = replacement;
+    this.value.close(); this.value = replacement; this.epoch++;
   }
   /** Keep the original live connection until replacement persistence succeeds.
    * A disk failure rolls back without allocating/reopening the original DB. */
   beginReplacement(bytes: Uint8Array) {
     const original = this.value, replacement = new engine.Database(bytes);
     try { this.restoreConnectionState(replacement); } catch (error) { replacement.close(); throw error; }
-    this.value = replacement; let finished = false;
+    this.value = replacement; this.epoch++; let finished = false;
     return {
       commit: () => { if (!finished) { finished = true; original.close(); } },
-      rollback: () => { if (!finished) { finished = true; this.value = original; replacement.close(); } },
+      rollback: () => { if (!finished) { finished = true; this.value = original; this.epoch++; replacement.close(); } },
     };
   }
   close() { this.value.close(); for (const [path, database] of copies) if (database === this) copies.delete(path); }

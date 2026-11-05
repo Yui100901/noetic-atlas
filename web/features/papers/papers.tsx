@@ -1,8 +1,8 @@
 import { LearningReset } from '../settings/learning-reset';
 import { useEffect, useMemo, useState } from 'react';
 import { Archive, ArrowLeft, BookOpen, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
-import type { Attempt, Paper, PaperDetail } from '../../../shared/models/types';
-import { href, idPath, localDate, navigate, request, send, useDebounced, useResource, qs } from '../../shared/lib/api';
+import type { Attempt, PaperDetail } from '../../../shared/models/types';
+import { idPath, localDate, navigate, request, send, useDebounced, useResource, qs } from '../../shared/lib/api';
 import type {PaperListItem,PaperListPage} from '../../../shared/practice/paper-list';
 import { Empty, ErrorNotice, Field, Loading, Modal, PageHeader, Pagination, QuestionMeta, SearchBox, useApp } from '../../shared/ui/components';
 import { isSubjectiveType } from '../../../shared/questions/question-utils';

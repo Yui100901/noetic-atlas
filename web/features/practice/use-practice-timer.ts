@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Attempt } from '../../../shared/models/types';
 import { ApiError, idPath, request } from '../../shared/lib/api';
+import { isApplicationActive, onApplicationStateChange } from '../../../shared/practice/application-state';
 
 type TimerRecord = Pick<Attempt, 'practiceTiming' | 'elapsedSeconds' | 'status'>;
 interface Session {
@@ -11,7 +12,7 @@ interface Session {
 interface PendingPause { sessionId: string; elapsedMilliseconds: number }
 const milliseconds = (session: Session) => session.milliseconds + (session.started === null ? 0 : Math.max(0, performance.now() - session.started));
 const total = (attempt: TimerRecord | null) => attempt?.practiceTiming?.elapsedMilliseconds ?? (attempt?.elapsedSeconds || 0) * 1000;
-const visible = () => document.visibilityState !== 'hidden';
+const visible = () => isApplicationActive() && document.visibilityState !== 'hidden';
 
 /** Ordinary practice is a foreground stopwatch. The database stores only
  * confirmed cumulative milliseconds; sleeping or abandoned pages cannot make
@@ -107,7 +108,7 @@ export function usePracticeTimer(id: string, attempt: TimerRecord | null, enable
     if (!enabled) return;
     savedTotal.current = total(source.current); knownSessionId.current = source.current?.practiceTiming?.sessionId || null;
     let disposed = false, pageHidden = false;
-    const start = () => { if (!disposed && !pageHidden && document.visibilityState !== 'hidden') void resume().catch(() => undefined); };
+    const start = () => { if (!disposed && !pageHidden && visible()) void resume().catch(() => undefined); };
     const stop = () => { void pause(true).catch(() => undefined); };
     const visibility = () => { if (document.visibilityState === 'hidden') stop(); else start(); };
     const hide = () => { pageHidden = true; stop(); };
@@ -120,11 +121,12 @@ export function usePracticeTimer(id: string, attempt: TimerRecord | null, enable
       setTimeout(start, 0);
     };
     const heartbeat = setInterval(() => { if (foreground.current) void checkpoint().catch(() => undefined); }, 30_000);
+    const unsubscribe = onApplicationStateChange(active => { if (active) start(); else stop(); });
     document.addEventListener('visibilitychange', visibility); window.addEventListener('pagehide', hide); window.addEventListener('pageshow', show);
     window.addEventListener('hashchange', route); window.addEventListener('beforeunload', beforeUnload);
     void Promise.resolve().then(start);
     return () => {
-      disposed = true; mounted.current = false; clearInterval(heartbeat); stop();
+      disposed = true; mounted.current = false; clearInterval(heartbeat); unsubscribe(); stop();
       document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', hide); window.removeEventListener('pageshow', show);
       window.removeEventListener('hashchange', route); window.removeEventListener('beforeunload', beforeUnload);
     };

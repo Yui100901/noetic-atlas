@@ -5,6 +5,7 @@
     "skipLibCheck": true, "moduleResolution": "Bundler", "allowImportingTsExtensions": true,
     "resolveJsonModule": true, "isolatedModules": true, "esModuleInterop": true,
     "noEmit": true, "jsx": "react-jsx", "strict": true, "types": ["vite/client"],
+    "noUnusedLocals": true, "noUnusedParameters": true,
     "paths": { "@platform": ["./web/shared/lib/platform.ts"] }
   },
   "include": ["web", "shared", "vite.config.ts"]

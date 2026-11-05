@@ -12,7 +12,7 @@ function pageOf<Row,Result>(store:Store,query:{page?:number;pageSize?:number},bu
   const items=rows.map(map);return paged?{items,total,page,pageSize}:items;
 }
 
-export function dashboardStats(store:Store) {
+function staticDashboardStats(store:Store) {
   const db=store.database,field=db.expressions.field.bind(db.expressions),q=db.query;
   db.projections.ensure(['questions','papers']);
   const groups=db.all(q.selectFrom('question_read_model').select([field<string>('data','type').as('type'),field<string>('data','collection').as('collection')]).select(eb=>eb.fn.countAll<number>().as('count')).where(field('data','status'),'=','published').groupBy([field('data','type'),field('data','collection')]));
@@ -26,13 +26,29 @@ export function dashboardStats(store:Store) {
     .where(field('question.data','status'),'in',['published','pending'])
     .groupBy([field('category.data','domainId'),field('question.data','status')]));
   for(const row of domainCounts){const counts=stats.domainQuestionCounts[row.domainId] ||= {published:0,pending:0};counts[row.status as 'published'|'pending']=Number(row.count);}
-  // Read tiny study metadata, never question bodies or Markdown notes.
-  const states=db.all(q.selectFrom('study as s').innerJoin('question_read_model as q','q.id','s.id').select([field<string>('q.data','type').as('type'),field<boolean>('s.data','favorite').as('favorite'),field<number>('s.data','wrongCount').as('wrongCount'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt')]).where(field('q.data','status'),'=','published'));
-  const stamp=Date.now();for(const state of states){if(state.favorite)stats.favoriteCount++;if(state.type==='group')continue;if(state.wrongCount>0)stats.wrongCount++;if(state.nextReviewAt&&Date.parse(state.nextReviewAt)<=stamp)stats.dueCount++;}
-  const partStates=db.all(q.selectFrom('study_parts as s').innerJoin('question_read_model as q',join=>join.onRef('q.id','=',field<string>('s.data','questionId'))).select([field<number>('s.data','wrongCount').as('wrongCount'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt')]).where(field('q.data','status'),'=','published').where(field('q.data','type'),'=','group').where(db.expressions.objectArrayHas('q.data','parts','id',field('s.data','partId'))));
-  for(const state of partStates){if(state.wrongCount>0)stats.wrongCount++;if(state.nextReviewAt&&Date.parse(state.nextReviewAt)<=stamp)stats.dueCount++;}
   stats.totalPapers=Number(db.one(q.selectFrom('paper_read_model').select(eb=>eb.fn.countAll<number>().as('count')).where(eb=>eb.or([eb(field('data','archived'),'is',null),eb(field('data','archived'),'=',0)])))?.count||0);
   stats.totalDocuments=Number(db.one(q.selectFrom('documents').select(eb=>eb.fn.countAll<number>().as('count')).where(eb=>eb.or([eb(field('data','_archived'),'is',null),eb(field('data','_archived'),'=',0)])))?.count||0);
+  return stats;
+}
+
+const dashboardCache=new WeakMap<Store['database'],{version:string;stats:ReturnType<typeof staticDashboardStats>}>();
+export function dashboardStats(store:Store) {
+  const db=store.database,field=db.expressions.field.bind(db.expressions),q=db.query;
+  db.projections.ensure(['questions','papers']);
+  const version=db.readVersion(),cached=dashboardCache.get(db);
+  const base=cached?.version===version?cached.stats:staticDashboardStats(store);
+  // Retain the version observed BEFORE aggregation. An external commit during
+  // these reads must invalidate the next request, never bless an older result.
+  if(base!==cached?.stats)dashboardCache.set(db,{version,stats:base});
+  const stats=structuredClone(base);
+  // Due dates can pass without a database write: recompute learning counts on
+  // every read, independently of the versioned content aggregates.
+  // Drive joins from the small learning tables. SQLite preserves CROSS JOIN
+  // order, avoiding a full question scan when study/part-study is sparse.
+  const states=db.all(q.selectFrom('study as s').crossJoin('question_read_model as q').whereRef('q.id','=','s.id').select([field<string>('q.data','type').as('type'),field<boolean>('s.data','favorite').as('favorite'),field<number>('s.data','wrongCount').as('wrongCount'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt')]).where(field('q.data','status'),'=','published'));
+  const stamp=Date.now();for(const state of states){if(state.favorite)stats.favoriteCount++;if(state.type==='group')continue;if(state.wrongCount>0)stats.wrongCount++;if(state.nextReviewAt&&Date.parse(state.nextReviewAt)<=stamp)stats.dueCount++;}
+  const partStates=db.all(q.selectFrom('study_parts as s').crossJoin('question_read_model as q').where('q.id','=',field<string>('s.data','questionId')).select([field<number>('s.data','wrongCount').as('wrongCount'),field<string|null>('s.data','nextReviewAt').as('nextReviewAt')]).where(field('q.data','status'),'=','published').where(field('q.data','type'),'=','group').where(db.expressions.objectArrayHas('q.data','parts','id',field('s.data','partId'))));
+  for(const state of partStates){if(state.wrongCount>0)stats.wrongCount++;if(state.nextReviewAt&&Date.parse(state.nextReviewAt)<=stamp)stats.dueCount++;}
   return stats;
 }
 

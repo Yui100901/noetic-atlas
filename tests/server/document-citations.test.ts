@@ -6,11 +6,11 @@ import { Store } from '../../server/core/store.js';
 import { ApiError, documentCitationSchema, questionSchema } from '../../server/core/validation.js';
 import { registerLibraryRoutes } from '../../server/modules/library/routes.js';
 import { registerQuestionRoutes } from '../../server/modules/questions/routes.js';
-import { registerQuestionBankRoutes } from '../../server/modules/banks/routes.js';
+import { registerQuestionImportRoutes } from '../../server/modules/questions/import-routes.js';
 import { registerDocumentDraftRoutes } from '../../server/modules/library/document-drafts.js';
 import { registerAssetRoutes } from '../../server/modules/assets/routes.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
-import { exportShare, importShare } from '../../server/modules/sharing/routes.js';
+import { exportShare, importShare } from '../../server/modules/sharing/service.js';
 import { assetIsReferenced } from '../../server/modules/assets/service.js';
 import {
   documentContentVersion,
@@ -31,7 +31,7 @@ async function fixture(t: test.TestContext) {
   });
   registerLibraryRoutes(app, store);
   registerQuestionRoutes(app, store);
-  registerQuestionBankRoutes(app, store);
+  registerQuestionImportRoutes(app, store);
   registerDocumentDraftRoutes(app, store);
   registerAssetRoutes(app, store);
   t.after(async () => {

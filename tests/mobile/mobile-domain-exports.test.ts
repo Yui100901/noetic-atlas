@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import initSqlJs from 'sql.js';
 import { loadNativeRuntime } from '../helpers/native-runtime.js';
-import { readStoredZip } from '../helpers/stored-zip.js';
+import { readDataPackage } from '../../shared/packages/data-package.js';
 
 test('production WASM domain exports create portable ZIPs without durable writes, migrate reviewed content and share as pending', async (t) => {
   const { createLocalRuntime } = await loadNativeRuntime();
@@ -117,10 +117,14 @@ test('production WASM domain exports create portable ZIPs without durable writes
   assert.equal(saves, writesBeforeExport, 'POST export queries never trigger a WASM durable save');
   const bytes = Buffer.from(file.dataBase64, 'base64');
   assert.equal(bytes.length, file.byteLength);
-  const entries = readStoredZip(bytes),
-    manifest = JSON.parse(new TextDecoder().decode(entries.get('manifest.json')!));
-  assert.equal(manifest.files.length, 1);
-  const migration = JSON.parse(new TextDecoder().decode(entries.get(manifest.files[0].filename)!));
+  const parsed = await readDataPackage(bytes);
+  assert.equal(parsed.manifest.kind, 'migration');
+  assert.equal(parsed.payloads.length, 1);
+  const migration = parsed.payloads[0]!.data as any;
+  assert.ok(
+    [...parsed.files.keys()].some((path) => path.startsWith('assets/')),
+    'binary image is a manifest-organized file',
+  );
   assert.equal(migration.format, undefined);
   assert.equal(migration.questions[0].status, 'published');
   assert.equal(migration.assets.length, 1);
@@ -133,12 +137,23 @@ test('production WASM domain exports create portable ZIPs without durable writes
     ...sharePreview.scope,
     expectedFingerprint: sharePreview.fingerprint,
   });
-  const share = JSON.parse(Buffer.from(shareFile.dataBase64, 'base64').toString('utf8'));
+  const sharePackage = await readDataPackage(Buffer.from(shareFile.dataBase64, 'base64'));
+  assert.equal(sharePackage.manifest.kind, 'share');
+  const share = sharePackage.payloads[0]!.data as any;
   assert.equal(share.format, 'learning-share');
   await runtime.close();
   durable = undefined;
   runtime = await createLocalRuntime(sql, seed, storage, { dailyPushScheduler: false });
-  await api('/api/import', 'POST', { data: migration, mode: 'merge' });
+  const beforePreview = saves;
+  const inspect = await api('/api/packages/preview', 'POST', { dataBase64: file.dataBase64 });
+  assert.equal(saves, beforePreview);
+  await api('/api/packages/import', 'POST', {
+    dataBase64: file.dataBase64,
+    expectedFingerprint: inspect.fingerprint,
+    confirmed: true,
+    confirmedTrusted: true,
+  });
+  assert.equal(saves, beforePreview + 1, 'a complete package commits once to durable storage');
   assert.equal((await api('/api/questions/' + question.id)).status, 'published');
   assert.equal(
     (await api('/api/assets/' + image.id + '/data')).dataBase64,
@@ -148,7 +163,14 @@ test('production WASM domain exports create portable ZIPs without durable writes
   durable = undefined;
   runtime = await createLocalRuntime(sql, seed, storage, { dailyPushScheduler: false });
   await api('/api/import', 'POST', { data: share, mode: 'merge' }, 400);
-  await api('/api/sharing/import', 'POST', { data: share, confirmed: true });
+  const shareInspect = await api('/api/packages/preview', 'POST', {
+    dataBase64: shareFile.dataBase64,
+  });
+  await api('/api/packages/import', 'POST', {
+    dataBase64: shareFile.dataBase64,
+    expectedFingerprint: shareInspect.fingerprint,
+    confirmed: true,
+  });
   assert.equal((await api('/api/questions/' + question.id)).status, 'pending');
   await runtime.close();
   runtime = await createLocalRuntime(sql, seed, storage, { dailyPushScheduler: false });

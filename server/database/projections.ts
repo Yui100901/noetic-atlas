@@ -4,6 +4,7 @@ import { collectAssetReferences } from '../../shared/assets/asset-references.js'
 import { SearchProjections } from './search-projections.js';
 import { sql } from 'kysely';
 import { assetReferenceSources, assetReferenceContent } from './asset-reference-sources.js';
+import { ensureQuestionIndexes, questionIndexes } from './question-order.js';
 
 export const projectionSources = assetReferenceSources;
 export type ProjectionSource=typeof projectionSources[number];
@@ -29,6 +30,7 @@ export class RecordProjections {
       d.run(q.schema.createTable('asset_references').ifNotExists().addColumn('source_table','text',c=>c.notNull()).addColumn('source_id','text',c=>c.notNull()).addColumn('asset_id','text',c=>c.notNull()).addPrimaryKeyConstraint('asset_references_pk',['source_table','source_id','asset_id']));
       d.run(q.schema.createIndex('asset_references_asset_idx').ifNotExists().on('asset_references').column('asset_id'));
       d.run(q.schema.createIndex('question_read_title_idx').ifNotExists().on('question_read_model').column('title_key'));
+      ensureQuestionIndexes(d,[questionIndexes[1]]);
       d.run(q.schema.createIndex('paper_read_updated_idx').ifNotExists().on('paper_read_model').expression(d.expressions.field('data','updatedAt')));
       d.run(q.schema.createIndex('paper_read_active_updated_idx').ifNotExists().on('paper_read_model').expression(sql.join([d.expressions.booleanOrFalse(d.expressions.field('data','archived')),d.expressions.field('data','updatedAt')])));
       d.run(q.schema.createIndex('paper_read_domain_updated_idx').ifNotExists().on('paper_read_model').expression(sql.join([d.expressions.field('data','domainId'),d.expressions.field('data','updatedAt')])));
@@ -80,6 +82,7 @@ export class RecordProjections {
           // and dataBase64 contents cannot create false delete protection.
           d.run(q.deleteFrom('asset_references').where('source_table','=',source).where('source_id','in',ids));
           const refs:Array<{source_table:string;source_id:string;asset_id:string}>=[];
+          const questionRows:Array<{data:string}&Record<string,string|number|null>>=[],paperRows:Array<{data:string}&Record<string,string|number|null>>=[],documentRows:Array<{data:string}&Record<string,string|number|null>>=[];
           for(const id of ids){
             const record=records.get(id);
             if(!record){
@@ -95,22 +98,23 @@ export class RecordProjections {
               if (record.documentLinks?.length) metadata.documentLinks = record.documentLinks.map(({excerpt:_excerpt, ...link}:any) => ({...link,excerpt:''}));
               if (record.type === 'group') metadata.parts = (record.parts || []).map((part:any) => ({ id: part.id, type: part.type }));
               const row={id,data:JSON.stringify(metadata),search_text:searchFields.map(key=>String(record[key])).join(' ').toLowerCase(),title_key:String(record.title??'').normalize('NFKC').trim().toLowerCase()};
-              d.run(q.insertInto('question_read_model').values(row).onConflict(c=>c.column('id').doUpdateSet({data:row.data,search_text:row.search_text,title_key:row.title_key})));
+              questionRows.push(row);
             }
             if(source==='papers'){
               // Retain every scoring input, including group part weights/types,
               // so list views still reject invalid snapshots through normalizeScoring.
               const snapshot=Array.isArray(record.snapshot)?record.snapshot.map((question:any)=>({id:question.id,type:question.type,...(question.sourceQuestionId?{sourceQuestionId:question.sourceQuestionId}:{}),...(question.groupId?{groupId:question.groupId}:{}),...(Array.isArray(question.parts)?{parts:question.parts.map((part:any)=>({id:part.id,type:part.type,...(part.weight!==undefined?{weight:part.weight}:{})}))}:{})})):record.snapshot;
               const data=JSON.stringify({...record,snapshot});
-              d.run(q.insertInto('paper_read_model').values({id,data}).onConflict(c=>c.column('id').doUpdateSet({data})));
+              paperRows.push({id,data});
             }
             if (source === 'documents') {
               const { bodyMarkdown, ...metadata } = record;
               const row = { id, data: JSON.stringify({ ...metadata, excerpt: String(bodyMarkdown || '').replace(/[#*`\[\]>_]/g, '').slice(0, 110) }),
                 search_text: [record.title, record.author, record.publisher, record.description, bodyMarkdown].map(value => value || '').join(' ').toLowerCase(), source_order: sourceOrder.get(id)! };
-              d.run(q.insertInto('document_read_model').values(row).onConflict(c=>c.column('id').doUpdateSet({data:row.data,search_text:row.search_text,source_order:row.source_order})));
+              documentRows.push(row);
             }
           }
+          d.upsertProjectionRows('question_read_model','id',questionRows);d.upsertProjectionRows('paper_read_model','id',paperRows);d.upsertProjectionRows('document_read_model','id',documentRows);
           for(let offset=0;offset<refs.length;offset+=100)d.run(q.insertInto('asset_references').values(refs.slice(offset,offset+100)).onConflict(c=>c.columns(['source_table','source_id','asset_id']).doNothing()));
           d.run(q.deleteFrom('projection_pending').where('source_table','=',source).where('source_id','in',ids));
         }

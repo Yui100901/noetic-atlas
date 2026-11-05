@@ -44,6 +44,8 @@ node --import tsx scripts/qa/check-data-package-ui.mjs
 
 `.github/workflows/ci.yml` 在 push、pull request 或手动运行时执行 Web／移动类型检查、文档、单元测试，以及 Web／移动构建。测试先准备 native bundle，再分别运行独立测试进程。这个工作流不创建 Release、不签名 APK、不运行 Windows 桌面打包，也不需要发布密钥。
 
+`npm run check`包含许可快照与Git派生目录的只读校验，新克隆的源码不必先生成二进制资源。CI在两端构建后另运行`npm run generated:check`验证完整资源；本机也可通过`npm run qa -- --only generated`单独检查源码边界。归属、重建和安全清理见[生成文件维护](./生成文件维护.md)。
+
 `.github/workflows/ui-smoke.yml` 是独立的手动浏览器冒烟流程。它临时安装固定版本 Playwright 和官方 Chromium，检查保存条、资料筛选、题目阅读、设置保存、领域导出和数据包交互，并保留合成截图和失败诊断七天。临时工具位于 runner 的临时目录，不改项目依赖锁。
 
 工作流参考 [GitHub checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node) 和 [Playwright CI 文档](https://playwright.dev/docs/ci-intro)。本机定向验证不等于 GitHub Linux 工作流已经执行成功；首次推送后需查看 Actions 实际结果。Android 真机、桌面便携包、签名和真实模型验收仍按发布检查单独执行。

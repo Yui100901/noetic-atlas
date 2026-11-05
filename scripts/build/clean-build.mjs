@@ -1,8 +1,7 @@
-import { rm } from 'node:fs/promises';
-import { resolve, relative } from 'node:path';
+import { resolve } from 'node:path';
+import { preflightGeneratedDirectory, resetGeneratedDirectory } from './generated-paths.mjs';
+
 const root = resolve(import.meta.dirname, '../..');
-for (const name of ['server','shared','web']) {
-  const target = resolve(root,'dist',name);
-  if (relative(root,target).replaceAll('\\','/') !== `dist/${name}`) throw new Error('构建清理路径越界');
-  await rm(target,{recursive:true,force:true});
-}
+const outputs = ['dist/server', 'dist/shared', 'dist/web'];
+for (const name of outputs) await preflightGeneratedDirectory(root, name);
+for (const name of outputs) await resetGeneratedDirectory(root, name);

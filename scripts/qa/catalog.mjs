@@ -127,6 +127,7 @@ export const catalog = Object.freeze([
   },
   check('docs', 'static'),
   check('architecture', 'static'),
+  check('generated', 'static'),
   check('loading-web', 'static', {
     script: 'scripts/qa/check-loading-chunks.mjs',
     requirements: ['web-build'],

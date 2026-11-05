@@ -10,6 +10,8 @@ android/gradlew text eol=lf
 *.tsx text eol=lf
 *.json text eol=lf
 *.md text eol=lf
+public/licenses/*.txt text eol=lf
+web/assets/fonts/*.txt text eol=lf
 *.jar binary
 *.png binary
 *.ttf binary

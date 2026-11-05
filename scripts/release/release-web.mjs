@@ -8,8 +8,10 @@ import { pathToFileURL } from 'node:url';
 import { normalizeReleaseVersion } from './version.mjs';
 import { validateEmptyInstall, validateBaseConfiguration } from './validate-public-data.mjs';
 
+// Full font sources and their license stay in web/assets/fonts. Only their
+// reproducible public copies are excluded; runtime dist/web resources remain.
 const excluded =
-  /^(?:mobile\/assets|public\/pdfjs|android\/app\/src\/main\/assets|android\/capacitor-cordova-android-plugins)(?:\/|$)|^android\/(?:[^/]+\/)*build(?:\/|$)|^android\/app\/src\/main\/res\/xml\/config\.xml$|(?:^|\/)(?:node_modules|\.gradle|\.idea|\.vscode|\.localtools|\.cache|\.kotlin|\.cxx|\.externalNativeBuild|__pycache__|screenshots|release-staging|artifacts|test-results|coverage)(?:\/|$)|(?:^|\/)(?:local\.properties|key\.properties|signing\.json|\.npmrc|\.env[^/]*|google-services\.json)$|\.(?:sqlite3?(?:-[\w]+)?|db(?:-[\w]+)?|keystore|jks|p12|pfx|pem|key|log|apk|aab|aar|dex|class|py[cod]|tsbuildinfo)$/i;
+  /^(?:mobile\/assets|public\/(?:pdfjs|fonts)|android\/app\/src\/main\/assets|android\/capacitor-cordova-android-plugins)(?:\/|$)|^android\/(?:[^/]+\/)*build(?:\/|$)|^android\/app\/src\/main\/res\/xml\/config\.xml$|(?:^|\/)(?:node_modules|\.gradle|\.idea|\.vscode|\.localtools|\.cache|\.kotlin|\.cxx|\.externalNativeBuild|__pycache__|screenshots|release-staging|artifacts|test-results|coverage)(?:\/|$)|(?:^|\/)(?:local\.properties|key\.properties|signing\.json|\.npmrc|\.env[^/]*|google-services\.json)$|\.(?:sqlite3?(?:-[\w]+)?|db(?:-[\w]+)?|keystore|jks|p12|pfx|pem|key|log|apk|aab|aar|dex|class|py[cod]|tsbuildinfo)$/i;
 // Defense in depth: even a future broad `data` input must not include runtime
 // JSON configuration, backups, browser profiles or separately licensed packs.
 export function isSoftwareReleaseDataPath(name) {

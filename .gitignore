@@ -4,6 +4,8 @@ node_modules/
 /mobile/assets/
 /public/pdfjs/
 /public/fonts/
+# Keep public/licenses as reviewable legal snapshots; rebuild and check them
+# against installed dependencies instead of hiding license changes in ignore.
 # Content and private state are released separately; never track local data.
 /data/
 /config/*

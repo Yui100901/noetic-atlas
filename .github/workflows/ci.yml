@@ -32,3 +32,4 @@ jobs:
       - run: npm test -- --test-concurrency=4
       - run: npm run build
       - run: npm run mobile:build
+      - run: npm run generated:check

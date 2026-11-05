@@ -247,5 +247,17 @@
   "tests/release/windows-dependencies.test.ts",
   "scripts/testing/source-dependencies.mjs",
   "scripts/qa/check-architecture.mjs",
-  "tests/architecture/dependency-boundaries.test.ts"
+  "tests/architecture/dependency-boundaries.test.ts",
+  "scripts/build/generated-paths.mjs",
+  "scripts/build/generated-assets.mjs",
+  "scripts/build/generated.mjs",
+  "scripts/build/prepare-third-party.mjs",
+  "scripts/build/prepare-mobile.mjs",
+  "scripts/build/clean-build.mjs",
+  "scripts/qa/check-generated.mjs",
+  "tests/release/generated-paths.test.ts",
+  "tests/release/generated-assets.test.ts",
+  "tests/release/generated-maintenance.test.ts",
+  "tests/release/data-boundary.test.ts",
+  "tests/release/generated-line-endings.test.ts"
 ]

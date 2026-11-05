@@ -1,14 +1,15 @@
 /** A separately identified test APK; never copies into release artifacts. */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile, cp, copyFile, rm, lstat } from 'node:fs/promises';
-import { resolve, join, relative } from 'node:path';
+import { mkdir, readFile, writeFile, cp, copyFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { build } from 'vite';
 import { verifyQaAssets } from './verify-assets.mjs';
 import { resolveAndroidToolchain } from '../../build/android-toolchain.mjs';
 import { findNpmCli } from '../../build/build-command.mjs';
+import { resetGeneratedDirectory } from '../../build/generated-paths.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -56,14 +57,8 @@ assert.ok(
 );
 let prepared = false;
 async function clearGeneratedDirectory(path, expected) {
-  assert.equal(relative(root, path).replaceAll('\\', '/'), expected);
-  if (existsSync(path))
-    assert.equal(
-      (await lstat(path)).isSymbolicLink(),
-      false,
-      'Generated assets must not be a symlink',
-    );
-  await rm(path, { recursive: true, force: true });
+  assert.equal(path, resolve(root, expected));
+  await resetGeneratedDirectory(root, expected);
 }
 try {
   prepared = true;

@@ -46,7 +46,7 @@ const shareFiltersSchema = filtersSchema
     due: flag.optional(),
   })
   .strict();
-function shareFilters(raw: Record<string, unknown> = {}) {
+export function shareFilters(raw: Record<string, unknown> = {}) {
   const input = Object.fromEntries(
     Object.entries(raw).filter(
       ([, value]) => value !== '' && value !== undefined && value !== null,

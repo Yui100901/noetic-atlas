@@ -200,7 +200,7 @@ export function DataMaintenance({ view = 'all' }: { view?: MaintenanceView }) {
             </div>
           </fieldset>
           <p className="muted">
-            组题、资料与AI工作台草稿可能包含尚未发布的内容，仅在勾选后处理。文件会检查原题、资料、原文版本、历史卷面和教材候选题等全部引用。
+            组题、资料与AI辅助草稿可能包含尚未发布的内容，仅在勾选后处理。文件会检查原题、资料、原文版本、历史卷面和教材候选题等全部引用。
           </p>
           <div className="form-actions">
             <button

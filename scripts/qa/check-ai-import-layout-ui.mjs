@@ -17,7 +17,7 @@ try{
  const api=async(url,method='GET',data)=>{const response=await page.request.fetch(origin+url,{method,...(data===undefined?{}:{data})});assert.ok(response.ok(),await response.text());return response.json();};
  const drafts=kind=>api('/api/ai/workspace-drafts?kind='+kind),controls=kind=>page.locator(`[data-draft-kind="${kind}"]`),text=()=>page.getByLabel('待转换文本',{exact:true});
  const settle=async(run,label)=>{for(let tick=0;tick<150;tick++){if(await run())return;await delay(60);}assert.fail('Timed out: '+label);};
- const recover=async(kind)=>{const dialog=controls(kind).getByRole('dialog',{name:'继续AI工作台草稿',exact:true});await dialog.waitFor();await dialog.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await dialog.waitFor({state:'hidden'});};
+ const recover=async(kind)=>{const dialog=controls(kind).getByRole('dialog',{name:'继续AI辅助草稿',exact:true});await dialog.waitFor();await dialog.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await dialog.waitFor({state:'hidden'});};
  const action=async(kind,name)=>{await controls(kind).getByRole('button',{name:'草稿操作',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();};
  const checkInput=async(width,kind='import')=>{
   await page.setViewportSize({width,height:844});await page.evaluate(()=>window.scrollTo(0,0));

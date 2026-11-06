@@ -48,7 +48,7 @@ try{
   const graded=await attempt();assert.equal(graded.objectiveScore,2);assert.equal(graded.subjectiveScore,8);assert.equal(graded.totalScore,10);checks.push('通过页面确认应用两题评分，主观8分、客观2分、总分10分');
   await gradeDialog.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.locator('#exam-1 textarea').inputValue(),submitted.answers.S1.value);assert.equal(await page.locator('#exam-2 textarea').inputValue(),submitted.answers.S2.value);await page.screenshot({path:resolve(folder,'paper-ai-grading.png'),fullPage:true});
 
-  await page.goto(origin+'/#/ai');await page.getByRole('button',{name:'文件 / 文本辅助导入',exact:true}).click();await page.getByLabel('待转换文本',{exact:true}).fill('判断：事务需要整体提交或回滚。答案：正确。解析：不保留部分操作。');await page.getByLabel('本批最多提取题量',{exact:true}).fill('1');
+  await page.goto(origin+'/#/sharing?tab=import');await page.getByLabel('待转换文本',{exact:true}).fill('判断：事务需要整体提交或回滚。答案：正确。解析：不保留部分操作。');await page.getByLabel('本批最多提取题量',{exact:true}).fill('1');
   await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();assert.equal((await state()).totalQuestions,5);checks.push('AI文本转换预览不直接新增题目');
   await confirmReviewedImport(page);await page.getByText('新增1道',{exact:false}).first().waitFor();
   const imported=await state();assert.equal(imported.totalQuestions,6);const created=imported.questions.find(q=>q.title==='AI转换的事务判断题');assert.equal(created?.status,'pending');checks.push('页面确认导入后新增1题并保持待审核');
@@ -75,8 +75,8 @@ try{
   const review=page.getByRole('dialog',{name:'AI审核 2 道待审核题',exact:true});await review.getByRole('button',{name:'运行 AI 审核',exact:true}).click();await review.getByText('审核报告',{exact:true}).waitFor();assert.equal((await question('P1')).status,'published');assert.equal((await question('BAD1')).status,'pending');
   assert.ok(await review.getByText('已通过审核',{exact:true}).count());assert.ok(await review.getByText('通常整数算术中2+2=4，原答案错误。',{exact:true}).count());checks.push('批量AI审核正确题发布、错误题显示原因并保留待审核');await review.getByRole('button',{name:'关闭',exact:true}).click();
 
-  await page.goto(origin+'/#/ai');await page.getByLabel('AI组题要求',{exact:true}).fill('推荐2道基础题。');await page.getByLabel('推荐题量（组合题整组计）',{exact:true}).fill('2');await page.getByRole('button',{name:'生成推荐组题预览',exact:true}).click();await page.getByRole('button',{name:'确认创建题集',exact:true}).waitFor();
-  await page.getByRole('button',{name:'确认创建题集',exact:true}).click();await page.waitForURL(/#\/papers\//);checks.push('AI工作台推荐通过页面确认创建题集');
+  await page.goto(origin+'/#/papers/new/ai');await page.getByLabel('AI组题要求',{exact:true}).fill('推荐2道基础题。');await page.getByLabel('推荐题量（组合题整组计）',{exact:true}).fill('2');await page.getByRole('button',{name:'生成推荐组题预览',exact:true}).click();await page.getByRole('button',{name:'确认创建题集',exact:true}).waitFor();
+  await page.getByRole('button',{name:'确认创建题集',exact:true}).click();await page.waitForURL(/#\/papers\/(?!new(?:\/|$))[^/?]+(?:\?|$)/);checks.push('AI工作台推荐通过页面确认创建题集');
   await page.setViewportSize({width:390,height:844});await page.goto(origin+'/#/questions/S1');await page.locator('.question-body').waitFor();
   // A viewport change starts the sidebar's mobile transition; inspect the settled layout.
   await page.waitForFunction(()=>{const sidebar=document.querySelector('.sidebar');return sidebar&&sidebar.getBoundingClientRect().right<=1;});

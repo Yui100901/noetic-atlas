@@ -1,0 +1,22 @@
+.paper-creation-modes > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 0 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.paper-creation-modes > a.selected {
+  color: var(--green);
+  border-bottom-color: var(--green);
+  font-weight: 600;
+}
+@media (max-width: 600px) {
+  .paper-creation-modes > a {
+    font-size: 9px;
+    gap: 5px;
+    padding-bottom: 12px;
+  }
+}

@@ -1,28 +1,20 @@
 import { useState } from 'react';
-import { Database, Download, FileJson } from 'lucide-react';
+import { Database, Download, FileJson, Upload } from 'lucide-react';
 import { ErrorNotice, PageHeader } from '../../shared/ui/components';
 import { isNativeApp } from '@platform';
-import { DataPackageImport } from '../../shared/ui/data-package-import';
 import { exportPackage, exportSQLitePackage } from '../../shared/lib/data-package';
 import { ConfigurationTransfer } from './configuration-transfer';
 import { DomainExport } from './domain-export';
+import { useExportPreflight } from '../../shared/export/export-preflight';
 import { SQLiteRestore } from './sqlite-restore';
 
 export type DataPageMode = 'content' | 'backup' | 'configuration' | 'all';
-function BackupMerge() {
-  return (
-    <DataPackageImport
-      title="从数据包合并导入"
-      description="选择领域迁移、完整备份或分享 ZIP，系统会识别用途并展示导入预览。"
-    />
-  );
-}
-
 function BackupExportButton({ sqlite = false }: { sqlite?: boolean }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const preflight = useExportPreflight(sqlite ? null : { kind: 'migration' });
   const perform = async () => {
-    if (busy) return;
+    if (busy || (!sqlite && !preflight.allowed)) return;
     setBusy(true);
     setError('');
     try {
@@ -38,12 +30,13 @@ function BackupExportButton({ sqlite = false }: { sqlite?: boolean }) {
     <>
       <button
         className={`button ${sqlite ? '' : 'primary'}`}
-        disabled={busy}
+        disabled={busy || (!sqlite && !preflight.allowed)}
         onClick={() => void perform()}
       >
         <Download size={16} />
         {busy ? '正在准备数据包…' : sqlite ? '导出完整数据库包（ZIP）' : '导出全部数据包（ZIP）'}
       </button>
+      {preflight.view}
       {error && <ErrorNotice message={error} />}
     </>
   );
@@ -102,7 +95,20 @@ export function DataPage({
           </section>
         </div>
       )}
-      {(content || backup) && <BackupMerge />}
+      {(content || backup) && (
+        <section className="card ui-stack">
+          <h2>合并内容或迁移备份</h2>
+          <p>
+            分享包、领域迁移包和完整数据迁移包统一在“分享与导入”检查、查重并合并。配置迁移及SQLite整体恢复仍在本设置页办理。
+          </p>
+          <div>
+            <a className="button" href="#/sharing?tab=package&purpose=backup">
+              <Upload size={16} />
+              前往分享与导入
+            </a>
+          </div>
+        </section>
+      )}
       {backup && native && <SQLiteRestore />}
       {backup && (
         <details className="help-disclosure">

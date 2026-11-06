@@ -1,0 +1,21 @@
+.export-preflight {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.export-preflight p,
+.export-preflight ul {
+  margin: 0;
+}
+.export-preflight .action-row {
+  gap: 8px;
+  margin-top: 12px;
+}
+.export-preflight .button {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}

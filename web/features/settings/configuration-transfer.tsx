@@ -53,7 +53,7 @@ export function ConfigurationTransfer() {
         </details>
         {error && <ErrorNotice message={error} />}
       </section>
-      <DataPackageImport title="导入配置数据包" description="选择配置 ZIP，核对差异后确认应用。" />
+      <DataPackageImport purpose="configuration" title="导入配置数据包" description="选择配置 ZIP，核对差异后确认应用。" />
     </div>
   );
 }

@@ -299,6 +299,7 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 ## 分享、导出与迁移
 
 - `POST /api/packages/export` 生成应用可导入的 ZIP。请求包含 `kind`。分享传 `selection`，配置可传 `includeAi`，待审核修改传 `ids`。响应包含 `filename`、`mimeType`、`dataBase64`、`byteLength`。
+- `POST /api/packages/export-preview`：与export使用相同选择体，返回题量、附件、展开内容及ZIP保守上界、allowed、reasons与recommendations。只读，不生成ZIP，不将附件Base64读入应用。export会再次检查，超限422 `EXPORT_PREFLIGHT_BLOCKED`，details含同一预检及处理入口。
 - `POST /api/packages/preview` 上传 `{dataBase64}`。读取根 manifest 后返回用途、标题、变更统计、警告和绑定当前包及目标数据的 `fingerprint`。
 - `POST /api/packages/import` 提交同一包及 `{expectedFingerprint,confirmed:true}`。普通新增或分享的相似处理在顶层传`decisions`；可信迁移还需 `confirmedTrusted:true`，配置清理超限记录时需 `confirmedRetention:true`。分片共用一个事务。
 - `GET /api/packages/import-question?fingerprint=...&index=N`：按预览指纹读取一条导入内容；图片仅在预览副本转为可显示的data URI，包及其指纹不变。缓存过期返回409，需要重新预览。

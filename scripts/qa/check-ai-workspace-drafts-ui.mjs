@@ -50,11 +50,11 @@ try{
  const state=()=>api('/qa/workspace-drafts');
  const settle=async(run,label)=>{for(let tick=0;tick<150;tick++){const result=await run();if(result)return result;await delay(100);}assert.fail('Timed out: '+label);};
  const prompt=()=>page.getByLabel('AI组题要求',{exact:true});
- const recover=async(target=page)=>{const picker=target.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});await picker.waitFor();
+ const recover=async(target=page)=>{const picker=target.getByRole('dialog',{name:'继续AI辅助草稿',exact:true});await picker.waitFor();
   // Parent recovery can immediately mount a different, identically named child
   // picker. Wait for this DOM instance, not a locator that can match its successor.
   const instance=await picker.elementHandle();assert.ok(instance);await picker.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await instance.waitForElementState('hidden');await instance.dispose();};
- const maybeRecover=async(readyLocator=prompt())=>{const picker=page.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});await settle(async()=>await picker.isVisible()||await readyLocator.isVisible(),'draft choice or ready form');if(await picker.isVisible())await recover();};
+ const maybeRecover=async(readyLocator=prompt())=>{const picker=page.getByRole('dialog',{name:'继续AI辅助草稿',exact:true});await settle(async()=>await picker.isVisible()||await readyLocator.isVisible(),'draft choice or ready form');if(await picker.isVisible())await recover();};
  const save=async(scope=page)=>{await scope.getByRole('button',{name:'保存草稿',exact:true}).first().click();await settle(async()=>!await scope.getByRole('button',{name:'保存草稿',exact:true}).first().isDisabled(),'manual save settled');};
  const go=async(path)=>{await page.goto(origin+'/#/'+path);await page.waitForLoadState('networkidle');};
  const capture=async(name)=>{await settle(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'layout');await page.screenshot({path:resolve(folder,name+'.png'),fullPage:true});};
@@ -64,22 +64,22 @@ try{
  const first=await settle(async()=>{const items=await drafts('paper');return items[0]?.state.prompt.includes('我的分组要求')?items[0]:null;},'paper input auto-save');
  await prompt().fill('从已有题库推荐2道事务基础简答题，最后一次输入。');await save();
  assert.equal((await drafts('paper')).length,1);assert.equal((await drafts('paper'))[0].id,first.id);checks.push('空白工作台不造草稿，推荐输入自动保存，手动保存覆盖同一ID');
- await page.getByRole('button',{name:'文件 / 文本辅助导入',exact:true}).click();await page.getByLabel('待转换文本',{exact:true}).waitFor();
- await page.getByRole('button',{name:'AI推荐组题',exact:true}).click();await maybeRecover();await prompt().waitFor();assert.match(await prompt().inputValue(),/最后一次输入/);
+ await go('sharing?tab=import');await page.getByLabel('待转换文本',{exact:true}).waitFor();
+ await go('papers/new/ai');await maybeRecover();await prompt().waitFor();assert.match(await prompt().inputValue(),/最后一次输入/);
  await page.reload();await recover();await prompt().waitFor();assert.match(await prompt().inputValue(),/最后一次输入/);checks.push('切换工作台功能和刷新后可继续推荐草稿，最后输入不丢失');
  let releaseModel;let markModelStarted;const modelStarted=new Promise(done=>markModelStarted=done),modelBarrier=new Promise(done=>releaseModel=done);
  const holdModel=async route=>{markModelStarted();await modelBarrier;await route.continue();};await page.route('**/api/ai/paper-plan',holdModel);
- await page.getByRole('button',{name:'生成推荐组题预览',exact:true}).evaluate(button=>{button.click();button.click();});await modelStarted;await page.getByRole('button',{name:'AI处理记录',exact:true}).click();assert.ok(await prompt().isVisible(),'running recommendation should stay mounted');assert.equal(await page.getByRole('button',{name:'正在处理…',exact:true}).count(),1);releaseModel();
+ await page.getByRole('button',{name:'生成推荐组题预览',exact:true}).evaluate(button=>{button.click();button.click();});await modelStarted;await page.getByRole('link',{name:'手动选题',exact:true}).click();assert.ok(await prompt().isVisible(),'running recommendation should stay mounted');assert.equal(await page.getByRole('button',{name:'正在处理…',exact:true}).count(),1);releaseModel();
  await page.getByRole('button',{name:'确认创建题集',exact:true}).waitFor();await page.unroute('**/api/ai/paper-plan',holdModel);assert.equal((await state()).calls.filter(call=>call.kind==='paper').length,1);checks.push('快速连击只提交一次，处理中禁止切换工作台，避免请求中断与半成品预览写入');
  await page.getByLabel('题集名称',{exact:true}).fill('人工调整后保留的推荐题集');await page.getByLabel('覆盖与学习目标',{exact:true}).fill('不要覆盖我的预览调整。');
  const paperPreview=await settle(async()=>{const item=(await drafts('paper'))[0];return item.state.run&&item.state.title==='人工调整后保留的推荐题集'?item:null;},'paper preview saved');
  assert.equal(paperPreview.state.ids.length,2);await page.reload();await recover();await page.getByRole('button',{name:'确认创建题集',exact:true}).waitFor();
  assert.equal(await page.getByLabel('题集名称',{exact:true}).inputValue(),'人工调整后保留的推荐题集');assert.equal(await page.getByLabel('覆盖与学习目标',{exact:true}).inputValue(),'不要覆盖我的预览调整。');
  assert.equal((await state()).calls.filter(call=>call.kind==='paper').length,1,'restoring must not resubmit the model');checks.push('推荐预览与人工名称／目标修改恢复，恢复不会重新调用模型');
- await page.getByRole('button',{name:'确认创建题集',exact:true}).click();await page.waitForURL(/#\/papers\//);await go('ai');await maybeRecover();await prompt().waitFor();
+ await page.getByRole('button',{name:'确认创建题集',exact:true}).click();await page.waitForURL(/#\/papers\/(?!new(?:\/|$))[^/?]+(?:\?|$)/);await go('ai');await maybeRecover();await prompt().waitFor();
  assert.equal(await page.getByRole('button',{name:'确认创建题集',exact:true}).count(),0);checks.push('确认创建题集后草稿不复活已应用的推荐预览');
 
- await page.getByRole('button',{name:'文件 / 文本辅助导入',exact:true}).click();await page.getByLabel('待转换文本',{exact:true}).fill('一组操作整体提交或回滚称为事务原子性。转账的扣款和入账应一起完成。');
+ await go('sharing?tab=import');await page.getByLabel('待转换文本',{exact:true}).fill('一组操作整体提交或回滚称为事务原子性。转账的扣款和入账应一起完成。');
  await page.getByLabel('来源名称',{exact:true}).fill('草稿验收教材');await page.getByLabel('处理方式',{exact:true}).selectOption('generate');await page.getByLabel('本批最多生成题量',{exact:true}).fill('2');
  await page.getByLabel('出题或整理要求',{exact:true}).fill('仅据上述材料生成概念题和应用题。');await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();
  await page.getByText('编辑完整题目结构 JSON',{exact:true}).click();const jsonField=page.getByLabel('AI转换题目JSON',{exact:true});const generated=JSON.parse(await jsonField.inputValue());assert.equal(generated.length,2);generated[0].title='人工核对后的导入预览';await jsonField.fill(JSON.stringify(generated));
@@ -100,7 +100,7 @@ try{
  await page.getByRole('button',{name:'另存为新草稿',exact:true}).click();await settle(async()=>{const items=await drafts('import');return items.some(item=>item.id!==conflictBase.id&&item.state.requirements==='本页尚未保存的冲突分支');},'copy conflict branch');checks.push('双页面版本冲突保留本页输入且不覆盖远端，可另存为新草稿继续');
  await capture('import-preview-conflict-desktop');
 
- await page.getByRole('button',{name:'多文件 / 教材分批',exact:true}).click();await page.getByLabel('AI分批原始文件',{exact:true}).waitFor({state:'attached'});
+ await page.getByRole('button',{name:'教材分批出题',exact:true}).click();await page.getByLabel('AI分批原始文件',{exact:true}).waitFor({state:'attached'});
  const files=[{name:'transactions.md',mimeType:'text/markdown',buffer:Buffer.from('# 事务\n事务操作整体提交或回滚。')},{name:'transfer.md',mimeType:'text/markdown',buffer:Buffer.from('# 转账\n扣款与入账应整体完成。')}];
  const callsBeforeFiles=(await state()).calls.length;await page.getByLabel('AI分批原始文件',{exact:true}).setInputFiles(files);await page.getByText(/已读取2份资料/).waitFor();await page.getByLabel('教材任务名称',{exact:true}).fill('恢复正文与任务参数');
  await page.getByLabel('分批出题要求',{exact:true}).fill('按两个章节各生成一题。');await page.getByLabel('每块最多题量',{exact:true}).fill('1');await page.getByLabel('整个任务最多题量',{exact:true}).fill('2');await save();
@@ -113,7 +113,7 @@ try{
  const job=await api('/api/ai/document-jobs/'+jobId),firstBlock=job.blocks[0],lastBlock=job.blocks[1];const blockCard=jobRegion.locator('[data-document-block="'+firstBlock.id+'"]');await blockCard.getByRole('button',{name:/^展开知识块/}).click();await blockCard.getByText('编辑本块完整题目 JSON',{exact:true}).click();
  const blockJson=page.getByLabel('知识块 '+firstBlock.label+' 题目JSON',{exact:true}),blockQuestions=JSON.parse(await blockJson.inputValue());blockQuestions[0].title='保留手改的教材分块题';await blockJson.fill(JSON.stringify(blockQuestions));
  await jobRegion.getByRole('checkbox',{name:'选择知识块 '+lastBlock.label,exact:true}).uncheck();await save(jobRegion);const jobDraft=await settle(async()=>{const item=(await drafts('document-job',jobId))[0];return item?.state.edits[firstBlock.id]?.json.includes('保留手改')?item:null;},'document job edits saved');
- assert.equal(jobDraft.state.selected.length,1);await save(page.locator('.ai-document-workspace').getByLabel('AI工作台草稿',{exact:true}).first());
+ assert.equal(jobDraft.state.selected.length,1);await save(page.locator('.ai-document-workspace').getByLabel('AI辅助草稿',{exact:true}).first());
  await page.reload();await recover();await recover();await jobRegion.waitFor();
  await jobRegion.getByRole('button',{name:/^查重并准备导入/}).waitFor();assert.equal(await jobRegion.getByRole('checkbox',{name:'选择知识块 '+lastBlock.label,exact:true}).isChecked(),false);
  await blockCard.getByRole('button',{name:/展开知识块|收起知识块/}).waitFor();if(!await blockJson.isVisible()){const expand=blockCard.getByRole('button',{name:/^展开知识块/});if(await expand.count())await expand.click();await blockCard.getByText('编辑本块完整题目 JSON',{exact:true}).click();}assert.match(await blockJson.inputValue(),/保留手改的教材分块题/);checks.push('已创建任务按权威数据重载，知识块勾选与手改JSON按任务恢复');
@@ -126,10 +126,10 @@ try{
 
  for(let index=0;index<4;index++)await api('/api/ai/workspace-drafts','POST',{kind:'paper',contextId:null,state:{prompt:'保留数量验收'+index}},201);
  const recent=await drafts('paper');assert.equal(recent.length,3);assert.deepEqual(recent.map(item=>item.state.prompt),['保留数量验收3','保留数量验收2','保留数量验收1']);checks.push('同类最多保留最近三份草稿，按更新时间排序');
- await settle(async()=>!await jobRegion.getByRole('button',{name:'刷新',exact:true}).isDisabled(),'document import finished');await page.getByRole('link',{name:'AI工作台',exact:true}).click();await page.waitForURL(/#\/ai$/);
- const initialPicker=page.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});await initialPicker.waitFor();await initialPicker.getByRole('button',{name:'关闭',exact:true}).click();await prompt().waitFor();assert.equal(await prompt().inputValue(),'');assert.deepEqual((await drafts('paper')).map(item=>item.id),recent.map(item=>item.id));
+ await settle(async()=>!await jobRegion.getByRole('button',{name:'刷新',exact:true}).isDisabled(),'document import finished');await page.locator('.sidebar nav').getByRole('link',{name:'题集与练习',exact:true}).click();await page.waitForURL(/#\/papers$/);await go('papers/new/ai');
+ const initialPicker=page.getByRole('dialog',{name:'继续AI辅助草稿',exact:true});await initialPicker.waitFor();await initialPicker.getByRole('button',{name:'关闭',exact:true}).click();await prompt().waitFor();assert.equal(await prompt().inputValue(),'');assert.deepEqual((await drafts('paper')).map(item=>item.id),recent.map(item=>item.id));
  await page.getByRole('button',{name:'切换草稿',exact:true}).click();await recover();await prompt().waitFor();assert.equal(await prompt().inputValue(),'保留数量验收3');checks.push('初次关闭恢复弹窗进入空白工作，不删除旧草稿，仍可重新选择恢复');
- await page.setViewportSize({width:390,height:844});await capture('workspace-draft-mobile');await page.getByRole('button',{name:'切换草稿',exact:true}).first().click();await page.getByRole('dialog',{name:'继续AI工作台草稿',exact:true}).waitFor();await capture('workspace-draft-picker-mobile');await page.getByRole('dialog',{name:'继续AI工作台草稿',exact:true}).getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await prompt().inputValue(),'保留数量验收3');checks.push('390px草稿操作区和恢复弹窗无溢出，已有会话关闭选择不会清空当前输入');
+ await page.setViewportSize({width:390,height:844});await capture('workspace-draft-mobile');await page.getByRole('button',{name:'切换草稿',exact:true}).first().click();await page.getByRole('dialog',{name:'继续AI辅助草稿',exact:true}).waitFor();await capture('workspace-draft-picker-mobile');await page.getByRole('dialog',{name:'继续AI辅助草稿',exact:true}).getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await prompt().inputValue(),'保留数量验收3');checks.push('390px草稿操作区和恢复弹窗无溢出，已有会话关闭选择不会清空当前输入');
  assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[]);checks.push('浏览器零未捕获异常和外部请求，所有草稿及题目写入隔离内存库');
  const report={passed:checks.length,checks,errors,externalRequests,database:':memory:',provider:'deterministic-loopback'};await writeFile(resolve(folder,'report.json'),JSON.stringify(report,null,2)+'\n');await rm(resolve(folder,'failure.json'),{force:true});console.log(JSON.stringify(report));
 }catch(error){await page?.screenshot({path:resolve(folder,'failure.png'),fullPage:true}).catch(()=>undefined);await writeFile(resolve(folder,'failure.json'),JSON.stringify({error:String(error.stack||error),checks,errors,externalRequests,stderr},null,2)+'\n');throw error;}

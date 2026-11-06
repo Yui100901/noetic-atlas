@@ -18,6 +18,7 @@ const smoke = new Set([
   'data-package-ui',
 ]);
 const browserIds = [
+  'export-rehome-ui',
   'import-dedup-ui',
   'learning-time-ui',
   'ai-usage-ui',

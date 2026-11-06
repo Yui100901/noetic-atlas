@@ -23,6 +23,7 @@ import {
   readableExportBytes,
 } from './domain-export-state';
 import './domain-export.css';
+import { ExportPreflightNotice } from '../../shared/export/export-preflight';
 
 const statusLabels = {
   all: '所有审核状态',
@@ -174,7 +175,9 @@ export function DomainExport() {
   const visibleDomains = filtered.slice((visiblePage - 1) * pageSize, visiblePage * pageSize);
   const selected = new Set(scope.domainIds);
   const exceedsLimit =
-    !!currentPreview && currentPreview.questionCount > currentPreview.limits.maxQuestions;
+    !!currentPreview &&
+    (currentPreview.questionCount > currentPreview.limits.maxQuestions ||
+      !currentPreview.preflight.allowed);
 
   return (
     <section
@@ -381,6 +384,7 @@ export function DomainExport() {
       {currentPreview && (
         <section className="domain-export-preview" aria-label="导出预览">
           <h3>导出预览</h3>
+          <ExportPreflightNotice value={currentPreview.preflight} />
           <div className="domain-export-metrics">
             <div>
               <strong>{currentPreview.questionCount.toLocaleString()}</strong>
@@ -409,7 +413,7 @@ export function DomainExport() {
           </ul>
           <p className="muted">
             题目正文约 {readableExportBytes(currentPreview.estimatedQuestionBytes)}
-            ，图片将在生成时加入。
+            ，附件与封包开销已计入上方预检。
             {scope.purpose === 'migration'
               ? '导入时保留原审核状态与内容属性。'
               : '接收方导入后，所有题目进入待审核。'}
@@ -436,7 +440,7 @@ export function DomainExport() {
               </ul>
             </details>
           )}
-          {exceedsLimit && (
+          {currentPreview.questionCount > currentPreview.limits.maxQuestions && (
             <p className="notice error">
               本次超过 {currentPreview.limits.maxQuestions.toLocaleString()}{' '}
               道题的上限，请减少所选领域。

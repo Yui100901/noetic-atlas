@@ -27,7 +27,7 @@ try {
   const restoreDraft = async kind => {
     const controls=page.locator(`[data-draft-kind="${kind}"]`);await controls.waitFor();
     await page.waitForFunction(value=>{const section=document.querySelector(`[data-draft-kind="${value}"]`);return section&&(section.querySelector('[role="dialog"]')||Array.from(section.querySelectorAll('button')).some(button=>button.textContent.trim()==='保存草稿'&&!button.disabled));},kind);
-    const choices=controls.getByRole('dialog',{name:'继续AI工作台草稿',exact:true});
+    const choices=controls.getByRole('dialog',{name:'继续AI辅助草稿',exact:true});
     if(await choices.isVisible()){await choices.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await choices.waitFor({state:'hidden'});}
     await page.waitForFunction(value=>Array.from(document.querySelector(`[data-draft-kind="${value}"]`)?.querySelectorAll('button')||[]).some(button=>button.textContent.trim()==='保存草稿'&&!button.disabled),kind);
   };

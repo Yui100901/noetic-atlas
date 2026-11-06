@@ -286,8 +286,8 @@ export function AiSettingsForm({
             <Unplug size={15} />
             测试已保存的配置
           </button>
-          <a className="button" href="#/ai">
-            打开 AI 工作台
+          <a className="button" href="#/sharing?tab=import">
+            AI 整理题目
           </a>
         </div>
         <p className="muted">先保存再测试；测试会向所配置的服务发送一条简短请求。</p>

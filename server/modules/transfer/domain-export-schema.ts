@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { exportPreflightSchema } from './export-preflight-schema.js';
 import { id } from '../../core/validation.js';
 
 const selectionFields = {
@@ -29,6 +30,7 @@ const domain = z
   .strict();
 export const contentExportPreviewSchema = z
   .object({
+    preflight: exportPreflightSchema,
     fingerprint: z.string().length(64),
     scope,
     domains: z.array(domain),

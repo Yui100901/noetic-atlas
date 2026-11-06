@@ -1,6 +1,7 @@
 import { shareSelectionSchema as shareSelection } from '../modules/sharing/schema.js';
 import * as questionMaintenance from '../modules/questions/maintenance-schema.js';
 import { contentExportSelectionSchema, contentExportBuildSchema, contentExportPreviewSchema, contentExportFileSchema } from '../modules/transfer/domain-export-schema.js';
+import { exportPreflightSchema } from '../modules/transfer/export-preflight-schema.js';
 import { packageExportSchema, packagePreviewInputSchema, packageImportInputSchema, packageFileSchema, packagePreviewSchema, packageImportResultSchema } from '../modules/transfer/package-schema.js';
 import {explainInputSchema,gradeInputSchema} from '../modules/ai/reading-source.js';
 import {healthOutputSchema,cleanupOutputSchema,resetOutputSchema,compactOutputSchema} from '../modules/maintenance/output-schema.js';
@@ -158,7 +159,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/assets': assetInputSchema,
   '/api/sharing/export':shareSelection,'/api/sharing/export-document':shareSelection,'/api/sharing/preview':z.object({data:z.unknown()}).strict(),'/api/sharing/import':z.object({data:z.unknown(),confirmed:z.literal(true),expectedFingerprint:z.string().length(64).optional()}).strict(),
   '/api/import':z.object({data:z.unknown(),mode:z.literal('merge')}).strict(),
-  '/api/packages/export':packageExportSchema,'/api/packages/preview':packagePreviewInputSchema,'/api/packages/import':packageImportInputSchema,
+  '/api/packages/export-preview':packageExportSchema,'/api/packages/export':packageExportSchema,'/api/packages/preview':packagePreviewInputSchema,'/api/packages/import':packageImportInputSchema,
   '/api/content-exports/preview':contentExportSelectionSchema,'/api/content-exports':contentExportBuildSchema,
   '/api/settings/import/preview': configurationPreviewInputSchema, '/api/settings/import': configurationImportInputSchema,
   '/api/settings': z.object({settings:settingsSchema,confirmedRetention:z.literal(true).optional(),expectedRetention:z.object({drafts:z.number().int(),history:z.number().int(),total:z.number().int(),authoring:z.number().int().optional(),documentDrafts:z.number().int().optional(),questionHistory:z.number().int().optional()}).optional()}),
@@ -254,6 +255,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/content-exports/preview')success=toJson(contentExportPreviewSchema);
   if(url==='/api/content-exports')success=toJson(contentExportFileSchema);
   if(url==='/api/packages/export')success=toJson(packageFileSchema);
+  if(url==='/api/packages/export-preview')success=toJson(exportPreflightSchema);
   if(url==='/api/packages/preview')success=toJson(packagePreviewSchema);
   if(url==='/api/packages/import')success=toJson(packageImportResultSchema);
   if(url==='/api/packages/import-question')success=toJson(validation.questionSchema);

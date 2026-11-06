@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { contentExportBudget, assertExportAllowed } from './export-preflight.js';
 import type { FastifyInstance } from 'fastify';
 import { bytesToBase64 } from '../../../shared/assets/assets.js';
 import { buildDataPackage } from '../../../shared/packages/data-package.js';
@@ -92,7 +93,8 @@ function snapshot(store: Store, input: ContentExportSelection) {
   const questionIds: string[] = [],
     categoryIds = new Set<string>(),
     tagIds = new Set<string>();
-  let estimatedQuestionBytes = 0;
+  let estimatedQuestionBytes = 0,
+    duplicatedQuestionBytes = 0;
   for (const header of headers) {
     const categories = JSON.parse(header.categoryIds || '[]') as string[];
     const domains = new Set(
@@ -100,17 +102,20 @@ function snapshot(store: Store, input: ContentExportSelection) {
         categoryMap.get(id)?.domainId ? [categoryMap.get(id)!.domainId] : [],
       ),
     );
-    let selected = false;
+    let selected = false,
+      matches = 0;
     for (const domain of domains) {
       domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
       if (membership.has(domain)) {
         membership.get(domain)!.push(header.id);
         selected = true;
+        matches++;
       }
     }
     if (!selected) continue;
     questionIds.push(header.id);
     estimatedQuestionBytes += Number(header.bytes);
+    duplicatedQuestionBytes += Number(header.bytes) * matches;
     for (const id of categories) categoryIds.add(id);
     for (const id of JSON.parse(header.tagIds || '[]') as string[]) tagIds.add(id);
   }
@@ -162,7 +167,7 @@ function snapshot(store: Store, input: ContentExportSelection) {
       : '内容分享通过分享导入进入待审核；不会直接发布新题目。',
     '仅包含题目及分类、标签和题内附件；不含学习记录、笔记、历史作答、草稿、修订、配置或凭据。',
     '教材引用保留书名、定位和摘录，解除本机原文关联，不附整本教材或未选择的题目正文。',
-    '大小为题目源数据估算，不包含附件、分类和封包开销；生成时检查真实字节，ZIP最多128MiB，超限请拆分或分次选择领域。',
+    '预检包含题目、依赖及附件的保守上界，不预测压缩率。ZIP最多128MiB，超限请减少每次领域数；包内分领域组织并不会拆成多个下载包。',
     ...(memberships > questionIds.length
       ? ['跨领域题目在合并文件内去重；按领域分文件时可重复附带，接收方合并导入会按题号复用。']
       : []),
@@ -179,6 +184,12 @@ function snapshot(store: Store, input: ContentExportSelection) {
       : []),
   ];
   const preview: ContentExportPreview = {
+    preflight: contentExportBudget(store, questionIds, {
+      split: scope.mode === 'per_domain',
+      multiplicity: scope.mode === 'per_domain' ? Math.max(1, scope.domainIds.length) : 1,
+      questionBytes: scope.mode === 'per_domain' ? duplicatedQuestionBytes : estimatedQuestionBytes,
+      minPayloads: scope.mode === 'per_domain' ? scope.domainIds.length : 1,
+    }),
     fingerprint,
     scope,
     domains,
@@ -215,6 +226,7 @@ export async function buildContentExport(
     fail(422, 'EMPTY_CONTENT_EXPORT', '所选领域在当前范围没有题目，请调整状态或归属范围');
   if (questionIds.length > CONTENT_EXPORT_LIMITS.maxQuestions)
     fail(413, 'CONTENT_EXPORT_TOO_MANY_QUESTIONS', '单次最多导出50000道题，请分次选择领域');
+  assertExportAllowed(preview.preflight);
   const questions = new Map<string, Question>(),
     db = store.database;
   // Bound JSON membership avoids SQL interpolation and parameter-count limits.

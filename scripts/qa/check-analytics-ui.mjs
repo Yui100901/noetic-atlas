@@ -100,9 +100,9 @@ try {
   await go('');
   const dashboardHeader=page.locator('.page-header');
   assert.equal(await dashboardHeader.locator('a[href^="#/analytics"]').count(),0);
-  const weeklyCard=section('本周学习统计');await weeklyCard.waitFor();const currentReport=await api('/api/analytics/weekly?timeZone=Asia%2FShanghai');
+  const weeklyCard=section('综合统计概览');await weeklyCard.waitFor();const currentReport=await api('/api/analytics/weekly?timeZone=Asia%2FShanghai');
   await weeklyCard.locator('[data-week-metric="answers"]').waitFor();assert.equal(await weeklyCard.locator('[data-week-metric="answers"]').innerText(),currentReport.current.summary.answers+'次');
-  await weeklyCard.getByRole('link',{name:'查看学习统计',exact:true}).click();await section('学习概览指标').waitFor();
+  await weeklyCard.getByRole('link',{name:'查看综合统计',exact:true}).click();await section('学习概览指标').waitFor();
   assert.equal(await page.getByRole('group',{name:'统计周期'}).getByRole('button',{name:'周',exact:true}).getAttribute('aria-pressed'),'true');
   assert.equal(await page.getByRole('tab',{name:'学习周报',exact:true}).count(),0);
   checks.push('总览顶部重复入口移除，下方本周统计与周报接口一致，进入统一统计默认本周');

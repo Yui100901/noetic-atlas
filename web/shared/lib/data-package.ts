@@ -2,6 +2,7 @@ import { isNativeApp, nativeFetch, saveGeneratedFile } from '@platform';
 import { bytesToBase64 } from '../../../shared/assets/assets';
 import { buildDataPackage, DATA_PACKAGE_LIMITS, SQLITE_PACKAGE_LIMITS } from '../../../shared/packages/data-package';
 import { send } from './api';
+import type { DataPackageExportInput } from '../../../shared/models/export-preflight';
 
 export interface DataPackageDownload {
   filename: string;
@@ -53,7 +54,8 @@ export async function savePackageDownload(file: DataPackageDownload): Promise<vo
   await saveGeneratedFile(filename.toLowerCase().endsWith('.zip') ? filename : `${filename || '认知星图-数据包'}.zip`, bytes, 'application/zip');
 }
 
-export async function exportPackage(input: { kind: string; selection?: unknown; includeAi?: boolean; ids?: string[] }): Promise<void> {
+export async function exportPackage(input: DataPackageExportInput): Promise<void> {
+  // The server rechecks the same budget before collecting export bodies.
   await savePackageDownload(await send<DataPackageDownload>('/api/packages/export', 'POST', input));
 }
 

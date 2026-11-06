@@ -16,7 +16,7 @@ const staticKeys=new Set();
 async function manifestVisit(key){if(staticKeys.has(key))return;staticKeys.add(key);const chunk=manifest[key];assert.ok(chunk,'Missing manifest dependency: '+key);if(!seen.has(chunk.file)){const bytes=await readFile(resolve(directory,chunk.file));seen.add(chunk.file);files.push({file:chunk.file,bytes:bytes.length,gzipBytes:gzipSync(bytes).length});}for(const dependency of chunk.imports||[])await manifestVisit(dependency);}
 if(manifest){for(const [key,chunk]of Object.entries(manifest))if(chunk.isEntry)await manifestVisit(key);}
 else for(const entry of entries)await visit(entry);
-const deferred=['web/features/questions/questions.tsx','web/features/analytics/analytics.tsx','web/features/ai/ai-workspace.tsx','web/features/help/handbook.tsx','web/shared/ui/markdown-renderer.tsx'];
+const deferred=['web/features/questions/questions.tsx','web/features/analytics/analytics.tsx','web/features/ai/ai-import-panel.tsx','web/features/papers/ai-paper-create.tsx','web/features/help/handbook.tsx','web/shared/ui/markdown-renderer.tsx'];
 // Rolldown can promote a multiply imported dynamic source (questions also
 // exports reusable filters) to an anonymous shared chunk. Resolve that chunk
 // through its name and an actual dynamic edge, never count it as eager.

@@ -230,7 +230,7 @@ try {
   });
   await page.reload();
   await page
-    .getByRole('dialog', { name: '继续AI工作台草稿', exact: true })
+    .getByRole('dialog', { name: '继续AI辅助草稿', exact: true })
     .getByRole('button', { name: '继续此草稿', exact: true })
     .first()
     .click();
@@ -240,7 +240,7 @@ try {
     (await api('/qa/grading-requests')).filter((item) => item.kind === 'paper').length,
     1,
   );
-  checks.push('AI工作台草稿保留确认区要求，刷新恢复不重新调用模型');
+  checks.push('AI辅助草稿保留确认区要求，刷新恢复不重新调用模型');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
   await requirements().scrollIntoViewIfNeeded();

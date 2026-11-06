@@ -9,7 +9,7 @@ export interface AiDocumentPreviewEdit { json: string; selected: number[] }
 import { QuestionContentPreview } from '../questions/question-content-preview';
 function Failure({ value }: { value?: AiDocumentFailure }) {
   if (!value) return null;
-  return <div className="ai-document-failure"><strong>{value.stage === 'plan' ? '总结失败' : '出题失败'}：{value.message}</strong><small>错误码 {value.code} · {value.retryable ? '可重试此批次' : '请先检查配置或资料条件'}</small>{value.auditId && <a className="button" href={`#/ai?tab=history&run=${idPath(value.auditId)}`}>查看具体失败记录</a>}</div>;
+  return <div className="ai-document-failure"><strong>{value.stage === 'plan' ? '总结失败' : '出题失败'}：{value.message}</strong><small>错误码 {value.code} · {value.retryable ? '可重试此批次' : '请先检查配置或资料条件'}</small>{value.auditId && <a className="button" href={`#/analytics?tab=ai&run=${idPath(value.auditId)}`}>查看具体失败记录</a>}</div>;
 }
 
 export function AiDocumentBlockCard({ block, checked, disabled, expanded, onToggle, onCheck, edit, onEdit, phaseLabels }: {

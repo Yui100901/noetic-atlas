@@ -18,11 +18,13 @@ export function DataPackageImport({
   description,
   onImported,
   preparedFile,
+  purpose,
 }: {
   title?: string;
   description?: string;
   onImported?: () => void;
   preparedFile?: File | null;
+  purpose?: 'content' | 'configuration';
 }) {
   const { reload, toast } = useApp();
   const [filename, setFilename] = useState(''),
@@ -35,6 +37,10 @@ export function DataPackageImport({
     [retention, setRetention] = useState(false);
   const [decisions, setDecisions] = useState<ImportDedupDecision[]>([]);
   const unresolved = preview?.dedup ? unresolvedImportItems(preview.dedup, decisions).length : 0;
+  const misplaced =
+    preview &&
+    ((purpose === 'content' && preview.kind === 'configuration') ||
+      (purpose === 'configuration' && preview.kind !== 'configuration'));
   const readIncoming = useCallback(
     (index: number, signal?: AbortSignal) =>
       request<QuestionInput>(
@@ -122,6 +128,7 @@ export function DataPackageImport({
     if (
       !preview ||
       !encoded ||
+      misplaced ||
       phase ||
       unresolved > 0 ||
       (preview.kind === 'migration' && !trusted) ||
@@ -238,7 +245,26 @@ export function DataPackageImport({
             '题目仍需在审核管理中确认。'}
         </div>
       )}
-      {preview && (
+      {misplaced && (
+        <div className="notice info" role="status">
+          <p>
+            {preview?.kind === 'configuration'
+              ? '这是系统配置包。请在配置迁移中核对偏好差异后应用，不会作为题库内容导入。'
+              : '这是内容或备份包。请在分享与导入中预览并合并；配置迁移只接收配置包。'}
+          </p>
+          <a
+            className="button"
+            href={
+              preview?.kind === 'configuration'
+                ? '#/settings?tab=backup&sub=configuration'
+                : '#/sharing?tab=package'
+            }
+          >
+            {preview?.kind === 'configuration' ? '前往配置迁移' : '前往分享与导入'}
+          </a>
+        </div>
+      )}
+      {preview && !misplaced && (
         <div className="ui-stack">
           <DataPackagePreviewBody
             preview={preview}

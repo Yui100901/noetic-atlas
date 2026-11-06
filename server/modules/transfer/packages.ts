@@ -1,5 +1,6 @@
 /** Manifest-directed transfer orchestration and routes. */
 import { createHash } from 'node:crypto';
+import { previewPackageExport, assertExportAllowed } from './export-preflight.js';
 import type { AssetRecord } from '../../../shared/assets/assets.js';
 import type { FastifyInstance } from 'fastify';
 import { base64ToBytes, bytesToBase64 } from '../../../shared/assets/assets.js';
@@ -243,6 +244,7 @@ function migrationParts(data: ReturnType<typeof exportData>) {
 
 export async function exportDataPackage(store: Store, raw: unknown): Promise<DataPackageFile> {
   const input = parse(packageExportSchema, raw);
+  assertExportAllowed(previewPackageExport(store, input));
   let data: unknown, title: string;
   if (input.kind === 'share') {
     if (!input.selection) fail(400, 'PACKAGE_SELECTION_REQUIRED', '请选择需要分享的题目或题集');
@@ -310,7 +312,7 @@ export async function exportDataPackage(store: Store, raw: unknown): Promise<Dat
         'DATA_PACKAGE_EXPORT_LIMIT',
         input.kind === 'migration'
           ? error.message + '。可使用 SQLite 完整数据库包备份。'
-          : error.message,
+          : error.message + '。请缩小筛选范围或到系统配置按领域分次导出。',
       );
     throw error;
   }
@@ -319,6 +321,9 @@ export async function exportDataPackage(store: Store, raw: unknown): Promise<Dat
 export function registerDataPackageRoutes(app: FastifyInstance, store: Store) {
   app.get('/api/packages/import-question', (request) =>
     packageImportQuestion(store, request.query),
+  );
+  app.post('/api/packages/export-preview', readOnlyOperation, (request) =>
+    previewPackageExport(store, request.body),
   );
   app.post('/api/packages/export', readOnlyOperation, (request) =>
     exportDataPackage(store, request.body),

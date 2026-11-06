@@ -1,3 +1,4 @@
+import type { ExportPreflight } from './export-preflight.js';
 import type { QuestionStatus } from './types.js';
 
 export type ContentExportPurpose = 'migration' | 'share';
@@ -24,6 +25,7 @@ export interface ContentExportLimits {
   maxPartBytes: number;
 }
 export interface ContentExportPreview {
+  preflight: ExportPreflight;
   fingerprint: string;
   scope: ContentExportScope;
   /** All domains, counted for the current admission/collection scope. */

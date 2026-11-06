@@ -76,10 +76,12 @@ try {
   assert.ok((await summary.innerText()).includes('0条失败'));
   await page.getByLabel('AI记录类型', { exact: true }).selectOption('');
   await metric(2).filter({ hasText: /^120$/ }).waitFor();
-  const future = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-  await page.getByLabel('AI记录开始日期', { exact: true }).fill(future);
+  await page.getByRole('button', { name: '自定义', exact: true }).click();
+  await page.getByLabel('开始日期', { exact: true }).fill('2000-01-01');
+  await page.getByLabel('结束日期', { exact: true }).fill('2000-01-01');
+  await page.getByRole('button', { name: '应用日期范围', exact: true }).click();
   await page.getByText('还没有符合条件的AI处理记录', { exact: true }).waitFor();
-  await page.getByRole('button', { name: '清除日期与模型', exact: true }).click();
+  await page.getByRole('button', { name: '全部记录', exact: true }).click();
   await metric(2).filter({ hasText: /^120$/ }).waitFor();
   checks.push('任务和日期筛选同步更新汇总与记录，清除筛选可恢复结果');
 

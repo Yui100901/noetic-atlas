@@ -7,6 +7,7 @@ import { Empty, ErrorNotice, Loading, Modal, Pagination } from '../../shared/ui/
 import { AiGradeResultView, AiRunHeading } from './ai-components';
 import type { AiGradeResult, AiRunView } from './ai-api';
 import { aiFailureMessage } from './ai-progress';
+import './ai.css';
 import { AiUsageInline, AiUsageDetail, AiUsageStatisticsCard } from './ai-usage';
 
 const kindLabels: Record<string, string> = {
@@ -30,18 +31,33 @@ const statusLabels: Record<string, string> = {
   running: '处理中',
 };
 
-export function AiRunHistory() {
+export function AiRunHistory({
+  range,
+  managedRange = false,
+}: {
+  range?: { from: string; before: string };
+  managedRange?: boolean;
+} = {}) {
   const [kind, setKind] = useState(() => {
       const value = new URLSearchParams(window.location.hash.split('?')[1] || '').get('kind') || '';
       return Object.hasOwn(kindLabels, value) ? value : '';
     }),
-    [status, setStatus] = useState('');
+    [status, setStatus] = useState(() => {
+      const value =
+        new URLSearchParams(window.location.hash.split('?')[1] || '').get('status') || '';
+      return ['completed', 'failed', 'cancelled'].includes(value) ? value : '';
+    });
   const [questionId, setQuestionId] = useState(
     () => new URLSearchParams(window.location.hash.split('?')[1] || '').get('questionId') || '',
   );
   const [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(20);
-  const [model, setModel] = useState(''),
+  const [model, setModel] = useState(() =>
+      (new URLSearchParams(window.location.hash.split('?')[1] || '').get('model') || '').slice(
+        0,
+        200,
+      ),
+    ),
     [from, setFrom] = useState(''),
     [through, setThrough] = useState(''),
     [refreshKey, setRefreshKey] = useState(0);
@@ -51,13 +67,35 @@ export function AiRunHistory() {
   if (status) filters.set('status', status);
   if (questionId) filters.set('questionId', questionId);
   if (debouncedModel) filters.set('model', debouncedModel);
-  if (from) filters.set('from', new Date(`${from}T00:00:00`).toISOString());
-  if (through) {
+  if (!managedRange && from) filters.set('from', new Date(`${from}T00:00:00`).toISOString());
+  if (!managedRange && through) {
     const end = new Date(`${through}T00:00:00`);
     end.setDate(end.getDate() + 1);
     filters.set('before', end.toISOString());
   }
+  if (range) {
+    filters.set('from', range.from);
+    filters.set('before', range.before);
+  }
+  const context = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  for (const name of ['attemptId', 'jobId'])
+    if (context.get(name)) filters.set(name, context.get(name)!);
   const query = filters.toString();
+  useEffect(() => setPage(1), [range?.from, range?.before]);
+  useEffect(() => {
+    if (!managedRange) return;
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    for (const [key, value] of [
+      ['kind', kind],
+      ['status', status],
+      ['questionId', questionId],
+      ['model', debouncedModel],
+    ]) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    history.replaceState(history.state, '', '#/analytics?' + params);
+  }, [kind, status, questionId, debouncedModel, managedRange]);
   const resource = useResource<Paged<AiRun>>(
     `/api/ai/runs?page=${page}&pageSize=${pageSize}${query ? `&${query}` : ''}`,
   );
@@ -72,6 +110,11 @@ export function AiRunHistory() {
     detailRequest.current = null;
     setLoadingId('');
     setSelected(null);
+    if (managedRange) {
+      const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+      params.delete('run');
+      history.replaceState(history.state, '', '#/analytics?' + params);
+    }
   };
   const view = async (id: string) => {
     // Only the latest selection may open the dialog or report a read failure.
@@ -84,7 +127,14 @@ export function AiRunHistory() {
     setLoadingId(id);
     try {
       const run = await request<AiRun>(`/api/ai/runs/${idPath(id)}`, { signal: controller.signal });
-      if (current()) setSelected(run);
+      if (current()) {
+        setSelected(run);
+        if (managedRange) {
+          const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+          params.set('run', id);
+          history.replaceState(history.state, '', '#/analytics?' + params);
+        }
+      }
     } catch (reason) {
       if (current()) setError(aiFailureMessage(reason));
     } finally {
@@ -149,32 +199,36 @@ export function AiRunHistory() {
         </div>
       </div>
       <div className="ai-history-range">
-        <label>
-          开始日期
-          <input
-            type="date"
-            aria-label="AI记录开始日期"
-            max={through || undefined}
-            value={from}
-            onChange={(event) => {
-              setFrom(event.target.value);
-              setPage(1);
-            }}
-          />
-        </label>
-        <label>
-          结束日期
-          <input
-            type="date"
-            aria-label="AI记录结束日期"
-            min={from || undefined}
-            value={through}
-            onChange={(event) => {
-              setThrough(event.target.value);
-              setPage(1);
-            }}
-          />
-        </label>
+        {!managedRange && (
+          <>
+            <label>
+              开始日期
+              <input
+                type="date"
+                aria-label="AI记录开始日期"
+                max={through || undefined}
+                value={from}
+                onChange={(event) => {
+                  setFrom(event.target.value);
+                  setPage(1);
+                }}
+              />
+            </label>
+            <label>
+              结束日期
+              <input
+                type="date"
+                aria-label="AI记录结束日期"
+                min={from || undefined}
+                value={through}
+                onChange={(event) => {
+                  setThrough(event.target.value);
+                  setPage(1);
+                }}
+              />
+            </label>
+          </>
+        )}
         <label>
           模型名称（精确匹配）
           <input
@@ -189,7 +243,7 @@ export function AiRunHistory() {
             }}
           />
         </label>
-        {(from || through || model) && (
+        {((!managedRange && (from || through)) || model) && (
           <button
             className="button"
             onClick={() => {
@@ -199,7 +253,7 @@ export function AiRunHistory() {
               setPage(1);
             }}
           >
-            清除日期与模型
+            {managedRange ? '清除模型筛选' : '清除日期与模型'}
           </button>
         )}
       </div>
@@ -340,7 +394,7 @@ export function AiRunHistory() {
             )}
             <AiUsageDetail diagnostics={selected.diagnostics} />
             {selected.jobId && (
-              <a className="button" href={`#/ai?tab=documents&job=${idPath(selected.jobId)}`}>
+              <a className="button" href={`#/sharing?tab=documents&job=${idPath(selected.jobId)}`}>
                 打开所属教材任务{selected.batchId ? ` · ${selected.batchId}` : ''}
               </a>
             )}

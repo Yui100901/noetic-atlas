@@ -49,15 +49,15 @@ export function exportBudget(
       : purpose === 'backup'
         ? [
             {
-              label: '到完整备份与恢复导出SQLite数据库包（保留完整学习数据）',
-              href: '#/settings?tab=backup&sub=backup',
+              label: '到系统迁移导出SQLite数据库（保留完整学习数据）',
+              href: '#/settings?tab=backup&sub=migration',
             },
-            { label: '只需要题目：按领域少量分次导出', href: '#/settings?tab=backup&sub=content' },
+            { label: '只需要题目：按领域少量分次分享', href: '#/sharing?tab=export' },
           ]
         : [
             {
               label: '按领域缩小范围或分组导出（总量超限仍需分次）',
-              href: '#/settings?tab=backup&sub=content',
+              href: '#/sharing?tab=export',
             },
             { label: '返回题库缩小领域、分类或题型筛选后再导出', href: '#/questions' },
             { label: '检查和缩小过大的题内附件', href: '#/settings?tab=assets&sub=files' },

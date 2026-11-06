@@ -6,7 +6,9 @@ import { unresolvedImportItems } from './import-review-state';
 
 /** Review results belong to the precise selected input. Editing the JSON,
  * taxonomy or selection invalidates them without discarding the source draft. */
-export function useImportDedup(signature: string) {
+export function useImportDedup(inputSignature: string) {
+  const [enabled, setEnabled] = useState(true);
+  const signature = JSON.stringify([inputSignature, enabled]);
   const [review, setReview] = useState<{
     signature: string;
     preview: ImportDedupPreview;
@@ -38,7 +40,7 @@ export function useImportDedup(signature: string) {
     active.current = controller;
     const preview = await request<ImportDedupPreview>(url, {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...(body as Record<string, unknown>), dedup: { enabled } }),
       signal: controller.signal,
     });
     if (generation.current !== version || controller.signal.aborted) return;
@@ -55,6 +57,8 @@ export function useImportDedup(signature: string) {
     [current],
   );
   return {
+    enabled,
+    setEnabled,
     preview: current?.preview || null,
     decisions,
     setDecisions,
@@ -62,6 +66,8 @@ export function useImportDedup(signature: string) {
     prepare,
     clear,
     unresolved: current ? unresolvedImportItems(current.preview, decisions).length : 0,
-    options: current ? { expectedFingerprint: current.preview.fingerprint, decisions } : undefined,
+    options: current
+      ? { enabled, expectedFingerprint: current.preview.fingerprint, decisions }
+      : { enabled },
   };
 }

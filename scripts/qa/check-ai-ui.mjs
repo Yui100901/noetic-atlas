@@ -14,7 +14,7 @@ let stdout = '';
 let stderr = '';
 server.stdout.on('data', (chunk) => (stdout += chunk));
 server.stderr.on('data', (chunk) => (stderr += chunk));
-let browser;
+let browser, page;
 const checks = [];
 try {
   for (let i = 0; i < 300 && !stdout.includes('AI_UI_READY'); i++) {
@@ -29,10 +29,10 @@ try {
       process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined),
     headless: true,
   });
-  const page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+  page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));
-  await page.goto(origin + '/#/ai');
+  await page.goto(origin + '/#/papers/new/ai');
   await page.getByLabel('AI组题要求').fill('复习事务，基础到应用');
   await page.getByLabel('推荐题量（组合题整组计）').fill('2');
   await page.getByRole('button', { name: '生成推荐组题预览', exact: true }).click();
@@ -55,14 +55,15 @@ try {
   assert.match(await page.locator('.ai-plan-selection').innerText(), /判断事务原子性/);
   checks.push('manual candidate ids');
   await page.getByRole('button', { name: '确认创建题集', exact: true }).click();
-  await page.waitForURL(/#\/papers\//);
+  await page.waitForURL(/#\/papers\/paper-/);
+  await page.getByRole('heading', { name: 'AI数据库递进卷', exact: true }).waitFor();
   checks.push('explicit creation');
-  await page.goto(origin + '/#/ai');
-  await page.getByRole('button', { name: 'AI处理记录', exact: true }).click();
+  await page.goto(origin + '/#/analytics?tab=ai');
+  await page.getByRole('tab', { name: 'AI 用量与处理记录', exact: true }).waitFor();
   await page.locator('.ai-history-item strong').filter({ hasText: '推荐组题' }).first().waitFor();
   checks.push('paginated recommendation history');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'AI推荐组题', exact: true }).click();
+  await page.goto(origin + '/#/papers/new/ai');
   await page.getByLabel('AI组题要求').waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   checks.push('mobile width no overflow');
@@ -78,6 +79,26 @@ try {
     JSON.stringify({ passed: checks.length, checks, pageErrors: errors }, null, 2),
   );
   console.log(JSON.stringify({ passed: checks.length, checks }));
+} catch (error) {
+  await mkdir('test-results', { recursive: true });
+  await page
+    ?.screenshot({ path: 'test-results/ai-ui-failure.png', fullPage: true })
+    .catch(() => {});
+  await writeFile(
+    'test-results/ai-ui-failure.json',
+    JSON.stringify(
+      {
+        error: String(error),
+        checks,
+        url: page?.url(),
+        body: await page?.locator('body').innerText(),
+        stderr,
+      },
+      null,
+      2,
+    ),
+  );
+  throw error;
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

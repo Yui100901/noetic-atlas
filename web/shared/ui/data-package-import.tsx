@@ -3,8 +3,15 @@ import { Archive, Check, Upload } from 'lucide-react';
 import type { DataPackagePreview } from '../../../shared/models/data-packages';
 import type { ImportDedupDecision } from '../../../shared/models/import-dedup';
 import type { QuestionInput } from '../../../shared/models/types';
+import type {
+  ImportTaxonomyCatalog,
+  ImportTaxonomyMapping,
+} from '../../../shared/models/import-taxonomy';
 import { unresolvedImportItems } from '../lib/import-review-state';
+import { importMappingIssue } from '../lib/import-taxonomy-state';
 import { ImportDedupReview } from './import-dedup-review';
+import { ImportDedupToggle } from './import-dedup-toggle';
+import { ImportTaxonomyMappingEditor } from './import-taxonomy-mapping';
 import { readPackageFile } from '../lib/data-package';
 import { ApiError, request } from '../lib/api';
 import { ErrorNotice, useApp } from './components';
@@ -26,7 +33,7 @@ export function DataPackageImport({
   preparedFile?: File | null;
   purpose?: 'content' | 'configuration';
 }) {
-  const { reload, toast } = useApp();
+  const { bootstrap, reload, toast } = useApp();
   const [filename, setFilename] = useState(''),
     [encoded, setEncoded] = useState('');
   const [preview, setPreview] = useState<DataPackagePreview | null>(null);
@@ -36,7 +43,21 @@ export function DataPackageImport({
   const [trusted, setTrusted] = useState(false),
     [retention, setRetention] = useState(false);
   const [decisions, setDecisions] = useState<ImportDedupDecision[]>([]);
-  const unresolved = preview?.dedup ? unresolvedImportItems(preview.dedup, decisions).length : 0;
+  const [enabled, setEnabled] = useState(true);
+  const [catalog, setCatalog] = useState<ImportTaxonomyCatalog | null>(null);
+  const [mapping, setMapping] = useState<ImportTaxonomyMapping>({});
+  const [loadedKind, setLoadedKind] = useState<DataPackagePreview['kind'] | null>(null);
+  const [optionsChanged, setOptionsChanged] = useState(false);
+  const localTaxonomy: ImportTaxonomyCatalog = {
+    domains: bootstrap.domains,
+    categories: bootstrap.categories,
+    tags: bootstrap.tags,
+  };
+  const mappingIssue = importMappingIssue(catalog, localTaxonomy, mapping);
+  const ordinaryImport =
+    !loadedKind || loadedKind === 'share' || loadedKind === 'question-template';
+  const unresolved =
+    enabled && preview?.dedup ? unresolvedImportItems(preview.dedup, decisions).length : 0;
   const misplaced =
     preview &&
     ((purpose === 'content' && preview.kind === 'configuration') ||
@@ -51,6 +72,19 @@ export function DataPackageImport({
   );
   const generation = useRef(0),
     active = useRef<AbortController | null>(null);
+  const invalidateOptions = () => {
+    generation.current++;
+    active.current?.abort();
+    active.current = null;
+    setPreview(null);
+    setPhase(null);
+    setError('');
+    setDone(null);
+    setTrusted(false);
+    setRetention(false);
+    setDecisions([]);
+    setOptionsChanged(!!encoded);
+  };
   useEffect(
     () => () => {
       generation.current++;
@@ -73,6 +107,10 @@ export function DataPackageImport({
     setTrusted(false);
     setRetention(false);
     setDecisions([]);
+    setCatalog(null);
+    setLoadedKind(null);
+    setMapping({});
+    setOptionsChanged(false);
     setFilename(file.name);
     try {
       const dataBase64 = await readPackageFile(file);
@@ -81,10 +119,14 @@ export function DataPackageImport({
       setPhase('preview');
       const result = await request<DataPackagePreview>('/api/packages/preview', {
         method: 'POST',
-        body: JSON.stringify({ dataBase64 }),
+        body: JSON.stringify({ dataBase64, dedup: { enabled } }),
         signal: controller.signal,
       });
-      if (current()) setPreview(result);
+      if (current()) {
+        setPreview(result);
+        setLoadedKind(result.kind);
+        setCatalog(result.taxonomy || null);
+      }
     } catch (reason) {
       if (current()) setError((reason as Error).message);
     } finally {
@@ -98,22 +140,32 @@ export function DataPackageImport({
     if (preparedFile) void load(preparedFile);
   }, [preparedFile]);
   const inspectAgain = async () => {
-    if (!encoded || phase) return;
+    if (!encoded || phase || mappingIssue) return;
     const version = ++generation.current;
     const controller = new AbortController();
     active.current = controller;
     setError('');
     setPhase('preview');
+    setPreview(null);
     setTrusted(false);
     setRetention(false);
     setDecisions([]);
     try {
       const result = await request<DataPackagePreview>('/api/packages/preview', {
         method: 'POST',
-        body: JSON.stringify({ dataBase64: encoded }),
+        body: JSON.stringify({
+          dataBase64: encoded,
+          dedup: { enabled },
+          ...(loadedKind === 'share' ? { taxonomyMapping: mapping } : {}),
+        }),
         signal: controller.signal,
       });
-      if (version === generation.current && !controller.signal.aborted) setPreview(result);
+      if (version === generation.current && !controller.signal.aborted) {
+        setPreview(result);
+        setLoadedKind(result.kind);
+        setCatalog(result.taxonomy || null);
+        setOptionsChanged(false);
+      }
     } catch (reason) {
       if (version === generation.current && !controller.signal.aborted)
         setError((reason as Error).message);
@@ -129,6 +181,7 @@ export function DataPackageImport({
       !preview ||
       !encoded ||
       misplaced ||
+      mappingIssue ||
       phase ||
       unresolved > 0 ||
       (preview.kind === 'migration' && !trusted) ||
@@ -145,7 +198,9 @@ export function DataPackageImport({
           dataBase64: encoded,
           expectedFingerprint: preview.fingerprint,
           confirmed: true,
-          ...(preview.dedup ? { decisions } : {}),
+          dedup: { enabled },
+          ...(preview.kind === 'share' ? { taxonomyMapping: mapping } : {}),
+          ...(enabled && preview.dedup ? { decisions } : {}),
           ...(trusted ? { confirmedTrusted: true } : {}),
           ...(retention ? { confirmedRetention: true } : {}),
         }),
@@ -154,6 +209,10 @@ export function DataPackageImport({
       setDone(preview.kind);
       setEncoded('');
       setPreview(null);
+      setCatalog(null);
+      setMapping({});
+      setLoadedKind(null);
+      setOptionsChanged(false);
       reload();
       onImported?.();
       toast('数据包已完整导入');
@@ -194,13 +253,48 @@ export function DataPackageImport({
           }}
         />
       </label>
+      {purpose !== 'configuration' && ordinaryImport && !misplaced && (
+        <ImportDedupToggle
+          enabled={enabled}
+          disabled={phase === 'reading' || phase === 'import'}
+          onChange={(value) => {
+            invalidateOptions();
+            setEnabled(value);
+          }}
+        />
+      )}
+      {loadedKind === 'share' && catalog && !misplaced && (
+        <ImportTaxonomyMappingEditor
+          source={catalog}
+          local={localTaxonomy}
+          value={mapping}
+          disabled={phase === 'reading' || phase === 'import'}
+          onChange={(value) => {
+            invalidateOptions();
+            setMapping(value);
+          }}
+        />
+      )}
+      {loadedKind === 'migration' && !misplaced && (
+        <p className="muted">
+          可信迁移保留原ID和学习关系，不执行普通新增的近似合题。需要调整知识归属时，请使用内容分享包。
+        </p>
+      )}
+      {mappingIssue && <ErrorNotice message={mappingIssue} />}
+      {optionsChanged && (
+        <p className="notice info" role="status">
+          导入选项已变更，原预览和处理选择已失效。请重新预览数据包后确认。
+        </p>
+      )}
       {phase && (
         <div className="action-row">
           <p role="status">
             {phase === 'reading'
               ? '正在读取数据包…可重新选择其他文件。'
               : phase === 'preview'
-                ? '正在校验数据包并检查重复与近似题…'
+                ? enabled && ordinaryImport
+                  ? '正在校验数据包并检查重复与近似题…'
+                  : '正在校验数据包与引用…'
                 : '正在完整导入数据包，请保持当前页面…'}
           </p>
           {phase !== 'import' && (
@@ -226,14 +320,14 @@ export function DataPackageImport({
         <>
           <ErrorNotice message={error} />
           {/SQLite|数据库备份|完整数据库/.test(error) && (
-            <a className="button" href="#/settings?tab=backup&sub=backup">
-              前往完整数据库备份与恢复
+            <a className="button" href="#/settings?tab=backup&sub=migration">
+              前往 SQLite 迁移
             </a>
           )}
         </>
       )}
       {encoded && !preview && !phase && (
-        <button className="button" onClick={() => void inspectAgain()}>
+        <button className="button" disabled={!!mappingIssue} onClick={() => void inspectAgain()}>
           重新预览数据包
         </button>
       )}
@@ -249,18 +343,18 @@ export function DataPackageImport({
         <div className="notice info" role="status">
           <p>
             {preview?.kind === 'configuration'
-              ? '这是系统配置包。请在配置迁移中核对偏好差异后应用，不会作为题库内容导入。'
-              : '这是内容或备份包。请在分享与导入中预览并合并；配置迁移只接收配置包。'}
+              ? '这是旧版系统配置包。系统迁移现使用 SQLite 数据库或迁移包，请在来源系统重新导出后前往迁移页恢复。'
+              : '这是内容或备份包。请在分享与导入中预览并合并；系统迁移使用 SQLite 数据库或迁移包。'}
           </p>
           <a
             className="button"
             href={
               preview?.kind === 'configuration'
-                ? '#/settings?tab=backup&sub=configuration'
+                ? '#/settings?tab=backup&sub=migration'
                 : '#/sharing?tab=package'
             }
           >
-            {preview?.kind === 'configuration' ? '前往配置迁移' : '前往分享与导入'}
+            {preview?.kind === 'configuration' ? '前往 SQLite 迁移' : '前往分享与导入'}
           </a>
         </div>
       )}
@@ -274,7 +368,7 @@ export function DataPackageImport({
             retention={retention}
             onRetention={setRetention}
           />
-          {preview.dedup && (
+          {enabled && preview.dedup && (
             <ImportDedupReview
               preview={preview.dedup}
               decisions={decisions}
@@ -293,6 +387,10 @@ export function DataPackageImport({
                 setEncoded('');
                 setFilename('');
                 setError('');
+                setCatalog(null);
+                setMapping({});
+                setLoadedKind(null);
+                setOptionsChanged(false);
               }}
             >
               取消
@@ -301,6 +399,7 @@ export function DataPackageImport({
               className="button primary"
               disabled={
                 !!phase ||
+                !!mappingIssue ||
                 unresolved > 0 ||
                 (preview.kind === 'migration' && !trusted) ||
                 ((preview.details?.retention.total || 0) > 0 && !retention)

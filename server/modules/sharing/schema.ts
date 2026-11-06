@@ -13,6 +13,22 @@ import {
   questionGradingRequirementsSchema,
 } from '../../core/validation.js';
 import { assetRecordSchema } from '../assets/schema.js';
+import { importDedupOptionsSchema } from '../question-imports/schema.js';
+import { importTaxonomyMappingSchema } from '../transfer/import-taxonomy.js';
+
+export const shareImportPreviewInputSchema = z
+  .object({
+    data: z.unknown(),
+    dedup: importDedupOptionsSchema.optional(),
+    taxonomyMapping: importTaxonomyMappingSchema.optional(),
+  })
+  .strict();
+export const shareImportInputSchema = shareImportPreviewInputSchema
+  .extend({
+    confirmed: z.literal(true),
+    expectedFingerprint: z.string().length(64).optional(),
+  })
+  .strict();
 
 export const shareSelectionSchema = z
   .object({

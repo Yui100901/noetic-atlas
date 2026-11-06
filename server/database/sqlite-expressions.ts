@@ -3,6 +3,17 @@ import { sql, type RawBuilder, type Expression, type SqlBool } from 'kysely';
 /** SQLite/WASM-specific JSON, Unicode and row-order semantics live only here.
  * A new database adapter implements this expression contract for its dialect. */
 export class SqliteExpressions {
+  /** Migration graph metadata only. Traverse JSON inside the adapter so preview
+   * never transfers textbook bodies, saved answers or attachment Base64. Keys
+   * are application-owned reference fields, not inferred from arbitrary text. */
+  migrationReferences(ref: string): RawBuilder<string> {
+    return sql<string>`(select coalesce(json_group_array(json_object('key',cast(node.key as text),'path',node.path,'value',node.atom)),'[]')
+      from json_tree(${sql.ref(ref)}) node
+      where node.type='text' and (
+        node.key in ('questionId','sourceQuestionId','groupId','paperId','attemptId','focusSessionId','learningDayId','dayId','documentId','versionId','cardId','feedbackId','jobId','createdPaperId','contextId','context','scanId','domainId','categoryId','id')
+        or ${sql.join(['questionIds','ids','importedQuestionIds','correctedQuestionIds','categoryIds','tagIds','domainIds','feedbackIds','previewQuestionIds'].map(key=>sql`node.path glob ${`*.${key}`}`),sql` or `)}
+      ))`;
+  }
   focusResetItems(ref:string):RawBuilder<string>{
     return sql<string>`(select coalesce(json_group_array(json_object('paperId',json_extract(item.value,'$.paperId'))),'[]') from json_each(${sql.ref(ref)},'$.items') item)`;
   }

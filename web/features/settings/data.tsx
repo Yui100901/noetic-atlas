@@ -1,125 +1,240 @@
-import { useState } from 'react';
-import { Database, Download, FileJson, Upload } from 'lucide-react';
-import { ErrorNotice, PageHeader } from '../../shared/ui/components';
+import { useEffect, useRef, useState } from 'react';
+import { Database, Download, Eye, Upload } from 'lucide-react';
 import { isNativeApp } from '@platform';
-import { exportPackage, exportSQLitePackage } from '../../shared/lib/data-package';
-import { ConfigurationTransfer } from './configuration-transfer';
-import { DomainExport } from './domain-export';
-import { useExportPreflight } from '../../shared/export/export-preflight';
+import type { SQLiteMigrationPreview } from '../../../shared/models/sqlite-migration';
+import { exportSQLiteMigration } from '../../shared/lib/sqlite-migration';
+import { request } from '../../shared/lib/api';
+import { ErrorNotice, PageHeader, useApp } from '../../shared/ui/components';
 import { SQLiteRestore } from './sqlite-restore';
+import { sqliteRecordLabels } from './sqlite-record-labels';
+import './migration.css';
 
-export type DataPageMode = 'content' | 'backup' | 'configuration' | 'all';
-function BackupExportButton({ sqlite = false }: { sqlite?: boolean }) {
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  const preflight = useExportPreflight(sqlite ? null : { kind: 'migration' });
-  const perform = async () => {
-    if (busy || (!sqlite && !preflight.allowed)) return;
-    setBusy(true);
+export function DataPage({ embedded = false }: { embedded?: boolean }) {
+  const { bootstrap, toast } = useApp();
+  const [scope, setScope] = useState<'all' | 'domains'>('all');
+  const [domainIds, setDomainIds] = useState<string[]>([]);
+  const [format, setFormat] = useState<'zip' | 'sqlite'>('zip');
+  const [preview, setPreview] = useState<SQLiteMigrationPreview | null>(null);
+  const [phase, setPhase] = useState<'preview' | 'export' | null>(null);
+  const [error, setError] = useState('');
+  const generation = useRef(0);
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
+  const selectedIds = scope === 'all' ? [] : domainIds;
+  const change = (nextScope: typeof scope, nextIds = domainIds) => {
+    generation.current++;
+    setScope(nextScope);
+    setDomainIds(nextIds);
+    setPreview(null);
     setError('');
+    setPhase(null);
+  };
+  const inspect = async () => {
+    if (phase || (scope === 'domains' && !domainIds.length)) return;
+    const current = ++generation.current;
+    setPhase('preview');
+    setError('');
+    setPreview(null);
     try {
-      if (sqlite) await exportSQLitePackage();
-      else await exportPackage({ kind: 'migration' });
+      const value = await request<SQLiteMigrationPreview>('/api/migrations/preview', {
+        method: 'POST',
+        body: JSON.stringify({ domainIds: selectedIds }),
+      });
+      if (current === generation.current) setPreview(value);
     } catch (reason) {
-      setError((reason as Error).message);
+      if (current === generation.current) setError((reason as Error).message);
     } finally {
-      setBusy(false);
+      if (current === generation.current) setPhase(null);
     }
   };
-  return (
-    <>
-      <button
-        className={`button ${sqlite ? '' : 'primary'}`}
-        disabled={busy || (!sqlite && !preflight.allowed)}
-        onClick={() => void perform()}
-      >
-        <Download size={16} />
-        {busy ? '正在准备数据包…' : sqlite ? '导出完整数据库包（ZIP）' : '导出全部数据包（ZIP）'}
-      </button>
-      {preflight.view}
-      {error && <ErrorNotice message={error} />}
-    </>
-  );
-}
-
-export function DataPage({
-  embedded = false,
-  mode = 'all',
-}: {
-  embedded?: boolean;
-  mode?: DataPageMode;
-}) {
-  const native = isNativeApp();
-  const content = mode === 'content' || mode === 'all';
-  const backup = mode === 'backup' || mode === 'all';
+  const perform = async () => {
+    if (!preview || phase) return;
+    const current = ++generation.current;
+    setPhase('export');
+    setError('');
+    try {
+      await exportSQLiteMigration(preview, format);
+      if (current === generation.current)
+        toast(isNativeApp() ? '迁移文件已准备，可选择保存位置' : '迁移文件已下载');
+    } catch (reason) {
+      if (current === generation.current) {
+        setError((reason as Error).message);
+        setPreview(null);
+      }
+    } finally {
+      if (current === generation.current) setPhase(null);
+    }
+  };
   return (
     <div className="settings-data ui-stack">
       {!embedded && (
         <PageHeader
           eyebrow="YOUR KNOWLEDGE, YOUR DATA"
-          title="把积累，留在自己手中。"
-          description="按领域迁移内容、完整备份和配置迁移分别管理。"
+          title="数据迁移"
+          description="迁移整个学习站，或带走指定领域及其学习记录。"
         />
       )}
-      {(mode === 'configuration' || mode === 'all') && <ConfigurationTransfer />}
-      {content && <DomainExport />}
-      {backup && (
-        <div className="data-grid">
-          <section className="card data-card">
-            <div className="data-icon">
-              <FileJson size={25} />
-            </div>
-            <h2>完整数据迁移包</h2>
-            <p>合并题库、题集、资料和学习记录，同ID已有内容保留本机版本。</p>
-            <details className="help-disclosure">
-              <summary>迁移包包含哪些内容</summary>
-              <p className="muted">
-                包含分类标签、图片/PDF、编辑草稿与修订、常规配置及已保存的笔记。AI私有配置和分析历史使用完整数据库包迁移。
-              </p>
-            </details>
-            <BackupExportButton />
-            <span className="data-detail">ZIP数据包 · manifest统一描述内容</span>
-          </section>
-          <section className="card data-card">
-            <div className="data-icon warm">
-              <Database size={25} />
-            </div>
-            <h2>SQLite 数据库备份</h2>
-            <p>
-              {native
-                ? '分享一致性副本，保留内容及AI分析历史，导出时清除AI密钥。可在手机或电脑完整恢复，AI密钥需重填。'
-                : '下载一致性副本，保留内容和AI分析历史，导出时清除AI密钥。可在另一台电脑恢复，模型密钥需重新填写。'}
-            </p>
-            <BackupExportButton sqlite />
-            <span className="data-detail">ZIP内含SQLite数据库及校验清单</span>
-          </section>
-        </div>
-      )}
-      {(content || backup) && (
-        <section className="card ui-stack">
-          <h2>合并内容或迁移备份</h2>
-          <p>
-            分享包、领域迁移包和完整数据迁移包统一在“分享与导入”检查、查重并合并。配置迁移及SQLite整体恢复仍在本设置页办理。
-          </p>
+      <section className="card ui-stack" aria-label="SQLite 数据迁移">
+        <div className="import-heading">
+          <Database size={23} />
           <div>
-            <a className="button" href="#/sharing?tab=package&purpose=backup">
-              <Upload size={16} />
-              前往分享与导入
-            </a>
+            <h2>数据迁移</h2>
+            <p>使用 SQLite 一致性副本迁移内容、配置和学习记录。导出不会修改本机数据。</p>
           </div>
-        </section>
-      )}
-      {backup && native && <SQLiteRestore />}
-      {backup && (
+        </div>
+        <fieldset className="migration-options" disabled={phase === 'export'}>
+          <legend>迁移范围</legend>
+          <label>
+            <input
+              type="radio"
+              name="migration-scope"
+              checked={scope === 'all'}
+              onChange={() => change('all')}
+            />
+            整个学习站
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="migration-scope"
+              checked={scope === 'domains'}
+              onChange={() => change('domains')}
+            />
+            指定领域
+          </label>
+        </fieldset>
+        {scope === 'domains' && (
+          <fieldset className="migration-domains" disabled={phase === 'export'}>
+            <legend>选择领域（可多选）</legend>
+            {bootstrap.domains.map((domain) => (
+              <label key={domain.id}>
+                <input
+                  type="checkbox"
+                  checked={domainIds.includes(domain.id)}
+                  onChange={(event) =>
+                    change(
+                      'domains',
+                      event.target.checked
+                        ? [...domainIds, domain.id]
+                        : domainIds.filter((id) => id !== domain.id),
+                    )
+                  }
+                />
+                {domain.name}
+              </label>
+            ))}
+            {!bootstrap.domains.length && <p className="muted">当前没有可迁移的领域。</p>}
+          </fieldset>
+        )}
+        <fieldset className="migration-options" disabled={phase === 'export'}>
+          <legend>文件格式</legend>
+          <label>
+            <input
+              type="radio"
+              name="migration-format"
+              checked={format === 'zip'}
+              onChange={() => setFormat('zip')}
+            />
+            SQLite 迁移包（ZIP）
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="migration-format"
+              checked={format === 'sqlite'}
+              onChange={() => setFormat('sqlite')}
+            />
+            SQLite 数据库（.sqlite）
+          </label>
+        </fieldset>
+        <div className="button-row">
+          <button
+            className="button"
+            type="button"
+            disabled={!!phase || (scope === 'domains' && !domainIds.length)}
+            onClick={() => void inspect()}
+          >
+            <Eye size={16} />
+            {phase === 'preview' ? '正在核对范围…' : '预览迁移范围'}
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            disabled={!!phase || !preview}
+            onClick={() => void perform()}
+          >
+            <Download size={16} />
+            {phase === 'export' ? '正在生成迁移文件…' : '导出迁移文件'}
+          </button>
+        </div>
+        {error && <ErrorNotice message={error} />}
+        {preview && (
+          <div className="migration-preview ui-stack" aria-live="polite">
+            <strong>
+              {preview.scope === 'all' ? '整个学习站' : `${preview.domainIds.length} 个领域`} · 迁移{' '}
+              {preview.counts.questions || 0} 道题目
+            </strong>
+            {preview.scope === 'domains' && (
+              <p className="muted">
+                选中领域 {preview.seedQuestions} 题，另保留 {preview.dependencyQuestions}{' '}
+                道引用题。相关题集和已答卷保持完整，避免丢失答案与来源。
+              </p>
+            )}
+            <div className="migration-counts">
+              {Object.entries(preview.counts)
+                .filter(([, count]) => count > 0)
+                .map(([key, count]) => (
+                  <div key={key}>
+                    <span>{sqliteRecordLabels[key] || key}</span>
+                    <strong>{count.toLocaleString()}</strong>
+                  </div>
+                ))}
+            </div>
+            {preview.warnings.length > 0 && (
+              <ul className="notice">
+                {preview.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <details className="help-disclosure">
-          <summary>完整恢复与备份保存说明</summary>
-          <p className="muted">
-            {native
-              ? '数据迁移包用于合并内容，同ID保留当前版本。SQLite数据库包用于整体替换，恢复前会保留本机独立副本。将备份保存到应用以外的位置，便于换设备后继续学习。'
-              : 'SQLite数据库包用于完整恢复。使用 npm run data:unpack 校验数据包并提取到新的SQLite文件，停止服务后通过 DATABASE_PATH 指向新文件，再启动服务。请将备份保存在其他磁盘。'}
+          <summary>迁移包含什么，如何恢复？</summary>
+          <p>
+            保留相关题目、资料及附件、完整作答历史和答案、学习状态、笔记、复习调度、编辑草稿及 AI
+            处理记录。AI 密钥会清除，恢复后需重新配置。具体范围以预览为准。
+          </p>
+          <p>
+            迁移用于恢复数据库，会整体替换目标学习站。仅向他人分享题目、合并内容，请使用“分享与导入”。
           </p>
         </details>
+      </section>
+      {isNativeApp() ? (
+        <SQLiteRestore />
+      ) : (
+        <section className="card ui-stack">
+          <h2>恢复迁移数据库</h2>
+          <p>
+            先停止目标学习站并备份其当前数据库。ZIP 包使用{' '}
+            <code>npm run data:unpack -- 文件路径 输出.sqlite</code> 校验并提取；原始 .sqlite
+            文件可直接使用。将 <code>DATABASE_PATH</code> 指向迁移数据库后重新启动。
+          </p>
+          <p className="muted">
+            恢复会整体替换目标库。指定领域迁移也应恢复到独立数据库；需要合并题目时使用分享包。
+          </p>
+        </section>
       )}
+      <div>
+        <a className="button" href="#/sharing?tab=export">
+          <Upload size={16} />
+          只分享题目
+        </a>
+      </div>
     </div>
   );
 }

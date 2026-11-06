@@ -1,5 +1,6 @@
 import type { DataPackageExportInput } from '../../../shared/models/export-preflight.js';
 import { exportBudget } from '../../../shared/packages/export-budget.js';
+import { estimatedQuestionHashesBytes } from '../../../shared/packages/question-hashes.js';
 import { type Store, type Table, tables } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
 import { shareFilters } from '../sharing/service.js';
@@ -118,15 +119,17 @@ export function contentExportBudget(
         Math.max(16 * 1024 * 1024, question.largest * 2 + taxonomyBytes * 2 + 8192),
       )
     : jsonBytes;
+  const hashBytes = estimatedQuestionHashesBytes(ids.length * multiplier, payloadCount);
   return exportBudget({
     questionCount: ids.length,
-    jsonBytes,
+    jsonBytes: jsonBytes + hashBytes,
     attachmentBytes,
     largestFileBytes: Math.max(
       largestPayload,
+      hashBytes,
       assets.reduce((max, row) => Math.max(max, Math.ceil((Number(row.encoded || 0) * 3) / 4)), 0),
     ),
-    fileCount: payloadCount + assets.length + 3,
+    fileCount: payloadCount + assets.length + 3 + (hashBytes ? 1 : 0),
     payloadCount,
   });
 }
@@ -174,19 +177,21 @@ export function previewPackageExport(store: Store, raw: unknown) {
       0,
     );
     const parts = Math.max(1, Math.ceil(jsonBytes / (8 * 1024 * 1024)) + 1);
+    const hashBytes = estimatedQuestionHashesBytes(count, parts);
     return exportBudget(
       {
         questionCount: count,
-        jsonBytes,
+        jsonBytes: jsonBytes + hashBytes,
         attachmentBytes,
         largestFileBytes: Math.max(
           largest,
+          hashBytes,
           assets.reduce(
             (max, row) => Math.max(max, Math.ceil((Number(row.encoded || 0) * 3) / 4)),
             0,
           ),
         ),
-        fileCount: parts + assets.length + 3,
+        fileCount: parts + assets.length + 3 + (hashBytes ? 1 : 0),
         payloadCount: parts,
       },
       'backup',

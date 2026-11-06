@@ -176,14 +176,13 @@ try {
   for (const [route, summaries] of [
     ['/#/ai?tab=import', ['文件提取与题目核对说明']],
     ['/#/ai?tab=documents', ['文件容量与提取说明']],
-    ['/#/settings?tab=backup&sub=configuration', ['配置迁移规则']],
-    ['/#/settings?tab=backup&sub=backup', ['迁移包包含哪些内容', '完整恢复与备份保存说明']],
+    ['/#/settings?tab=backup&sub=migration', ['迁移包含什么，如何恢复？']],
   ]) {
     await page.goto(origin + route);
     for (const summary of summaries) await disclosure(summary);
     await noHorizontalOverflow();
   }
-  checks.push('AI单次与教材工作台、设置配置与备份长提示默认收起，键盘可切换且手机布局无横向溢出');
+  checks.push('AI单次与教材工作台、设置迁移长提示默认收起，键盘可切换且手机布局无横向溢出');
   h.assertClean();
   await writeFile(
     resolve(h.folder, 'report.json'),

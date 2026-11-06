@@ -154,7 +154,7 @@ try {
     ['settings', 'settings'],
     ['settings-practice', 'settings?tab=practice'],
     ['settings-ai', 'settings?tab=ai'],
-    ['settings-backup', 'settings?tab=backup&sub=backup'],
+    ['settings-backup', 'settings?tab=backup&sub=migration'],
     ['settings-health', 'settings?tab=backup&sub=health'],
     ['help', 'help'],
   ];

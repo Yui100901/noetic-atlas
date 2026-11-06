@@ -1,4 +1,5 @@
-import { shareSelectionSchema as shareSelection } from '../modules/sharing/schema.js';
+import { migrationSelectionSchema, migrationDatabaseQuerySchema, migrationPreviewSchema } from '../modules/transfer/sqlite-migration.js';
+import { shareImportPreviewInputSchema, shareImportInputSchema, shareSelectionSchema as shareSelection } from '../modules/sharing/schema.js';
 import * as questionMaintenance from '../modules/questions/maintenance-schema.js';
 import { contentExportSelectionSchema, contentExportBuildSchema, contentExportPreviewSchema, contentExportFileSchema } from '../modules/transfer/domain-export-schema.js';
 import { exportPreflightSchema } from '../modules/transfer/export-preflight-schema.js';
@@ -135,7 +136,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/maintenance/compact':maintenanceConfirmationSchema,
   '/api/maintenance/reindex':maintenanceConfirmationSchema,
   '/api/questions/bulk-import': validation.bulkQuestionImportSchema.extend({dedup:importDedupOptionsSchema.optional()}), '/api/questions/review': validation.questionReviewSchema,
-  '/api/questions/import-preview':z.object({data:validation.newQuestionEnvelopeSchema}).strict(),
+  '/api/questions/import-preview':z.object({data:validation.newQuestionEnvelopeSchema,dedup:importDedupOptionsSchema.optional()}).strict(),
   '/api/ai/runs/:id/import-preview':aiImportSelectionSchema,
   '/api/ai/runs/:id/import':aiImportApplySchema,
   '/api/vocabulary/prompt-matches':vocabularyPromptMatchesSchema,
@@ -157,7 +158,8 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/ai/question-edit': aiQuestionEditInputSchema,
   '/api/ai/grade': gradeInputSchema,
   '/api/assets': assetInputSchema,
-  '/api/sharing/export':shareSelection,'/api/sharing/export-document':shareSelection,'/api/sharing/preview':z.object({data:z.unknown()}).strict(),'/api/sharing/import':z.object({data:z.unknown(),confirmed:z.literal(true),expectedFingerprint:z.string().length(64).optional()}).strict(),
+  '/api/sharing/export':shareSelection,'/api/sharing/export-document':shareSelection,'/api/sharing/preview':shareImportPreviewInputSchema,'/api/sharing/import':shareImportInputSchema,
+  '/api/migrations/preview':migrationSelectionSchema,
   '/api/import':z.object({data:z.unknown(),mode:z.literal('merge')}).strict(),
   '/api/packages/export-preview':packageExportSchema,'/api/packages/export':packageExportSchema,'/api/packages/preview':packagePreviewInputSchema,'/api/packages/import':packageImportInputSchema,
   '/api/content-exports/preview':contentExportSelectionSchema,'/api/content-exports':contentExportBuildSchema,
@@ -228,6 +230,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/review-scheduler/queue')schema.querystring=toJson(queueQuerySchema);
   if(url==='/api/maintenance/health')schema.querystring=toJson(z.object({integrity:z.enum(['true','false']).default('false')}).strict());
   if(url==='/api/learning/reset-preview')schema.querystring=toJson(z.object({}).strict());
+  if(url==='/api/migrations/database')schema.querystring=toJson(migrationDatabaseQuerySchema);
   if(url==='/api/settings/export')schema.querystring=toJson(configurationExportQuerySchema);
   if(url==='/api/vocabulary'){schema.querystring=toJson(vocabularyQuerySchema);schema.summary='按英语词头查找词义引用';}
   if(url==='/api/vocabulary/prompt-matches')schema.summary='查找同语言使用相同逆向释义提示的词卡';
@@ -252,6 +255,8 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   const outputs:Record<string,JsonSchema>={questions:toJson(validation.questionSchema),documents:toJson(validation.documentSchema),domains:toJson(validation.domainSchema),categories:toJson(validation.categorySchema),tags:toJson(validation.tagSchema),papers:paperOutput,attempts:attemptOutput,'paper-drafts':toJson(paperDraftSchema)};
   let success:JsonSchema=outputs[area]||object;
   if(url==='/api/maintenance/health')success=toJson(healthOutputSchema);
+  if(url==='/api/migrations/preview')success=toJson(migrationPreviewSchema);
+  if(url==='/api/migrations/database')success={type:'string',format:'binary'};
   if(url==='/api/content-exports/preview')success=toJson(contentExportPreviewSchema);
   if(url==='/api/content-exports')success=toJson(contentExportFileSchema);
   if(url==='/api/packages/export')success=toJson(packageFileSchema);
@@ -360,6 +365,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
     schema.description+=' 独立配置迁移只处理常规偏好与可选 AI 非敏感设置，不含题目、笔记或 API 密钥。先 POST import/preview，再携带 fingerprint 与 confirmed:true 导入；若预览将清理历史/草稿，还须 confirmedRetention:true。配置或作答记录变化后须重新预览。更换服务端点会清除旧密钥，同端点保留本机密钥。';
     if(schema.body) (schema.body as JsonSchema).examples=[url.endsWith('/preview')?{data:configurationExample}:{data:configurationExample,fingerprint:'0'.repeat(64),confirmed:true}];
   }
+  if(url.startsWith('/api/migrations/')) { schema.tags=['数据迁移']; schema.summary=url.endsWith('/preview')?'预览整体或领域SQLite迁移范围':'下载完整SQLite迁移数据库'; schema.description+=' domainIds为空表示整体迁移，否则保留指定领域及相关完整历史和必要引用。导出必须携带最新预览fingerprint，源数据变化返回409。数据库下载返回application/vnd.sqlite3二进制，包含学习记录、作答、草稿及AI分析历史，清除AI密钥。导出只处理独立副本。'; }
   if(url.startsWith('/api/content-exports')) { schema.tags=['数据迁移']; schema.summary=url.endsWith('/preview')?'预览按领域导出范围与目录计数':'生成领域题库数据包'; schema.description+=' 只读领域内容导出。domainIds为空只预览目录，build必须携带同scope的expectedFingerprint。两种组织方式都返回一个ZIP，包内manifest.json决定迁移或分享用途，按清单整包导入。combined合并去重，per_domain在包内按领域分片。响应dataBase64为ZIP字节。'; }
   if(url.startsWith('/api/packages/')) { schema.tags=['数据迁移']; schema.description+=' ZIP根目录manifest.json描述包用途、分片与SHA256。导入先预览，再携带fingerprint确认，可信迁移需confirmedTrusted，超限清理需confirmedRetention。'; }
   if(url.startsWith('/api/learning/'))schema.description+=' 学习记录按题集或随机练习来源隔离。错误状态、必要题目快照及来源摘要独立于整卷历史保留；按交卷时间取最近已判结果，未判主观题不覆盖已有判定。历史已清理时historyAvailable=false，不提供失效的复盘链接。收藏属于整题，组合小题独立掌握、笔记与复习。读取只加载当前页正文，不写入缓存。重置学习进度另需预览指纹与显式确认，保留收藏、笔记、历史成绩和草稿。';

@@ -112,12 +112,8 @@ export function SettingsPage({ hash }: { hash: string }) {
             </div>
           )}
           {route.tab === 'backup' &&
-            (['content', 'backup', 'configuration'].includes(route.sub) ? (
-              <DataPage
-                key={route.sub}
-                embedded
-                mode={route.sub as 'content' | 'backup' | 'configuration'}
-              />
+            (route.sub === 'migration' ? (
+              <DataPage key={route.sub} embedded />
             ) : (
               <DataMaintenance key={route.sub} view={route.sub as 'health' | 'cleanup' | 'reset'} />
             ))}

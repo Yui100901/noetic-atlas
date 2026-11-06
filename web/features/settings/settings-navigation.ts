@@ -6,7 +6,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'retention', label: '草稿与历史', description: '内容版本、草稿与作答保留' },
   { id: 'assets', label: '文件资源', description: '上传限制与已上传的文件' },
   { id: 'ai', label: 'AI 辅助', description: '模型连接、凭据与请求参数' },
-  { id: 'backup', label: '数据与迁移', description: '分享、备份、配置与日常维护' },
+  { id: 'backup', label: '数据与迁移', description: '整体／领域SQLite迁移与日常维护' },
 ] as const;
 
 export type SettingsTab = (typeof SETTINGS_SECTIONS)[number]['id'];
@@ -28,9 +28,7 @@ export const SETTINGS_SUBSECTIONS = {
     { id: 'files', label: '文件管理' },
   ],
   backup: [
-    { id: 'content', label: '题库迁移与分享' },
-    { id: 'backup', label: '完整备份与恢复' },
-    { id: 'configuration', label: '配置迁移' },
+    { id: 'migration', label: '迁移' },
     { id: 'health', label: '数据健康' },
     { id: 'cleanup', label: '清理数据' },
     { id: 'reset', label: '重置学习进度' },
@@ -52,12 +50,16 @@ export function readSettingsRoute(hash: string): SettingsRoute {
     ? (requested as SettingsTab)
     : 'general';
   const subsections = settingsSubsections(tab),
-    sub = params.get('sub');
+    rawSub = params.get('sub'),
+    sub =
+      tab === 'backup' && ['content', 'backup', 'configuration'].includes(rawSub || '')
+        ? 'migration'
+        : rawSub;
   return {
     tab,
     sub:
       subsections.find((item) => item.id === sub)?.id ||
-      (tab === 'backup' ? 'backup' : subsections[0]?.id) ||
+      (tab === 'backup' ? 'migration' : subsections[0]?.id) ||
       '',
   };
 }
@@ -79,7 +81,11 @@ export function isSettingsNavigation(hash: string): boolean {
   if (tab && tab !== 'daily' && !SETTINGS_SECTIONS.some((item) => item.id === tab)) return false;
   const route = readSettingsRoute(hash),
     sub = params.get('sub');
-  return !sub || settingsSubsections(route.tab).some((item) => item.id === sub);
+  return (
+    !sub ||
+    (route.tab === 'backup' && ['content', 'backup', 'configuration'].includes(sub)) ||
+    settingsSubsections(route.tab).some((item) => item.id === sub)
+  );
 }
 
 export function isSystemSettingsRoute({ tab, sub }: SettingsRoute): boolean {

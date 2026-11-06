@@ -224,7 +224,7 @@ try {
   for (let index = 0; index < 30 && (await api('/api/settings')).examDurationMinutes !== 90; index++) await delay(100);
   assert.equal((await api('/api/settings')).examDurationMinutes, 90);
   await page.getByRole('navigation', { name: '系统配置分区', exact: true }).getByRole('link', { name: '数据与迁移', exact: false }).click();
-  await page.getByRole('heading', { name: '完整数据迁移包', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '数据迁移', exact: true }).waitFor();
   await geometry('settings-backup-tab-click');
   checks.push('设置保存及分区切换通过真实按钮操作，复用样式未影响表单与导航');
   assert.deepEqual(errors, [], 'browser errors'); assert.deepEqual(externalRequests, [], 'unexpected external request');

@@ -60,7 +60,7 @@ function PackageCounts({
     <>
       {active.length ? (
         <div className="table-scroll">
-          <table>
+          <table className="data-package-counts">
             <thead>
               <tr>
                 <th>内容</th>
@@ -161,10 +161,15 @@ export function DataPackagePreviewBody({
       <p>
         已识别用途：<strong>{kinds[preview.kind] || preview.kind}</strong>
       </p>
-      <PackageCounts counts={preview.counts} omitQuestions={!!preview.dedup} />
+      <PackageCounts
+        counts={preview.counts}
+        omitQuestions={!!preview.dedup && preview.dedup.enabled !== false}
+      />
       {preview.kind === 'share' && (
         <p className="notice info">
-          分享新增题目进入待审核，完全重复复用原题；相似内容可核对差异后覆盖、保留原题或保留两者。含新题的题集先归档，审核后可恢复。
+          {preview.dedup?.enabled === false
+            ? '分享新增题目进入待审核。本次已关闭内容查重，不自动合并重复或相似题；同号冲突会安全重编号。含新题的题集先归档，审核后可恢复。'
+            : '分享新增题目进入待审核，完全重复复用原题；相似内容可核对差异后覆盖、保留原题或保留两者。含新题的题集先归档，审核后可恢复。'}
         </p>
       )}
       {preview.kind === 'question-template' && (

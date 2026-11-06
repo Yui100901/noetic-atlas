@@ -1,6 +1,15 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { SharePackage, SharePreview, ShareSelection } from '../../../shared/models/sharing.js';
+import type {
+  ImportTaxonomyCatalog,
+  ImportTaxonomyMapping,
+} from '../../../shared/models/import-taxonomy.js';
+import { importTaxonomyMappingSchema, mappingEntries } from '../transfer/import-taxonomy.js';
+import {
+  reusePackageQuestionHash,
+  type PackageQuestionHashSource,
+} from '../../../shared/packages/question-hashes.js';
 import type { Category, Question } from '../../../shared/models/types.js';
 import { normalizeQuestionBlankStems } from '../../../shared/questions/blank-markers.js';
 import { Store, makeId, now, type Table } from '../../core/store.js';
@@ -30,7 +39,7 @@ import { sharePackageSchema, validateShareExport } from './schema.js';
 import type { ImportDedupOptions } from '../../../shared/models/import-dedup.js';
 import { previewQuestionImport, prepareQuestionImport } from '../question-imports/service.js';
 import { captureQuestionRevision } from '../questions/revisions.js';
-import { importQuestionContent } from '../../../shared/questions/import-dedup.js';
+import { importDigest, importQuestionContent } from '../../../shared/questions/import-dedup.js';
 
 const flag = z.union([z.boolean(), z.enum(['true', 'false', '1', '0'])]);
 const shareFiltersSchema = filtersSchema
@@ -331,8 +340,26 @@ export function planShareImport(
   raw: unknown,
   dedupOptions: ImportDedupOptions = {},
   previewOnly = true,
+  context: {
+    taxonomyMapping?: ImportTaxonomyMapping;
+    hashSources?: ReadonlyArray<PackageQuestionHashSource>;
+  } = {},
 ) {
   const data = parse(sharePackageSchema, raw) as SharePackage;
+  const mapping = context.taxonomyMapping
+    ? parse(importTaxonomyMappingSchema, context.taxonomyMapping)
+    : undefined;
+  const sourceTaxonomy: ImportTaxonomyCatalog = {
+    domains: data.domains,
+    categories: data.categories,
+    tags: data.tags,
+  };
+  for (const table of ['domains', 'categories', 'tags'] as const) {
+    const sourceIds = new Set(data[table].map((value) => value.id));
+    for (const value of mapping?.[table] || [])
+      if (!sourceIds.has(value.sourceId))
+        fail(400, 'IMPORT_TAXONOMY_SOURCE_INVALID', `映射来源不存在：${table}/${value.sourceId}`);
+  }
   for (const [key, entries] of Object.entries({
     domains: data.domains,
     categories: data.categories,
@@ -424,8 +451,20 @@ export function planShareImport(
         : table === 'papers'
           ? ['new', 'preview', QUICK_PAPER_ID].includes(source.id)
           : table === 'question_banks' && ['new'].includes(source.id);
-    const target =
-      forcedTarget || same?.id || (current || reserved ? makeId(`share-${table}`) : source.id);
+    const taxonomy = ['domains', 'categories', 'tags'].includes(table);
+    let newTarget =
+      current || reserved
+        ? taxonomy
+          ? `share-${table}-${importDigest(source.id + signature).slice(0, 24)}`
+          : makeId(`share-${table}`)
+        : source.id;
+    if (taxonomy && !same && current) {
+      const base = newTarget;
+      let suffix = 1;
+      while (store.get(table, newTarget) || staged.get(table)?.has(newTarget))
+        newTarget = `${base}-${suffix++}`;
+    }
+    const target = forcedTarget || same?.id || newTarget;
     mapFor(table).set(source.id, target);
     const count = (counts[table] ||= { added: 0, reused: 0, remapped: 0 });
     if (target !== source.id) count.remapped++;
@@ -455,7 +494,31 @@ export function planShareImport(
       return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, rewrite(entry)]));
     return value;
   };
-  for (const domain of data.domains) assign('domains', domain, domain);
+  const choices = {
+    domains: mappingEntries(mapping, 'domains'),
+    categories: mappingEntries(mapping, 'categories'),
+    tags: mappingEntries(mapping, 'tags'),
+  };
+  function assignTaxonomy(table: 'domains' | 'categories' | 'tags', source: any, transformed: any) {
+    const choice = choices[table].get(source.id);
+    if (choice?.targetId) {
+      const target = store.require<any>(table, choice.targetId);
+      if (table === 'categories' && target.domainId !== transformed.domainId)
+        fail(400, 'IMPORT_TAXONOMY_DOMAIN_MISMATCH', '目标分类必须属于映射后的领域');
+      if (table === 'tags' && target.domainId && target.domainId !== transformed.domainId)
+        fail(400, 'IMPORT_TAXONOMY_DOMAIN_MISMATCH', '目标标签必须属于映射后的领域或为通用标签');
+      mapFor(table).set(source.id, target.id);
+      const count = (counts[table] ||= { added: 0, reused: 0, remapped: 0 });
+      count.reused++;
+      if (source.id !== target.id) count.remapped++;
+      return target.id;
+    }
+    return assign(table, source, {
+      ...transformed,
+      ...(choice?.name ? { name: choice.name } : {}),
+    });
+  }
+  for (const domain of data.domains) assignTaxonomy('domains', domain, domain);
   const pending = [...data.categories];
   while (pending.length) {
     const index = pending.findIndex(
@@ -463,14 +526,14 @@ export function planShareImport(
     );
     if (index < 0) fail(400, 'CATEGORY_CYCLE', '分享分类有环或缺少父分类');
     const category = pending.splice(index, 1)[0]!;
-    assign('categories', category, {
+    assignTaxonomy('categories', category, {
       ...category,
       domainId: ref('domains', category.domainId),
       parentId: category.parentId ? ref('categories', category.parentId) : null,
     });
   }
   for (const tag of data.tags)
-    assign('tags', tag, {
+    assignTaxonomy('tags', tag, {
       ...tag,
       domainId: tag.domainId ? ref('domains', tag.domainId) : null,
       kind: tag.kind || 'custom',
@@ -503,9 +566,10 @@ export function planShareImport(
   // Existing linked-card graphs need their known local identities before the
   // content comparison. New graph IDs remain their stable source IDs here.
   const linked = transformedQuestions.some((question) => questionLinks(question).length > 0),
-    graph = linked
-      ? questionImportTargets(store.all<Question>('questions'), transformedQuestions)
-      : new Map<string, string>();
+    graph =
+      linked && dedupOptions.enabled !== false
+        ? questionImportTargets(store.all<Question>('questions'), transformedQuestions)
+        : new Map<string, string>();
   const comparable = transformedQuestions.map((question) =>
     mapQuestionLinks(question, (qid) =>
       questionRoute(
@@ -519,8 +583,33 @@ export function planShareImport(
       { ...asset, id: ref('assets', asset.id) },
     ]),
   );
-  const assetKey = store.database.imports.assetResolver(assets),
-    dedup = previewQuestionImport(store, comparable, assetKey);
+  const fallbackAssetKey = store.database.imports.assetResolver(assets);
+  const knownAssets = new Map<string, string>();
+  if (context.hashSources?.length)
+    for (const asset of data.assets) {
+      const identity = context.hashSources[0]!.assetKey(asset.id);
+      if (!identity.startsWith('missing:')) knownAssets.set(ref('assets', asset.id), identity);
+    }
+  const assetKey = (id: string) => knownAssets.get(id) || fallbackAssetKey(id);
+  const hashHints = comparable.map((question, index) => {
+    const source = context.hashSources?.[index];
+    return source?.hint
+      ? reusePackageQuestionHash(source.question, question, source.hint, source.assetKey, assetKey)
+      : undefined;
+  });
+  const stagedCategories = new Map<string, string>(
+    [...store.all<Category>('categories'), ...[...(staged.get('categories')?.values() || [])]].map(
+      (category) => [category.id, category.domainId],
+    ),
+  );
+  const dedup = previewQuestionImport(
+    store,
+    comparable,
+    assetKey,
+    dedupOptions,
+    hashHints,
+    stagedCategories,
+  );
   const questionPlan = prepareQuestionImport(
     store,
     comparable,
@@ -528,6 +617,7 @@ export function planShareImport(
     dedup,
     assetKey,
     previewOnly,
+    hashHints,
   );
   for (const [source, target] of Object.entries(questionPlan.idMap))
     mapFor('questions').set(source, target);
@@ -759,8 +849,16 @@ export function planShareImport(
           ]
         : []),
     ],
-    fingerprint: fingerprint(store),
+    fingerprint: importDigest(
+      JSON.stringify([
+        fingerprint(store),
+        mapping || {},
+        dedup.enabled !== false,
+        dedup.fingerprint,
+      ]),
+    ),
     dedup,
+    taxonomy: sourceTaxonomy,
   };
   return { records, preview, dedup };
 }
@@ -769,9 +867,13 @@ export function importShare(
   raw: unknown,
   expectedFingerprint?: string,
   dedupOptions: ImportDedupOptions = {},
+  context: {
+    taxonomyMapping?: ImportTaxonomyMapping;
+    hashSources?: ReadonlyArray<PackageQuestionHashSource>;
+  } = {},
 ) {
   return store.transaction(() => {
-    const plan = planShareImport(store, raw, dedupOptions, false);
+    const plan = planShareImport(store, raw, dedupOptions, false, context);
     if (expectedFingerprint && expectedFingerprint !== plan.preview.fingerprint)
       fail(409, 'SHARE_PREVIEW_STALE', '本地题库已变化，请重新预览后导入');
     for (const record of plan.records) {

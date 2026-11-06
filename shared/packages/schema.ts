@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { dataPackageKinds, type DataPackageKind } from '../models/data-packages.js';
+import type { PackageQuestionHashes } from './question-hashes.js';
 export { dataPackageKinds, type DataPackageKind } from '../models/data-packages.js';
 
 const MiB = 1024 * 1024;
@@ -71,7 +72,7 @@ export interface DataPackageInput {
   createdAt?: string;
   limits?: Partial<DataPackageLimits>;
 }
-export interface OpenedDataPackage {
+export interface OpenedDataPackage extends PackageQuestionHashes {
   manifest: DataPackageManifest;
   payloads: DataPackagePayload[];
   files: Map<string, Uint8Array>;

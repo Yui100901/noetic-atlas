@@ -17,6 +17,10 @@ import type {
 import { now, type Store } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
 import { z } from 'zod';
+import {
+  packageQuestionHashSources,
+  reusePackageQuestionHash,
+} from '../../../shared/packages/question-hashes.js';
 import type { QuestionInput } from '../../../shared/models/types.js';
 import { readOnlyOperation } from '../../http/operation.js';
 import { questionImportTemplate } from '../questions/import-template.js';
@@ -143,7 +147,24 @@ async function opened(raw: unknown) {
     )
       fail(413, 'PACKAGE_CONFIGURATION_LIMIT', '配置包最多2MiB');
     const data = combinePackagePayloads(pkg.manifest.kind, pkg.payloads, pkg.manifest.title);
-    return { kind: pkg.manifest.kind, title: pkg.manifest.title, data, packageHash: hash(bytes) };
+    const allSources = packageQuestionHashSources(pkg);
+    const sourceById = new Map<string, (typeof allSources)[number]>();
+    for (const source of allSources)
+      if (source.question.id && !sourceById.has(source.question.id))
+        sourceById.set(source.question.id, source);
+    const hashSources = ['share', 'migration'].includes(pkg.manifest.kind)
+      ? (data.questions || []).map(
+          (question: any, index: number) => sourceById.get(question.id) || allSources[index],
+        )
+      : allSources;
+    return {
+      kind: pkg.manifest.kind,
+      title: pkg.manifest.title,
+      data,
+      packageHash: hash(bytes),
+      hashSources,
+      controls: input,
+    };
   } catch (error) {
     if (error instanceof DataPackageError) return fail(400, error.code, error.message);
     throw error;
@@ -152,7 +173,14 @@ async function opened(raw: unknown) {
 
 export async function previewDataPackage(store: Store, raw: unknown): Promise<DataPackagePreview> {
   const value = await opened(raw);
-  const preview = inspectDataPackage(store, value.kind, value.title, value.data, value.packageHash);
+  const preview = inspectDataPackage(
+    store,
+    value.kind,
+    value.title,
+    value.data,
+    value.packageHash,
+    { ...value.controls, hashSources: value.hashSources },
+  );
   if (preview.dedup)
     rememberQuestions(store, preview.fingerprint, value.data.questions, value.data.assets || []);
   return preview;
@@ -173,15 +201,23 @@ export async function importDataPackage(
       value.title,
       value.data,
       value.packageHash,
+      { ...input, hashSources: value.hashSources },
     );
     if (preview.fingerprint !== input.expectedFingerprint)
       fail(409, 'PACKAGE_PREVIEW_STALE', '数据包或本机相关内容在预览后已变化，请重新预览后导入');
     let result: unknown;
     if (value.kind === 'share')
-      result = importShare(store, value.data, undefined, {
-        expectedFingerprint: preview.dedup!.fingerprint,
-        decisions: input.decisions,
-      });
+      result = importShare(
+        store,
+        value.data,
+        undefined,
+        {
+          expectedFingerprint: preview.dedup!.fingerprint,
+          ...input.dedup,
+          decisions: input.decisions || input.dedup?.decisions,
+        },
+        { taxonomyMapping: input.taxonomyMapping, hashSources: value.hashSources },
+      );
     else if (value.kind === 'migration') result = importData(store, value.data);
     else if (value.kind === 'configuration')
       result = importConfiguration(store, {
@@ -191,10 +227,26 @@ export async function importDataPackage(
         ...(input.confirmedRetention ? { confirmedRetention: true } : {}),
       });
     else if (value.kind === 'question-template')
-      result = importNewQuestionData(store, value.data, {
-        expectedFingerprint: preview.dedup!.fingerprint,
-        decisions: input.decisions,
-      });
+      result = importNewQuestionData(
+        store,
+        value.data,
+        {
+          expectedFingerprint: preview.dedup!.fingerprint,
+          ...input.dedup,
+          decisions: input.decisions || input.dedup?.decisions,
+        },
+        value.hashSources.map((source: any, index: number) =>
+          source?.hint
+            ? reusePackageQuestionHash(
+                source.question,
+                value.data.questions[index],
+                source.hint,
+                source.assetKey,
+                store.database.imports.assetResolver(),
+              )
+            : undefined,
+        ),
+      );
     else if (value.kind === 'question-update') result = importPendingQuestions(store, value.data);
     else return fail(422, 'SQLITE_PACKAGE_RESTORE_REQUIRED', '请使用完整数据库恢复入口');
     return { ok: true, ...preview, result };

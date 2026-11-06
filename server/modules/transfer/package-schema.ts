@@ -1,10 +1,16 @@
 import { z } from 'zod';
+import { importTaxonomyMappingSchema } from './import-taxonomy.js';
+import { domainSchema, categorySchema, tagSchema } from '../../core/validation.js';
 import { dataPackageKinds } from '../../../shared/models/data-packages.js';
 import { DATA_PACKAGE_LIMITS } from '../../../shared/packages/schema.js';
 import { id } from '../../core/validation.js';
 import { configurationPreviewSchema } from '../settings/configuration.js';
 import { shareSelectionSchema } from '../sharing/schema.js';
-import { importDedupDecisionSchema, importDedupPreviewSchema } from '../question-imports/schema.js';
+import {
+  importDedupDecisionSchema,
+  importDedupPreviewSchema,
+  importDedupOptionsSchema,
+} from '../question-imports/schema.js';
 
 const MiB = 1024 * 1024;
 export const PACKAGE_HTTP_BODY_LIMIT = 192 * MiB;
@@ -25,7 +31,13 @@ const base64Schema = z
     (value) => value.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(value),
     '数据包编码无效',
   );
-export const packagePreviewInputSchema = z.object({ dataBase64: base64Schema }).strict();
+export const packagePreviewInputSchema = z
+  .object({
+    dataBase64: base64Schema,
+    dedup: importDedupOptionsSchema.optional(),
+    taxonomyMapping: importTaxonomyMappingSchema.optional(),
+  })
+  .strict();
 export const packageImportInputSchema = packagePreviewInputSchema
   .extend({
     expectedFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
@@ -60,6 +72,14 @@ export const packagePreviewSchema = z
     warnings: z.array(z.string()),
     details: configurationPreviewSchema.optional(),
     dedup: importDedupPreviewSchema.optional(),
+    taxonomy: z
+      .object({
+        domains: z.array(domainSchema.extend({ id })),
+        categories: z.array(categorySchema.extend({ id })),
+        tags: z.array(tagSchema.extend({ id })),
+      })
+      .strict()
+      .optional(),
     questions: z
       .array(
         z

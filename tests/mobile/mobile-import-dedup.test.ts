@@ -62,3 +62,54 @@ test('offline import preview does not persist, exact import commits once and reu
     await runtime.close();
   }
 });
+
+test('offline import can explicitly skip dedup without overwriting an existing question', async (t) => {
+  const { createLocalRuntime } = await loadNativeRuntime();
+  const sql = await initSqlJs({
+    locateFile: () => resolve('node_modules/sql.js/dist/sql-wasm.wasm'),
+  });
+  let bytes: Uint8Array | undefined;
+  const seed = learningSeed();
+  const runtime = await createLocalRuntime(
+    sql,
+    seed,
+    {
+      load: async () => bytes?.slice(),
+      save: async (value) => {
+        bytes = value.slice();
+      },
+    },
+    { dailyPushScheduler: false },
+  );
+  t.after(() => runtime.close());
+  const data = {
+    format: 'learning-new-questions',
+    schemaVersion: 1,
+    questions: [seed.questions[0]],
+  };
+  const inspected = await runtime.fetch('/api/questions/import-preview', {
+    method: 'POST',
+    body: JSON.stringify({ data, dedup: { enabled: false } }),
+  });
+  assert.equal(inspected.status, 200, await inspected.clone().text());
+  const preview = await inspected.json();
+  assert.equal(preview.enabled, false);
+  assert.equal(preview.counts.new, 1);
+  assert.equal(preview.metrics.indexed, 0);
+  const imported = await runtime.fetch('/api/questions/bulk-import', {
+    method: 'POST',
+    body: JSON.stringify({
+      data,
+      confirmed: true,
+      dedup: { enabled: false, expectedFingerprint: preview.fingerprint },
+    }),
+  });
+  assert.equal(imported.status, 201, await imported.clone().text());
+  const result = await imported.json();
+  assert.equal(result.added, 1);
+  assert.notEqual(result.items[0].id, seed.questions[0]!.id);
+  assert.equal(result.items[0].status, 'pending');
+  const original = await runtime.fetch(`/api/questions/${seed.questions[0]!.id}`);
+  assert.equal(original.status, 200, await original.clone().text());
+  assert.equal((await original.json()).status, 'published');
+});

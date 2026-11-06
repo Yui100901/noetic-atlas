@@ -16,11 +16,16 @@ test('settings deep links resolve established entry points and new nested catego
   assert.deepEqual(readSettingsRoute('#/settings'), { tab: 'general', sub: '' });
   assert.deepEqual(readSettingsRoute('#/settings?tab=practice'), { tab: 'practice', sub: '' });
   assert.deepEqual(readSettingsRoute('#/settings?tab=daily'), { tab: 'review', sub: 'daily' });
-  assert.deepEqual(readSettingsRoute('#/settings?tab=backup'), { tab: 'backup', sub: 'backup' });
-  assert.deepEqual(readSettingsRoute('#/data'), { tab: 'backup', sub: 'backup' });
-  for (const sub of ['content', 'backup', 'configuration', 'health', 'cleanup', 'reset']) {
+  assert.deepEqual(readSettingsRoute('#/settings?tab=backup'), { tab: 'backup', sub: 'migration' });
+  assert.deepEqual(readSettingsRoute('#/data'), { tab: 'backup', sub: 'migration' });
+  for (const sub of ['migration', 'health', 'cleanup', 'reset']) {
     assert.deepEqual(readSettingsRoute(settingsHref('backup', sub)), { tab: 'backup', sub });
   }
+  for (const sub of ['content', 'backup', 'configuration'])
+    assert.deepEqual(readSettingsRoute(settingsHref('backup', sub)), {
+      tab: 'backup',
+      sub: 'migration',
+    });
 });
 
 test('only recognized internal settings destinations bypass the unsaved guard', () => {

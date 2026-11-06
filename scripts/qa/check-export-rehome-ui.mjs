@@ -73,17 +73,17 @@ try {
     mimeType: 'application/zip',
     buffer: Buffer.from(config.dataBase64, 'base64'),
   });
-  await page.getByRole('link', { name: '前往配置迁移', exact: true }).waitFor();
+  await page.getByRole('link', { name: '前往 SQLite 迁移', exact: true }).waitFor();
   assert.equal(
     await page.getByRole('button', { name: '确认导入整个数据包', exact: true }).count(),
     0,
   );
-  await page.getByRole('link', { name: '前往配置迁移', exact: true }).click();
-  await page.waitForURL(/sub=configuration/);
+  await page.getByRole('link', { name: '前往 SQLite 迁移', exact: true }).click();
+  await page.waitForURL(/sub=migration/);
   await goto('settings?tab=backup&sub=backup');
-  await page.getByRole('link', { name: '前往分享与导入', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '数据迁移', exact: true }).waitFor();
   assert.equal(await page.getByLabel('选择 ZIP 数据包', { exact: true }).count(), 0);
-  checks.push('设置只保留配置迁移与完整恢复，内容合并转至导入中心，误选配置包会导向专属入口');
+  checks.push('设置合并为SQLite迁移，内容分享转至导入中心，旧配置包提示重新使用SQLite迁移');
 
   await goto('analytics');
   await page.getByRole('heading', { name: '综合统计', exact: true }).waitFor();
@@ -113,16 +113,20 @@ try {
         recommendations: [
           {
             label: '按领域缩小范围或分组导出（总量超限仍需分次）',
-            href: '#/settings?tab=backup&sub=content',
+            href: '#/sharing?tab=export',
           },
         ],
       },
     }),
   );
-  await goto('settings?tab=backup&sub=backup');
-  await page.getByText('当前范围不适合一次导出', { exact: true }).waitFor();
+  await goto('papers/' + h.state.paperId);
+  await page.getByRole('button', { name: '导出与分享', exact: true }).click();
+  await page.getByRole('menuitem', { name: '导出题集', exact: true }).click();
+  const blocked = page.getByRole('dialog', { name: '导出题集', exact: true });
+  await blocked.getByRole('radio', { name: '题集数据包（ZIP）', exact: true }).check();
+  await blocked.getByText('当前范围不适合一次导出', { exact: true }).waitFor();
   assert.equal(
-    await page.getByRole('button', { name: '导出全部数据包（ZIP）', exact: true }).isDisabled(),
+    await blocked.getByRole('button', { name: '下载文件', exact: true }).isDisabled(),
     true,
   );
   await page.setViewportSize({ width: 390, height: 900 });
@@ -130,12 +134,12 @@ try {
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
     true,
   );
-  await page
+  await blocked
     .getByRole('link', { name: '按领域缩小范围或分组导出（总量超限仍需分次）', exact: true })
     .click();
-  await page.waitForURL(/sub=content/);
+  await page.waitForURL(/sharing\?tab=export/);
   assert.equal(exportCalls, 0);
-  checks.push('超限预检阻止真正封包请求，提供可点击解决方案');
+  checks.push('超限预检阻止封包请求，并指向领域分享以缩小范围');
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await goto('sharing');

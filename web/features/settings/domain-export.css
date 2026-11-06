@@ -21,7 +21,6 @@
   margin-bottom: 0.65rem;
   font-weight: 650;
 }
-.domain-export-purpose,
 .domain-export-formats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -226,7 +225,6 @@
   }
 }
 @media (max-width: 560px) {
-  .domain-export-purpose,
   .domain-export-formats,
   .domain-export-filters,
   .domain-export-domain-summary {

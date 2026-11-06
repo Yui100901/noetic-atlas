@@ -171,7 +171,7 @@ function prepareDocumentImport(store: Store, id: string, body: unknown) {
   return { input, job, groups, questions: groups.flatMap(group => group.questions) };
 }
 export function previewDocumentJobImport(store: Store, id: string, body: unknown) {
-  return previewQuestionImport(store, prepareDocumentImport(store, id, body).questions);
+  const prepared=prepareDocumentImport(store,id,body);return previewQuestionImport(store, prepared.questions,undefined,prepared.input.dedup);
 }
 export function importDocumentJob(store: Store, id: string, body: unknown) {
   const leave = enter(store, id);

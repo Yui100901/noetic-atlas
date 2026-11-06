@@ -1,4 +1,3 @@
-import { buildDataPackage } from '../../shared/packages/data-package.ts';
 /** Shared configuration draft, stable category URLs and safe retention saves. */
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
@@ -247,23 +246,36 @@ try {
   await tab('AI 辅助');
   await page.getByLabel('模型名称', { exact: true }).fill('导入前尚未保存的模型');
   await tab('数据与迁移');
-  await sub('配置迁移');
+  await sub('迁移');
+  // Simulate an external configuration write through the existing service API.
+  // The visible settings UI now exposes SQLite migration instead of config ZIPs.
   const bundle = await api('/api/settings/export');
   bundle.system.examDurationMinutes = 45;
-  bundle.ai.model = '导入后的模型';
-  await page.getByLabel('选择 ZIP 数据包', { exact: true }).setInputFiles({
-    name: 'settings-qa.zip',
-    mimeType: 'application/zip',
-    buffer: Buffer.from(
-      await buildDataPackage({
-        kind: 'configuration',
-        title: '配置验收',
-        payloads: [{ path: 'data/settings.json', data: bundle }],
-      }),
-    ),
+  bundle.ai.model = '外部更新后的模型';
+  const inspected = await page.request.post(origin + '/api/settings/import/preview', {
+    data: { data: bundle },
   });
-  await page.getByRole('button', { name: '确认导入整个数据包', exact: true }).click();
-  await page.getByText('数据包已完整导入。', { exact: false }).waitFor();
+  assert.ok(inspected.ok(), await inspected.text());
+  const imported = await page.request.post(origin + '/api/settings/import', {
+    data: { data: bundle, fingerprint: (await inspected.json()).fingerprint, confirmed: true },
+  });
+  assert.ok(imported.ok(), await imported.text());
+  await tab('AI 辅助');
+  await page
+    .getByText('AI 配置已更新，当前输入仍保留。请放弃 AI 修改以载入最新值，再重新编辑。', {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(
+    await page.getByLabel('模型名称', { exact: true }).inputValue(),
+    '导入前尚未保存的模型',
+  );
+  await page.getByRole('button', { name: '放弃 AI 修改', exact: true }).click();
+  assert.equal(await page.getByLabel('模型名称', { exact: true }).inputValue(), '外部更新后的模型');
+  await page.getByLabel('模型名称', { exact: true }).fill('采用外部配置后再次保存');
+  const refreshed = page.waitForResponse((response) => response.url().endsWith('/api/bootstrap'));
+  await page.getByRole('button', { name: '保存 AI 配置', exact: true }).click();
+  await refreshed;
   await tab('练习与计分');
   assert.equal(await duration().inputValue(), '65');
   await save().click();
@@ -276,19 +288,7 @@ try {
   assert.equal((await api('/api/settings')).examDurationMinutes, 45);
   await discard().click();
   assert.equal(await duration().inputValue(), '45');
-  await tab('AI 辅助');
-  await page
-    .getByText('AI 配置已更新，当前输入仍保留。请放弃 AI 修改以载入最新值，再重新编辑。', {
-      exact: true,
-    })
-    .waitFor();
-  assert.equal(
-    await page.getByLabel('模型名称', { exact: true }).inputValue(),
-    '导入前尚未保存的模型',
-  );
-  await page.getByRole('button', { name: '放弃 AI 修改', exact: true }).click();
-  assert.equal(await page.getByLabel('模型名称', { exact: true }).inputValue(), '导入后的模型');
-  checks.push('配置导入保留常规和AI未保存输入，旧版本阻止覆盖，显式放弃后载入导入值');
+  checks.push('外部配置更新保留AI和常规未保存输入，旧版本阻止覆盖，显式放弃后采用新值');
 
   await tab('草稿与历史');
   await sub('学习草稿与作答');

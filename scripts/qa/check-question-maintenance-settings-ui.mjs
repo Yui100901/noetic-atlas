@@ -65,7 +65,7 @@ try {
   assert.equal(configuration.system.maxQuestionDrafts, 1);
   assert.equal(Object.hasOwn(configuration, 'questionDrafts'), false);
   assert.equal(Object.hasOwn(configuration, 'questionRevisions'), false);
-  checks.push('确认后仅保留各范围最新记录，原题不变，配置迁移不包含私人编辑内容');
+  checks.push('确认后仅保留各范围最新记录，原题不变，基础配置对象不包含私人编辑内容');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => {
     document.documentElement.dataset.theme = 'dark';

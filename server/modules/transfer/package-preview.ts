@@ -1,4 +1,10 @@
 import { createHash } from 'node:crypto';
+import type { ImportDedupOptions } from '../../../shared/models/import-dedup.js';
+import type { ImportTaxonomyMapping } from '../../../shared/models/import-taxonomy.js';
+import {
+  reusePackageQuestionHash,
+  type PackageQuestionHashSource,
+} from '../../../shared/packages/question-hashes.js';
 import type {
   DataPackageCount,
   DataPackageKind,
@@ -136,13 +142,29 @@ export function inspectDataPackage(
   title: string,
   data: any,
   packageHash: string,
+  options: {
+    dedup?: ImportDedupOptions;
+    taxonomyMapping?: ImportTaxonomyMapping;
+    hashSources?: ReadonlyArray<PackageQuestionHashSource>;
+  } = {},
 ): DataPackagePreview {
   let localFingerprint: string;
   const preview: DataPackagePreview = { kind, title, fingerprint: '', counts: {}, warnings: [] };
+  if (
+    kind !== 'share' &&
+    options.taxonomyMapping &&
+    Object.values(options.taxonomyMapping).some((values) => values?.length)
+  )
+    fail(
+      400,
+      'IMPORT_TAXONOMY_MAPPING_UNSUPPORTED',
+      '此包保留原迁移身份或使用本地模板归类，不能执行来源归类映射；请使用分享包调整归属。',
+    );
   if (kind === 'share') {
-    const sharePlan = planShareImport(store, data),
+    const sharePlan = planShareImport(store, data, options.dedup, true, options),
       planned = sharePlan.preview;
     preview.dedup = sharePlan.dedup;
+    preview.taxonomy = sharePlan.preview.taxonomy;
     for (const [key, value] of Object.entries(planned.counts))
       preview.counts[key] = { ...zero(), ...value };
     preview.questions = planned.questions;
@@ -195,6 +217,20 @@ export function inspectDataPackage(
         preview.dedup = previewQuestionImport(
           store,
           data.questions.map(normalizeQuestionBlankStems),
+          undefined,
+          options.dedup,
+          data.questions.map((question: any, index: number) => {
+            const source = options.hashSources?.[index];
+            return source?.hint
+              ? reusePackageQuestionHash(
+                  source.question,
+                  normalizeQuestionBlankStems(question),
+                  source.hint,
+                  source.assetKey,
+                  store.database.imports.assetResolver(),
+                )
+              : undefined;
+          }),
         );
         preview.counts.questions.added = preview.dedup.counts.new + preview.dedup.counts.similar;
         preview.counts.questions.reused = preview.dedup.counts.exact;
@@ -205,7 +241,14 @@ export function inspectDataPackage(
     }
   }
   preview.fingerprint = createHash('sha256')
-    .update(canonicalPackageValue({ packageHash, localFingerprint }))
+    .update(
+      canonicalPackageValue({
+        packageHash,
+        localFingerprint,
+        dedupEnabled: options.dedup?.enabled !== false,
+        taxonomyMapping: options.taxonomyMapping || {},
+      }),
+    )
     .digest('hex');
   return preview;
 }

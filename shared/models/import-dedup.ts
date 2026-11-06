@@ -26,17 +26,25 @@ export interface ImportDedupItem {
   candidates: ImportDedupCandidate[];
 }
 export interface ImportDedupPreview {
+  enabled?: boolean;
   fingerprint: string;
   total: number;
   counts: { new: number; exact: number; similar: number };
   items: ImportDedupItem[];
-  metrics: { indexed: number; compared: number; candidateLimit: number };
+  metrics: {
+    indexed: number;
+    compared: number;
+    candidateLimit: number;
+    hashesReused?: number;
+    hashesComputed?: number;
+  };
 }
 export interface ImportDedupDetail {
   incoming: QuestionInput;
   existing: Question | QuestionInput;
 }
 export interface ImportDedupOptions {
+  enabled?: boolean;
   expectedFingerprint?: string;
   decisions?: ImportDedupDecision[];
 }

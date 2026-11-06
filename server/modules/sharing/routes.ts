@@ -1,39 +1,28 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import { now, type Store } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
 import { readOnlyOperation } from '../../http/operation.js';
 import { normalizeScoring } from '../practice/scoring.js';
 import type { StoredPaper } from '../practice/service.js';
 import { paperExportDocument } from '../transfer/exports.js';
-import { shareSelectionSchema } from './schema.js';
+import {
+  shareSelectionSchema,
+  shareImportInputSchema,
+  shareImportPreviewInputSchema,
+} from './schema.js';
 import { exportShare, importShare, planShareImport } from './service.js';
-import { importDedupOptionsSchema } from '../question-imports/schema.js';
 
 export function registerSharingRoutes(app: FastifyInstance, store: Store) {
   app.post('/api/sharing/export', readOnlyOperation, async (request) =>
     exportShare(store, parse(shareSelectionSchema, request.body)),
   );
-  app.post(
-    '/api/sharing/preview',
-    readOnlyOperation,
-    async (request) =>
-      planShareImport(store, parse(z.object({ data: z.unknown() }).strict(), request.body).data)
-        .preview,
-  );
+  app.post('/api/sharing/preview', readOnlyOperation, async (request) => {
+    const input = parse(shareImportPreviewInputSchema, request.body);
+    return planShareImport(store, input.data, input.dedup, true, input).preview;
+  });
   app.post('/api/sharing/import', async (request) => {
-    const input = parse(
-      z
-        .object({
-          data: z.unknown(),
-          confirmed: z.literal(true),
-          expectedFingerprint: z.string().length(64).optional(),
-          dedup:importDedupOptionsSchema.optional(),
-        })
-        .strict(),
-      request.body,
-    );
-    return importShare(store, input.data, input.expectedFingerprint,input.dedup);
+    const input = parse(shareImportInputSchema, request.body);
+    return importShare(store, input.data, input.expectedFingerprint, input.dedup, input);
   });
   app.post('/api/sharing/export-document', readOnlyOperation, async (request) => {
     const input = parse(shareSelectionSchema, request.body);

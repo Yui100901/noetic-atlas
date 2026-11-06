@@ -20,6 +20,7 @@ const smoke = new Set([
 const browserIds = [
   'export-rehome-ui',
   'import-dedup-ui',
+  'import-options-ui',
   'learning-time-ui',
   'ai-usage-ui',
   'adaptive-review-ui',
@@ -38,7 +39,7 @@ const browserIds = [
   'choice-editor-ui',
   'common-ui',
   'concept-sets-ui',
-  'configuration-ui',
+  'sqlite-migration-ui',
   'content-notices-ui',
   'content-quality-ui',
   'content-ui',

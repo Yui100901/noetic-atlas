@@ -1,4 +1,5 @@
 /** Bulk authoring operations shared by JSON APIs and manifest package import. */
+import type { PackageQuestionHashHint } from '../../../shared/packages/question-hashes.js';
 import type { Question } from '../../../shared/models/types.js';
 import { normalizeQuestionBlankStems } from '../../../shared/questions/blank-markers.js';
 import { Store, now, nextStamp } from '../../core/store.js';
@@ -29,6 +30,7 @@ export function importNewQuestionData(
   store: Store,
   raw: unknown,
   options: ImportDedupOptions = {},
+  hashHints?: ReadonlyArray<PackageQuestionHashHint | undefined>,
 ) {
   const data = parse(newQuestionEnvelopeSchema, raw);
   const entries = data.questions.map((raw) => {
@@ -36,7 +38,7 @@ export function importNewQuestionData(
     assertNewQuestionId(input.id);
     return input;
   });
-  return applyQuestionImport(store, entries, options);
+  return applyQuestionImport(store, entries, options, hashHints);
 }
 
 export function exportPendingQuestions(store: Store, rawIds: unknown) {

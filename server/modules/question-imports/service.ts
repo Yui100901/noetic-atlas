@@ -1,4 +1,4 @@
-import type { Question, QuestionInput } from '../../../shared/models/types.js';
+import type { Category, Question, QuestionInput } from '../../../shared/models/types.js';
 import type {
   ImportDedupPreview,
   ImportDedupItem,
@@ -19,9 +19,39 @@ import { validateDocumentCitations } from '../library/sources.js';
 import { captureQuestionRevision } from '../questions/revisions.js';
 import { getSettings } from '../settings/service.js';
 import { importDedupOptionsSchema } from './schema.js';
+import type { PackageQuestionHashHint } from '../../../shared/packages/question-hashes.js';
 
 const candidateLimit = 50,
   chunkSize = 200;
+type IncomingBuckets = Map<string, Map<string, number[]>>;
+
+/** Keep bounded postings per domain, rather than letting an unrelated large
+ * domain evict all of a smaller domain's candidates from the incoming batch. */
+function incomingCandidates(buckets: IncomingBuckets, value: string, domains: ReadonlySet<string>) {
+  const byDomain = buckets.get(value);
+  if (!byDomain) return [];
+  const selected = domains.size
+    ? ['', ...domains].map((domain) => byDomain.get(domain) || [])
+    : [...byDomain.values()];
+  return [...new Set(selected.flat())].sort((a, b) => b - a).slice(0, candidateLimit);
+}
+
+function rememberIncoming(
+  buckets: IncomingBuckets,
+  value: string,
+  domains: ReadonlySet<string>,
+  index: number,
+) {
+  if (!value) return;
+  const byDomain = buckets.get(value) || new Map<string, number[]>();
+  for (const domain of domains.size ? domains : ['']) {
+    const entries = byDomain.get(domain) || [];
+    entries.push(index);
+    if (entries.length > candidateLimit) entries.shift();
+    byDomain.set(domain, entries);
+  }
+  buckets.set(value, byDomain);
+}
 const grouped = <T>(rows: T[], key: (row: T) => string) => {
   const result = new Map<string, T[]>();
   for (const row of rows) {
@@ -43,9 +73,47 @@ export function previewQuestionImport(
   store: Store,
   questions: QuestionInput[],
   assetKey = store.database.imports.assetResolver(),
+  options: ImportDedupOptions = {},
+  hashHints?: ReadonlyArray<PackageQuestionHashHint | undefined>,
+  stagedCategories?: ReadonlyMap<string, string>,
 ): ImportDedupPreview {
   const db = store.database,
     q = db.query;
+  if (options.enabled === false) {
+    const suppliedIds = questions.flatMap((question) => (question.id ? [question.id] : []));
+    if (new Set(suppliedIds).size !== suppliedIds.length)
+      fail(400, 'IMPORT_DUPLICATE_SOURCE_ID', '关闭查重时，来源题号仍不能重复，请先整理重复题号。');
+    const headers = db.all(
+      q
+        .selectFrom('questions')
+        .select(['id', db.expressions.field<string>('data', 'updatedAt').as('stamp')])
+        .orderBy('id'),
+    );
+    return {
+      enabled: false,
+      fingerprint: importDigest(
+        JSON.stringify({
+          enabled: false,
+          questions: questions.map((question) => {
+            const { createdAt: _created, updatedAt: _updated, ...content } = question as Question;
+            return content;
+          }),
+          headers,
+        }),
+      ),
+      total: questions.length,
+      counts: { new: questions.length, exact: 0, similar: 0 },
+      items: questions.map((question, index) => ({
+        key: `i-${index}`,
+        index,
+        title: question.title,
+        type: question.type,
+        kind: 'new' as const,
+        candidates: [],
+      })),
+      metrics: { indexed: 0, compared: 0, candidateLimit, hashesReused: 0, hashesComputed: 0 },
+    };
+  }
   db.imports.ensure();
   const rows = db
     .all(q.selectFrom('question_import_index').selectAll())
@@ -56,7 +124,31 @@ export function previewQuestionImport(
     titles = grouped(rows, (row) => row.title_key),
     words = grouped(rows, (row) => row.vocab_key);
   const features = questions.map(importQuestionFeatures),
-    hashes = questions.map((question) => signature(question, assetKey));
+    hashes = questions.map(
+      (question, index) => hashHints?.[index]?.contentHash || signature(question, assetKey),
+    );
+  const categoryDomains = new Map(
+    store.all<Category>('categories').map((category) => [category.id, category.domainId]),
+  );
+  for (const [id, domain] of stagedCategories || []) categoryDomains.set(id, domain);
+  const domainsFor = (categories: string[]) =>
+    new Set(
+      categories.flatMap((id) => (categoryDomains.has(id) ? [categoryDomains.get(id)!] : [])),
+    );
+  const incomingDomains = questions.map((question) => domainsFor(question.categoryIds || []));
+  const localDomains = new Map(
+    db
+      .all(
+        q
+          .selectFrom('questions')
+          .select(['id', db.expressions.field<string>('data', 'categoryIds').as('categories')]),
+      )
+      .map((row) => [row.id, domainsFor(JSON.parse(row.categories || '[]'))]),
+  );
+  const sharesDomain = (left: ReadonlySet<string>, right: ReadonlySet<string>) =>
+    !left.size || !right.size || [...left].some((id) => right.has(id));
+  let hashesReused = 0,
+    hashesComputed = questions.length - (hashHints?.filter(Boolean).length || 0);
   const termCounts = new Map(
     db
       .all(
@@ -78,10 +170,10 @@ export function previewQuestionImport(
     return originalCache.get(id);
   };
   const incomingExact = new Map<string, number[]>(),
-    incomingPrompt = new Map<string, number[]>(),
-    incomingTitle = new Map<string, number[]>(),
-    incomingWord = new Map<string, number[]>(),
-    incomingTerms = new Map<string, number[]>();
+    incomingPrompt: IncomingBuckets = new Map(),
+    incomingTitle: IncomingBuckets = new Map(),
+    incomingWord: IncomingBuckets = new Map(),
+    incomingTerms: IncomingBuckets = new Map();
   const items: ImportDedupItem[] = [];
   for (let offset = 0; offset < questions.length; offset += chunkSize) {
     const exactIds = [
@@ -119,13 +211,25 @@ export function previewQuestionImport(
     for (let index = offset; index < Math.min(offset + chunkSize, questions.length); index++) {
       const question = questions[index]!,
         feature = features[index]!,
-        hash = hashes[index]!,
+        initialHash = hashes[index]!,
         key = `i-${index}`,
         content = importQuestionContent(question, assetKey);
-      const repeated = (incomingExact.get(hash) || []).find(
+      let hash = initialHash;
+      let repeated = (incomingExact.get(hash) || []).find(
         (prior) => importQuestionContent(questions[prior]!, assetKey) === content,
       );
-      const existing = (exact.get(hash) || []).find((row) => canonicalFor(row.id) === content);
+      let existing = (exact.get(hash) || []).find((row) => canonicalFor(row.id) === content);
+      if (hashHints?.[index]) {
+        if (repeated !== undefined || existing) hashesReused++;
+        else {
+          hashes[index] = hash = signature(question, assetKey);
+          hashesComputed++;
+          repeated = (incomingExact.get(hash) || []).find(
+            (prior) => importQuestionContent(questions[prior]!, assetKey) === content,
+          );
+          existing = (exact.get(hash) || []).find((row) => canonicalFor(row.id) === content);
+        }
+      }
       const item: ImportDedupItem = {
         key,
         index,
@@ -149,16 +253,31 @@ export function previewQuestionImport(
           titles.get(feature.titleKey),
           feature.vocabKey ? words.get(feature.vocabKey) : undefined,
         ])
-          for (const row of (bucket || []).slice(0, candidateLimit)) ids.add(row.id);
+          for (const row of (bucket || [])
+            .filter((row) =>
+              sharesDomain(incomingDomains[index]!, localDomains.get(row.id) || new Set()),
+            )
+            .slice(0, candidateLimit))
+            ids.add(row.id);
         const hits = new Map<string, number>();
         for (const term of termSelections[index - offset] || [])
           for (const id of postings.get(term) || []) hits.set(id, (hits.get(id) || 0) + 1);
-        for (const [id] of [...hits].sort((a, b) => b[1] - a[1]).slice(0, candidateLimit))
+        for (const [id] of [...hits]
+          .filter(([id]) =>
+            sharesDomain(incomingDomains[index]!, localDomains.get(id) || new Set()),
+          )
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, candidateLimit))
           ids.add(id);
         const candidates: ImportDedupCandidate[] = [];
         for (const id of [...ids].slice(0, candidateLimit)) {
           const row = byId.get(id);
-          if (!row) continue;
+          if (
+            !row ||
+            (question.id !== id &&
+              !sharesDomain(incomingDomains[index]!, localDomains.get(id) || new Set()))
+          )
+            continue;
           compared++;
           const samePrompt = row.prompt_hash === feature.promptHash,
             sameTitle = row.title_key === feature.titleKey,
@@ -198,13 +317,21 @@ export function previewQuestionImport(
           [incomingWord, feature.vocabKey],
         ] as const)
           if (map[1])
-            for (const prior of (map[0].get(map[1]) || []).slice(-candidateLimit))
+            for (const prior of incomingCandidates(map[0], map[1], incomingDomains[index]!))
               batchIndices.add(prior);
         for (const term of feature.tokens.slice(0, 12))
-          for (const prior of (incomingTerms.get(term) || []).slice(-20))
+          for (const prior of incomingCandidates(
+            incomingTerms,
+            term,
+            incomingDomains[index]!,
+          ).slice(0, 20))
             if (batchIndices.size < candidateLimit) batchIndices.add(prior);
         for (const prior of [...batchIndices].slice(0, candidateLimit)) {
-          if (items[prior]?.kind === 'exact') continue;
+          if (
+            items[prior]?.kind === 'exact' ||
+            !sharesDomain(incomingDomains[index]!, incomingDomains[prior]!)
+          )
+            continue;
           const other = features[prior]!;
           compared++;
           const score =
@@ -232,23 +359,18 @@ export function previewQuestionImport(
         if (item.candidates.length) item.kind = 'similar';
       }
       items.push(item);
+      const exactEntries = incomingExact.get(hash) || [];
+      exactEntries.push(index);
+      incomingExact.set(hash, exactEntries);
       for (const [map, value] of [
-        [incomingExact, hash],
         [incomingPrompt, feature.promptHash],
         [incomingTitle, feature.titleKey],
         [incomingWord, feature.vocabKey],
       ] as const) {
-        if (!value) continue;
-        const bucket = map.get(value) || [];
-        bucket.push(index);
-        map.set(value, bucket);
+        rememberIncoming(map, value, incomingDomains[index]!, index);
       }
-      for (const term of feature.tokens) {
-        const bucket = incomingTerms.get(term) || [];
-        bucket.push(index);
-        if (bucket.length > 50) bucket.shift();
-        incomingTerms.set(term, bucket);
-      }
+      for (const term of feature.tokens)
+        rememberIncoming(incomingTerms, term, incomingDomains[index]!, index);
     }
   }
   const counts = { new: 0, exact: 0, similar: 0 };
@@ -256,14 +378,17 @@ export function previewQuestionImport(
   return {
     fingerprint: importDigest(
       JSON.stringify([
-        questions.map((question) => [question.id, importQuestionContent(question, assetKey)]),
+        questions.map((question, index) => [question.id, hashes[index]]),
         rows.map((row) => [row.id, row.content_hash, row.source_stamp, row.status]),
+        questions.map((question) => question.categoryIds),
+        [...categoryDomains],
       ]),
     ),
+    enabled: true,
     total: questions.length,
     counts,
     items,
-    metrics: { indexed: rows.length, compared, candidateLimit },
+    metrics: { indexed: rows.length, compared, candidateLimit, hashesReused, hashesComputed },
   };
 }
 
@@ -355,8 +480,10 @@ export function prepareQuestionImport(
   suppliedPlan?: ImportDedupPreview,
   assetKey = store.database.imports.assetResolver(),
   allowUnresolved = false,
+  hashHints?: ReadonlyArray<PackageQuestionHashHint | undefined>,
 ) {
-  const plan = suppliedPlan || previewQuestionImport(store, questions, assetKey),
+  const plan =
+      suppliedPlan || previewQuestionImport(store, questions, assetKey, rawOptions, hashHints),
     { targets, replacements } = resolveQuestionImportTargets(
       store,
       questions,
@@ -436,35 +563,41 @@ export function prepareQuestionImport(
     updates.set(target, next);
     if (existing) contentUpdates.add(target);
   }
-  // Collapse identities introduced by reference rewriting; an existing target
-  // with learning evidence cannot be silently redirected by a replacement.
-  const seen = new Map<string, Array<{ id: string; content: string }>>();
-  const originalRows = store.database.all(
-    store.database.query.selectFrom('question_import_index').select(['id', 'content_hash']),
-  );
-  const existingByHash = grouped(originalRows, (row) => row.content_hash);
-  for (const [target, next] of updates) {
-    const content = importQuestionContent(rewrite(next, idMap()), assetKey),
-      hash = importDigest(content);
-    let same = (seen.get(hash) || []).find((value) => value.content === content)?.id;
-    if (!same)
-      for (const row of existingByHash.get(hash) || []) {
-        if (row.id === target || updates.has(row.id)) continue;
-        const original = store.get<Question>('questions', row.id);
-        if (original && importQuestionContent(original, assetKey) === content) {
-          same = row.id;
-          break;
+  if (rawOptions.enabled !== false) {
+    // Collapse identities introduced by reference rewriting; an existing target
+    // with learning evidence cannot be silently redirected by a replacement.
+    const seen = new Map<string, Array<{ id: string; content: string }>>();
+    const originalRows = store.database.all(
+      store.database.query.selectFrom('question_import_index').select(['id', 'content_hash']),
+    );
+    const existingByHash = grouped(originalRows, (row) => row.content_hash);
+    for (const [target, next] of updates) {
+      const content = importQuestionContent(rewrite(next, idMap()), assetKey),
+        hash = importDigest(content);
+      let same = (seen.get(hash) || []).find((value) => value.content === content)?.id;
+      if (!same)
+        for (const row of existingByHash.get(hash) || []) {
+          if (row.id === target || updates.has(row.id)) continue;
+          const original = store.get<Question>('questions', row.id);
+          if (original && importQuestionContent(original, assetKey) === content) {
+            same = row.id;
+            break;
+          }
         }
+      if (same) {
+        if (store.get('questions', target))
+          fail(
+            409,
+            'IMPORT_REPLACEMENT_DUPLICATE',
+            '覆盖会产生完全重复题，请改为保留原题或调整选择',
+          );
+        for (const [key, value] of targets) if (value === target) targets.set(key, same);
+        updates.delete(target);
+      } else {
+        const bucket = seen.get(hash) || [];
+        bucket.push({ id: target, content });
+        seen.set(hash, bucket);
       }
-    if (same) {
-      if (store.get('questions', target))
-        fail(409, 'IMPORT_REPLACEMENT_DUPLICATE', '覆盖会产生完全重复题，请改为保留原题或调整选择');
-      for (const [key, value] of targets) if (value === target) targets.set(key, same);
-      updates.delete(target);
-    } else {
-      const bucket = seen.get(hash) || [];
-      bucket.push({ id: target, content });
-      seen.set(hash, bucket);
     }
   }
   const finalMap = idMap();
@@ -514,6 +647,7 @@ export function applyQuestionImport(
   store: Store,
   questions: QuestionInput[],
   rawOptions: ImportDedupOptions = {},
+  hashHints?: ReadonlyArray<PackageQuestionHashHint | undefined>,
 ): AppliedQuestionImport {
   const options = parse(importDedupOptionsSchema, rawOptions);
   return store.transaction(() => {
@@ -529,6 +663,10 @@ export function applyQuestionImport(
         store,
         questions,
         options,
+        undefined,
+        undefined,
+        false,
+        hashHints,
       ),
       currentSettings = getSettings(store),
       sourceCache = new Map();

@@ -9,6 +9,7 @@ export const importDedupDecisionSchema = z
   .strict();
 export const importDedupOptionsSchema = z
   .object({
+    enabled: z.boolean().optional(),
     expectedFingerprint: z
       .string()
       .regex(/^[a-f0-9]{64}$/)
@@ -18,6 +19,7 @@ export const importDedupOptionsSchema = z
   .strict();
 export const importDedupPreviewSchema = z
   .object({
+    enabled: z.boolean().optional(),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     total: z.number().int().nonnegative(),
     counts: z
@@ -60,6 +62,8 @@ export const importDedupPreviewSchema = z
         indexed: z.number().int().nonnegative(),
         compared: z.number().int().nonnegative(),
         candidateLimit: z.number().int().positive(),
+        hashesReused: z.number().int().nonnegative().optional(),
+        hashesComputed: z.number().int().nonnegative().optional(),
       })
       .strict(),
   })

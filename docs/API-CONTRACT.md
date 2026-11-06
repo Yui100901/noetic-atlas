@@ -41,8 +41,8 @@
 - `POST /api/questions/metadata`：严格接收 `{ids}`，1—50,000个不重复题号，返回 `{items,missingIds}`；按输入顺序提供 `id/title/type/status`，包含未发布状态，不读取正文或学习笔记。用于大型题集编辑与草稿恢复的只读批量核对。
 - `POST /api/questions/review`：`{ids,action:'approve'|'return_to_draft',confirmed:true,expectedUpdatedAt}`。最多 500 道 pending 题，版本 map 恰好覆盖选题，整批校验后原子处理。
 - `GET /api/questions/import-template`：新题 JSON 模板。
-- `POST /api/questions/import-preview`：`{data:learning-new-questions封包}`，只读返回`ImportDedupPreview`，含完全重复、相似候选、输入索引与指纹。
-- `POST /api/questions/bulk-import`：`{data,confirmed:true,dedup?:{expectedFingerprint,decisions}}`，单次最多500题。新题待审核，完全重复复用；相似题必须显式确认。返回`added/reused/updated/items/idMap/dedup`，items与输入一一对应。
+- `POST /api/questions/import-preview`：`{data:learning-new-questions封包,dedup?:{enabled?}}`，只读返回`ImportDedupPreview`，含完全重复、相似候选、输入索引与指纹。
+- `POST /api/questions/bulk-import`：`{data,confirmed:true,dedup?:{enabled?,expectedFingerprint?,decisions?}}`，单次最多500题。查重默认开启，新题待审核，完全重复复用；相似题必须显式确认。返回`added/reused/updated/items/idMap/dedup`，items与输入一一对应。
 - `POST /api/questions/pending/export`：`{ids}`，导出带版本的待审核 JSON。
 - `POST /api/questions/pending/import`：`{data,confirmed:true}`，批量修订原有待审核题，不新建、不自动发布；保留 id、pending 状态及导出时 updatedAt。
 独立题库集合接口已移除，统一通过 `/api/papers` 管理题集。`QuestionBank` 与 `question_banks` 只作为旧数据库／旧 JSON 的迁移输入保留，不再是可创建的业务实体；迁移规则见下文。
@@ -50,6 +50,8 @@
 题型为 `true_false、single_choice、multiple_choice、fill_blank、short_answer、essay、group`。判断答案为 `true|false`，选择题答案引用选项 key；填空题的 blanks 按顺序保存可接受答案、大小写及首尾空白规则。group 含 2–30 道独立子题，共用主干材料，组题按整组选择，作答时展开。题集可保存超过500个作答项，每次练习或考试最多500个独立作答项。图片采用托管资源链接或已验证的栅格 data URI。
 
 查重决策为`{key:"i-N",action:"replace"|"keep"|"both",targetId?}`。保留或覆盖必须指向预览候选；所有相似项处理后才能提交。预览指纹过期、同时覆盖同一目标、无法安全映射小题标准均返回409，任何分片不落库。可信迁移与完整恢复不采用普通内容合题规则。
+
+`dedup.enabled`省略为true；false跳过题目内容索引、hash计算、候选查询及合题，冲突题号另存，但不跳过格式、依赖、附件及准入校验。查重模式参与预览指纹，不可复用另一模式的预览。相似候选按映射后的领域相交筛选，不以细分类隔离；缺少领域时保守兜底，同ID冲突仍提示。完全重复使用全库摘要索引并核对实际学习内容，兼顾别名领域及跨学科题。批内候选按领域分别保留有限集合，避免跨域数据挤占，不进行全量两两比对。
 
 ## 资料与文件
 
@@ -189,7 +191,7 @@ today及recent的每条记录包含`paperAvailable`和`progress`。progress的st
 - `GET /api/learning/reset-preview`：读取影响数量及新鲜度指纹，含`reviewCards、reviewEvents`；`POST /api/learning/reset`接收`{confirmed:true,fingerprint}`，事务内重新核对。清除掌握、复习安排、错误状态、旧复习动作及 FSRS 卡片／事件，保留收藏、笔记、卷面历史成绩和草稿。过期返回`LEARNING_RESET_PREVIEW_STALE`，必须重新预览。
 - `GET /api/settings`：SystemSettings；`PUT /api/settings`：`{settings,confirmedRetention?,expectedRetention?}`。
 
-`SystemSettings.theme`为`green|dark|pink|sky|mint`，默认`green`；旧配置缺少该字段时补默认值。主题属于可迁移的外观偏好，配置导出、完整备份及Android本地持久化均保留，未知主题拒绝写入。
+`SystemSettings.theme`为`green|dark|pink|sky|mint`，默认`green`；旧配置缺少该字段时补默认值。主题属于可迁移的外观偏好，SQLite迁移及Android本地持久化均保留，未知主题拒绝写入。设置界面的数据交换统一为迁移子页，不再提供独立配置导入导出；早期配置协议保留为底层接口。
 
 前端不再设置全局学习记录导航：题集详情组织各自草稿、历史、错题与复习，随机与单题在随机练习页单独组织。上下文错题取该范围内每个叶题最新已判结果，后续正确则移出，未判不覆盖已判，未答客观题需巩固。`learning_results`独立保存判定、来源及错误题目必要快照，不保留整卷答案；清理历史后仍可阅读公共材料和错误题目，`historyAvailable:false`表示不再有完整复盘，客户端不生成失效链接。组合小题使用原题ID与小题ID的元组保存学习状态；收藏整组，掌握、日期及笔记独立。
 
@@ -256,7 +258,7 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 ### 转换导入与审核
 
 - `POST /api/ai/import`：`{text,sourceName?,categoryIds?,tagIds?,count?}`，每批最多 50 题。返回候选结构及领域／分类／标签名称建议；文件先在客户端提取文字，扫描 PDF 需先 OCR，不接受任意服务器文件路径。
-- `POST /api/ai/runs/:id/import-preview`：`{indexes?或questions?,categoryIds?,tagIds?}`，对同一规范化选择只读查重。
+- `POST /api/ai/runs/:id/import-preview`：`{indexes?或questions?,categoryIds?,tagIds?,dedup?}`，对同一规范化选择只读查重；dedup.enabled默认true。
 - `POST /api/ai/runs/:id/import`：`{confirmed:true,indexes?或questions?,categoryIds?,tagIds?,dedup?}`，确认查重决策后新增／复用／覆盖，新题进入pending。返回逐输入结果及计数；run.importedQuestionIds去重。同一结果不可重复应用，失败不保存。教材分批的`POST /api/ai/document-jobs/:id/import-preview`与`import`使用相同选择体，保留其原有confirmed要求，选中多块整体查重、整体提交。
 - `POST /api/ai/review`：`{questionIds,autoApprove?,expectedUpdatedAt}`。每批 1–20 道 pending 题。返回 valid／needs_changes／uncertain、issues 和可选 suggestedChanges。仅本次明确启用 autoApprove 且模型无问题、无缺图等警告时，valid 项通过审核；发布前再次校验版本。
 - `POST /api/ai/runs/:id/correction`：`{confirmed:true,questionId}`，应用修订建议后仍为 pending，需要再次审核。
@@ -300,18 +302,28 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 
 - `POST /api/packages/export` 生成应用可导入的 ZIP。请求包含 `kind`。分享传 `selection`，配置可传 `includeAi`，待审核修改传 `ids`。响应包含 `filename`、`mimeType`、`dataBase64`、`byteLength`。
 - `POST /api/packages/export-preview`：与export使用相同选择体，返回题量、附件、展开内容及ZIP保守上界、allowed、reasons与recommendations。只读，不生成ZIP，不将附件Base64读入应用。export会再次检查，超限422 `EXPORT_PREFLIGHT_BLOCKED`，details含同一预检及处理入口。
-- `POST /api/packages/preview` 上传 `{dataBase64}`。读取根 manifest 后返回用途、标题、变更统计、警告和绑定当前包及目标数据的 `fingerprint`。
-- `POST /api/packages/import` 提交同一包及 `{expectedFingerprint,confirmed:true}`。普通新增或分享的相似处理在顶层传`decisions`；可信迁移还需 `confirmedTrusted:true`，配置清理超限记录时需 `confirmedRetention:true`。分片共用一个事务。
+- `POST /api/packages/preview` 上传 `{dataBase64,dedup?,taxonomyMapping?}`。读取根manifest后返回用途、标题、变更统计、警告和绑定当前包、目标数据及所选查重／映射的`fingerprint`；分享包另返回来源`taxonomy:{domains,categories,tags}`。
+- `POST /api/packages/import` 提交同一包、相同选项及 `{expectedFingerprint,confirmed:true}`。`dedup`为`{enabled?,expectedFingerprint?,decisions?}`，旧顶层`decisions`仍接受且优先。早期可信JSON迁移还需`confirmedTrusted:true`，旧配置清理超限记录时需`confirmedRetention:true`。分片共用一个事务。
 - `GET /api/packages/import-question?fingerprint=...&index=N`：按预览指纹读取一条导入内容；图片仅在预览副本转为可显示的data URI，包及其指纹不变。缓存过期返回409，需要重新预览。
-- `/api/sharing/export`、`/api/sharing/preview` 和 `/api/sharing/import` 继续提供内部 JSON 数据接口，应用的文件界面使用 ZIP。协议见[数据包格式](./数据包格式.md)。
+- `/api/sharing/export`继续提供内部JSON数据接口；`/api/sharing/preview`接受`{data,dedup?,taxonomyMapping?}`，`/api/sharing/import`另接受`confirmed:true、expectedFingerprint?`。应用的内容文件界面使用ZIP，SQLite迁移还可导出原始数据库。协议见[数据包格式](./数据包格式.md)。
+
+分享的`taxonomyMapping`按`domains/categories/tags`分别传`[{sourceId,targetId?或name?}]`。targetId映射到已有项，name修改来源名称后按共享语义规则创建或复用，二者互斥；同一sourceId不得重复。分类必须属于映射后的领域，领域标签只能映射到对应领域或通用标签，不修改本机既有元数据。映射先于查重执行；未知来源、无效目标和跨领域映射拒绝且不落库。模板使用本地归类、可信旧JSON迁移保留身份，二者不接受来源归类映射。
+
+含题目的新导出包自动生成`metadata/question-hashes.json`，算法标识`noetic-question-sha256-v1`，每组绑定payload路径、SHA-256、题目序号和数量。清单完整性校验后才读取缓存；未知算法、畸形缓存或绑定失效则回退计算，不绕过清单校验。归类／记录元数据变动不影响学习内容摘要；答案、标准、关联内容或附件身份变化使提示失效。hash命中仍比较规范学习内容，未命中回算真实hash，防止伪造缓存误合并或隐藏重复。预览`metrics.hashesReused/hashesComputed`表示内容hash复用／计算次数，并不表示跳过内容校验或所有SHA工作。
 
 - `POST /api/sharing/export-document`：同一选择返回 ExportDocument，由网页／Android 共用渲染器生成含答案的 PDF 或 Markdown；普通题目选择单批最多500题，题集分享受封包大小和完整性校验。
 - `GET /api/papers/:id/export-document?mode=blank|answers`：空白卷或答案卷；`GET /api/attempts/:id/export-document?mode=blank|answers|completed`：已提交会话的快照卷。
 - `GET /api/papers/:id/export?answers=true|false`：Markdown 卷。网页下载转换托管图片为 data URI；PDF 中 PNG/JPEG 直嵌，GIF/WebP 使用首帧。
-- `POST /api/content-exports/preview`：传`{domainIds,purpose?,mode?,status?,collection?}`，返回领域题量目录、范围、去重题量、归属次数、空领域、分类／标签数量、预计题目字节及`fingerprint`。领域空数组只查询目录，不默认导出全部。`purpose=migration|share`，默认迁移；`mode=combined|per_domain`，默认合并。迁移默认`all/all`状态与属性，分享默认`published/general`。
+- `POST /api/content-exports/preview`：传`{domainIds,purpose?,mode?,status?,collection?}`，返回领域题量目录、范围、去重题量、归属次数、空领域、分类／标签数量、预计题目字节及`fingerprint`。领域空数组只查询目录，不默认导出全部。底层`purpose=migration|share`仍保留，省略为旧迁移用途；当前“分享与导入 → 按领域分享”界面显式使用share，默认`published/general`。`mode=combined|per_domain`，默认合并；旧迁移用途默认`all/all`且只导出内容，不代表完整SQLite领域迁移。
 - `POST /api/content-exports`：相同范围加 `expectedFingerprint`，返回 `{filename,mimeType,dataBase64,byteLength,summary}`。两种模式都返回带 manifest 的 ZIP，`combined` 合并去重，`per_domain` 在包内分领域及分片。实际ZIP上限128MiB，单次去重题量最多50000。源题、依赖、范围变化返回409，需重新预览。
-- `GET /api/export`：完整 JSON；`POST /api/import`：`{data,mode:'merge'}`。迁移保留题目原审核状态，与新增题目导入区分；同 ID 内容不静默覆盖。仅接收无`format`的可信迁移封包，拒绝`learning-share`等专用格式，避免通过迁移绕过新增审核。
-- `GET /api/backup.sqlite`：可迁移 SQLite 下载副本，清除 AI 密钥，保留本机源库。JSON 备份／分享不包含 AI 凭据；附件较多时优先 SQLite。
+- `POST /api/migrations/preview`：`{domainIds?:string[]}`，省略或空数组为整体迁移；否则为指定的一个或多个领域。返回`{scope,domainIds,fingerprint,counts,seedQuestions,dependencyQuestions,warnings}`。只读图规划，不生成数据库、不改原库。
+- `GET /api/migrations/database?domainIds=<JSON数组>&fingerprint=...`：返回`application/vnd.sqlite3`二进制一致性副本，附下载文件名及Content-Length。必须与预览范围和指纹相符；源数据在预览或异步备份期间变化返回409 `MIGRATION_PREVIEW_STALE`。前端可直接保存.sqlite或封装为manifest.kind=`sqlite-backup`的ZIP，二者数据语义一致。
+- `GET /api/export`和`POST /api/import`（`{data,mode:'merge'}`）保留早期JSON白名单合并协议；同ID内容不静默覆盖，保留题目原审核状态。仅接收无format的可信迁移封包，拒绝learning-share等专用格式。设置界面不再以该协议导出迁移。
+- `GET /api/backup.sqlite`保留旧整体下载接口；新设置迁移统一使用带范围预览和新鲜度校验的`/api/migrations/*`。所有产品导出的SQLite副本清除AI密钥，保留本机原库。
+
+SQLite整体迁移保留全部业务表，包括完整作答／答案、学习摘要、笔记、草稿、FSRS链、计划及私人AI任务和历史。领域迁移以所选领域题目／资料为种子，保留相关完整题集、会话、学习日及其前向依赖，不拆分跨域答卷或重算分数，不因额外依赖题再次反向纳入它的所有其他题集。必要附件、原文版本、状态与来源跟随保留；归类结构、系统配置保留，副本每日推题关闭，无归属AI任务和草稿仅整体迁移保留。处理只发生于独立副本，重建派生索引、验证核心及私有记录并VACUUM清除废弃页；源数据和本机密钥不改写。
+
+SQLite恢复是目标库整体替换，不是ID合并，领域迁移亦然。电脑停服后先备份目标库，再使用原始数据库或经`data:unpack`校验提取的SQLite文件启动；已有库追加题目使用分享包。
 
 Android通过原生平台接口接收SQLite二进制进行完整恢复，不通过HTTP JSON传输。预览先检查原始文件头、完整性、版本、应用表结构及记录主键，再在隔离副本验证数据和引用，剥除输入触发器及派生缓存并由可信代码重建。确认绑定已校验文件、本机写入版本及磁盘基线；本机有活动考试时拒绝。替换前写入并回读独立原库副本，落盘失败回退原连接和原文件；成功后刷新应用，旧页面写入被拒绝。恢复后的AI密钥清除且AI关闭，需重新填写启用；原库私有副本仍含原配置，对外导出时脱敏。JSON完整备份包含`studyParts`、`learningResults`及`questionHistory`，与同包作答不一致的学习证据整批拒绝。合并时同ID保留本地记录，不用旧备份覆盖本地较新判题。
 

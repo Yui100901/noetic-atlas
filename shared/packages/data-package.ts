@@ -3,6 +3,14 @@ import { base64ToBytes, bytesToBase64 } from '../assets/assets.js';
 import { createCompressedZip } from '../exports/zip.js';
 import { readPackageArchive } from './archive-reader.js';
 import {
+  QUESTION_HASH_ALGORITHM,
+  QUESTION_HASHES_PATH,
+  questionHashAssetKey,
+  questionHashesForPayload,
+  readPackageQuestionHashes,
+  type QuestionHashSidecar,
+} from './question-hashes.js';
+import {
   packageError,
   packageLimits,
   packagePathIsSafe,
@@ -58,6 +66,9 @@ export async function buildDataPackage(input: DataPackageInput): Promise<Uint8Ar
   const files = new Map<string, { bytes: Uint8Array; mediaType: string }>();
   const folded = new Set<string>();
   const digests = new Map<string, string>();
+  const assetIdentities = new Map<string, string>();
+  const ambiguousAssets = new Set<string>();
+  const hashPayloads: Array<{ path: string; questions: unknown[]; payloadSha256: string }> = [];
   let total = 0;
   const add = (path: string, bytes: Uint8Array, mediaType: string) => {
     if (
@@ -73,8 +84,12 @@ export async function buildDataPackage(input: DataPackageInput): Promise<Uint8Ar
     folded.add(path.toLowerCase());
   };
   if (input.payloads.length > limits.maxPayloads) packageError('数据包分片数量超过限制');
-  for (const file of input.files || [])
+  for (const file of input.files || []) {
+    // A copied cache is never authoritative for an edited/repacked payload.
+    // This producer regenerates its derived metadata from the actual inputs.
+    if (file.path.toLowerCase() === QUESTION_HASHES_PATH) continue;
     add(file.path, file.bytes, file.mediaType || 'application/octet-stream');
+  }
   const payloads: DataPackageManifest['payloads'] = [];
   for (const part of input.payloads) {
     validateDataEnvelope(input.kind, part.data);
@@ -96,6 +111,14 @@ export async function buildDataPackage(input: DataPackageInput): Promise<Uint8Ar
           return packageError('附件Base64无法解析');
         }
         const digest = await packageSha256(bytes);
+        if (typeof item.id === 'string') {
+          const key = `${item.mimeType}:${digest}`;
+          if (assetIdentities.has(item.id) && assetIdentities.get(item.id) !== key) {
+            ambiguousAssets.add(item.id);
+            assetIdentities.delete(item.id);
+          }
+          if (!ambiguousAssets.has(item.id)) assetIdentities.set(item.id, key);
+        }
         const extension =
           (
             {
@@ -122,7 +145,26 @@ export async function buildDataPackage(input: DataPackageInput): Promise<Uint8Ar
     }
     const bytes = encoder.encode(JSON.stringify(data));
     add(part.path, bytes, 'application/json');
+    if (Array.isArray(part.data.questions) && part.data.questions.length) {
+      const payloadSha256 = await packageSha256(bytes);
+      digests.set(part.path, payloadSha256);
+      hashPayloads.push({ path: part.path, questions: part.data.questions, payloadSha256 });
+    }
     payloads.push({ path: part.path, ...(part.domainIds ? { domainIds: part.domainIds } : {}) });
+  }
+  if (hashPayloads.length) {
+    const assetKey = questionHashAssetKey(assetIdentities);
+    const sidecar: QuestionHashSidecar = {
+      format: 'noetic-atlas-question-hashes',
+      schemaVersion: 1,
+      algorithm: QUESTION_HASH_ALGORITHM,
+      payloads: hashPayloads.map(part => ({
+        path: part.path,
+        payloadSha256: part.payloadSha256,
+        hashes: questionHashesForPayload(part.questions, assetKey),
+      })),
+    };
+    add(QUESTION_HASHES_PATH, encoder.encode(JSON.stringify(sidecar)), 'application/json');
   }
   const records = [];
   for (const [path, file] of files)
@@ -183,6 +225,8 @@ export async function readDataPackage(
   const payloads: DataPackagePayload[] = [];
   const descriptors = new Map(manifest.files.map((file) => [file.path, file]));
   const assetData = new Map<string, string>();
+  const assetIdentities = new Map<string, string>();
+  const ambiguousAssets = new Set<string>();
   for (const entry of manifest.payloads) {
     const data = parseJson(files.get(entry.path)!, entry.path);
     validateDataEnvelope(manifest.kind, data);
@@ -205,6 +249,14 @@ export async function readDataPackage(
           rest.sizeBytes !== bytes.length
         )
           return packageError('附件路径、类型或大小与清单不一致');
+        if (typeof rest.id === 'string') {
+          const key = `${descriptor.mediaType}:${descriptor.sha256}`;
+          if (assetIdentities.has(rest.id) && assetIdentities.get(rest.id) !== key) {
+            ambiguousAssets.add(rest.id);
+            assetIdentities.delete(rest.id);
+          }
+          if (!ambiguousAssets.has(rest.id)) assetIdentities.set(rest.id, key);
+        }
         let dataBase64 = assetData.get(packagePath);
         if (dataBase64 === undefined) {
           dataBase64 = bytesToBase64(bytes);
@@ -215,5 +267,14 @@ export async function readDataPackage(
     }
     payloads.push({ ...entry, data });
   }
-  return { manifest, payloads, files };
+  let questionHashes;
+  const cache = files.get(QUESTION_HASHES_PATH);
+  if (cache) {
+    try {
+      questionHashes = readPackageQuestionHashes(JSON.parse(decoder.decode(cache)), payloads, descriptors);
+    } catch {
+      // Optional metadata cannot make otherwise valid content unusable.
+    }
+  }
+  return { manifest, payloads, files, ...(questionHashes?.size ? { questionHashes } : {}), questionHashAssets: assetIdentities };
 }

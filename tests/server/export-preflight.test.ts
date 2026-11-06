@@ -27,7 +27,7 @@ test('export budget covers count, file, expanded and STORE bounds with actionabl
     const report = exportBudget({ ...small, ...patch });
     assert.equal(report.allowed, false);
     assert.ok(report.reasons.length);
-    assert.ok(report.recommendations.some((item) => item.href.includes('sub=content')));
+    assert.ok(report.recommendations.some((item) => item.href.includes('sharing?tab=export')));
   }
   assert.ok(
     exportBudget({ ...small, jsonBytes: 300 * 1024 ** 2 }, 'backup').recommendations.some((item) =>

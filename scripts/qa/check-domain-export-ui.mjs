@@ -1,5 +1,5 @@
 import { readDataPackage } from '../../shared/packages/data-package.ts';
-/** Real domain migration/share downloads, clean receivers and bounded stale-response checks. */
+/** Domain content sharing downloads, clean receivers and stale-response checks. */
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -32,7 +32,7 @@ const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCA
 seed.assets=[{id:'fixture-export-image',filename:'示意图.png',mimeType:'image/png',dataBase64:png,sizeBytes:Buffer.from(png,'base64').length,width:1,height:1,createdAt:'2026-10-21T00:00:00.000Z'}];
 seed.questions[0].stemMarkdown+='\n\n![示意图](/api/assets/fixture-export-image/content)';
 const imported=await app.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data:seed}});assert.equal(imported.statusCode,200,imported.body);
-return {singleCount:8,combinedCount:9,shareCount:7};
+return {singleCount:6,combinedCount:7,allCount:9};
 `,
 });
 const { page, origin } = h,
@@ -78,17 +78,14 @@ function verifyPrivateExclusion(data) {
     assert.equal(Object.hasOwn(data, key), false, `Unexpected private key ${key}`);
 }
 try {
-  await page.goto(origin + '/#/settings?tab=backup&sub=content');
+  await page.goto(origin + '/#/sharing?tab=export');
   await ui.getByRole('heading', { name: '按领域导出题库', exact: true }).waitFor();
   await ui.getByText('正在统计各领域题量…', { exact: true }).waitFor({ state: 'hidden' });
-  assert.ok(await ui.getByRole('radio', { name: /迁移题库/ }).isChecked());
-  assert.match(
-    await ui.locator('.domain-export-scope').innerText(),
-    /所有审核状态.*通用与个人专项/s,
-  );
+  assert.equal(await ui.getByRole('radio', { name: /迁移题库|分享题库/ }).count(), 0);
+  assert.match(await ui.locator('.domain-export-scope').innerText(), /已通过审核.*仅通用题目/s);
   assert.ok(await download().isDisabled());
   assert.equal(await page.getByRole('heading', { name: '完整数据迁移包', exact: true }).count(), 0);
-  checks.push('内容迁移页聚焦领域导出；默认可信迁移保留审核/个人内容，预览前不可下载');
+  checks.push('按领域分享在分享与导入；默认已审通用内容，预览前不可下载，不混入系统迁移用途');
 
   await field('搜索导出领域').fill('语言');
   assert.equal(await ui.locator('.domain-export-domain').count(), 1);
@@ -107,13 +104,19 @@ try {
   assert.equal(single.assets.length, 1);
   const singleImported = await importIntoCleanReceiver(singleDownload.bytes);
   assert.equal(singleImported.questions.length, h.state.singleCount);
-  assert.equal(singleImported.questions.find((q) => q.id === 'FIXTURE-PENDING').status, 'pending');
+  assert.ok(
+    singleImported.questions.every((q) => q.status === 'pending' && q.collection === 'general'),
+  );
   assert.equal(
-    singleImported.questions.find((q) => q.id === 'FIXTURE-PERSONAL').collection,
-    'personal',
+    singleImported.questions.some((q) => q.id === 'FIXTURE-PERSONAL'),
+    false,
+  );
+  assert.equal(
+    singleImported.questions.some((q) => q.id === 'FIXTURE-PENDING'),
+    false,
   );
   assert.equal(singleImported.assets, 1);
-  checks.push('可搜索单/多选并保留选择；单领域ZIP真实导入空库，保留原审核/个人属性和图片');
+  checks.push('可搜索单/多选并保留选择；单领域ZIP真实导入空库，图片完整且新增统一待审');
 
   await selectDomain('测试语言学');
   assert.equal(await ui.getByRole('region', { name: '导出预览' }).count(), 0);
@@ -155,20 +158,27 @@ try {
   assert.equal(zipImported.assets, 1);
   checks.push('按领域ZIP实际包含分片与完整依赖、清单SHA256；跳过空领域，合并导入复用跨域题');
 
-  await ui.getByRole('radio', { name: /分享题库/ }).check();
-  assert.match(await ui.locator('.domain-export-scope').innerText(), /已通过审核.*仅通用题目/s);
+  await ui.locator('.domain-export-advanced > summary').click();
+  await field('审核状态').selectOption('all');
+  await field('内容属性').selectOption('all');
+  await ui.getByText('正在统计各领域题量…', { exact: true }).waitFor({ state: 'hidden' });
+  assert.match(
+    await ui.locator('.domain-export-scope').innerText(),
+    /所有审核状态.*通用与个人专项/s,
+  );
   assert.match(await ui.locator('.domain-export-domain-heading').innerText(), /已选 3 个/);
   await ui.getByRole('radio', { name: /合并为一个数据包/ }).check();
   await inspect();
-  assert.equal(await questionCount().innerText(), String(h.state.shareCount));
+  assert.equal(await questionCount().innerText(), String(h.state.allCount));
   const shareDownload = await takeDownload();
   const share = (await readDataPackage(shareDownload.bytes)).payloads[0].data;
   assert.equal(share.format, 'learning-share');
-  assert.ok(share.questions.every((q) => q.status === 'pending' && q.collection === 'general'));
+  assert.ok(share.questions.every((q) => q.status === 'pending'));
+  assert.equal(share.questions.find((q) => q.id === 'FIXTURE-PERSONAL').collection, 'personal');
   const shareImported = await importIntoCleanReceiver(shareDownload.bytes);
-  assert.equal(shareImported.questions.length, h.state.shareCount);
+  assert.equal(shareImported.questions.length, h.state.allCount);
   assert.ok(shareImported.questions.every((q) => q.status === 'pending'));
-  checks.push('分享用途恢复published/general默认范围、保留领域选择；真实分享导入全部待审');
+  checks.push('可主动调整内容范围并保留领域选择；分享包始终剥离学习数据，接收方全部待审');
 
   await ui.getByRole('button', { name: '清空选择', exact: true }).click();
   await selectDomain('空领域');

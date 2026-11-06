@@ -1,6 +1,6 @@
-import { isNativeApp, nativeFetch, saveGeneratedFile } from '@platform';
+import { saveGeneratedFile } from '@platform';
 import { bytesToBase64 } from '../../../shared/assets/assets';
-import { buildDataPackage, DATA_PACKAGE_LIMITS, SQLITE_PACKAGE_LIMITS } from '../../../shared/packages/data-package';
+import { DATA_PACKAGE_LIMITS } from '../../../shared/packages/data-package';
 import { send } from './api';
 import type { DataPackageExportInput } from '../../../shared/models/export-preflight';
 
@@ -57,16 +57,4 @@ export async function savePackageDownload(file: DataPackageDownload): Promise<vo
 export async function exportPackage(input: DataPackageExportInput): Promise<void> {
   // The server rechecks the same budget before collecting export bodies.
   await savePackageDownload(await send<DataPackageDownload>('/api/packages/export', 'POST', input));
-}
-
-/** The existing SQLite endpoint returns a redacted consistent snapshot. Only the
- * transport container changes; restore validation and rollback remain native. */
-export async function exportSQLitePackage(): Promise<void> {
-  const response = await (isNativeApp() ? nativeFetch('/api/backup.sqlite', {}) : fetch('/api/backup.sqlite'));
-  if (!response.ok) throw new Error('数据库备份生成失败，请重试。');
-  const size = Number(response.headers.get('Content-Length'));
-  if (size && size > SQLITE_PACKAGE_LIMITS.maxFileBytes) throw new Error('数据库超过完整备份数据包容量上限。');
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const packet = await buildDataPackage({ kind: 'sqlite-backup', title: '认知星图完整数据库备份', payloads: [], files: [{ path: 'database/backup.sqlite', bytes, mediaType: 'application/vnd.sqlite3' }], limits: SQLITE_PACKAGE_LIMITS });
-  await saveGeneratedFile('认知星图-完整数据库备份.zip', packet, 'application/zip');
 }

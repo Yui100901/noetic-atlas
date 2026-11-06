@@ -1,0 +1,88 @@
+.import-taxonomy-mapping {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.import-taxonomy-mapping > summary {
+  cursor: pointer;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.import-taxonomy-mapping > .ui-stack {
+  margin-top: 14px;
+}
+.import-mapping-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.import-mapping-tabs button {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.import-mapping-tabs button.selected {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: var(--green);
+}
+.import-mapping-rows {
+  display: grid;
+  gap: 12px;
+}
+.import-mapping-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(200px, 1fr);
+  align-items: start;
+  gap: 10px 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.import-mapping-row > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.import-mapping-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 12px;
+}
+.import-mapping-field {
+  min-width: 0;
+  display: grid;
+}
+.import-mapping-field input,
+.import-mapping-field select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.import-mapping-target {
+  min-width: 0;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.import-mapping-target > small {
+  grid-column: 1 / -1;
+}
+.import-taxonomy-mapping p,
+.import-taxonomy-mapping small {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+  .import-mapping-row,
+  .import-mapping-target {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .import-mapping-row {
+    padding: 12px;
+  }
+}

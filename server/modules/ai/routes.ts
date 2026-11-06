@@ -336,7 +336,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
   }, options));
   app.post('/api/ai/runs/:id/import-preview', readOnlyOperation, async request => {
     const value = importCandidates(store, parse(id, (request.params as any).id), request.body);
-    return previewQuestionImport(store, value.questions);
+    return previewQuestionImport(store, value.questions,undefined,value.input.dedup);
   });
   app.post('/api/ai/runs/:id/import', async request => {
     const { confirmed: _confirmed, ...raw } = parse(aiImportApplySchema, request.body);

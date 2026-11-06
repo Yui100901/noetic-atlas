@@ -1,3 +1,4 @@
+import type { ImportTaxonomyCatalog } from './import-taxonomy.js';
 import type { ConfigurationPreview } from './configuration.js';
 import type { ImportDedupPreview } from './import-dedup.js';
 
@@ -30,6 +31,7 @@ export interface DataPackagePreview {
   warnings: string[];
   details?: ConfigurationPreview;
   dedup?: ImportDedupPreview;
+  taxonomy?: ImportTaxonomyCatalog;
   questions?: Array<{ id: string; title: string; status: 'pending' | 'reused' }>;
 }
 export interface DataPackageImportResult extends DataPackagePreview {

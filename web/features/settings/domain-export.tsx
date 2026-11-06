@@ -36,7 +36,7 @@ const collectionLabels = { all: '通用与个人专项', general: '仅通用题�
 const initialScope: ContentExportScope = {
   domainIds: [],
   mode: 'combined',
-  ...contentExportDefaults('migration'),
+  ...contentExportDefaults('share'),
 };
 
 export function DomainExport() {
@@ -191,34 +191,9 @@ export function DomainExport() {
           <p className="muted">选择一个或多个领域，将题目、分类、标签与题目图片一起带走。</p>
         </div>
       </header>
-      <fieldset className="domain-export-purpose" disabled={saving}>
-        <legend>导出用途</legend>
-        {(
-          [
-            ['migration', '迁移题库', '保留题目审核状态，默认包含个人专项。'],
-            ['share', '分享题库', '默认仅分享通用已审核题，接收方导入后待审核。'],
-          ] as const
-        ).map(([value, title, description]) => (
-          <label
-            key={value}
-            className={`domain-export-choice ${scope.purpose === value ? 'selected' : ''}`}
-          >
-            <input
-              type="radio"
-              name="content-export-purpose"
-              value={value}
-              checked={scope.purpose === value}
-              onChange={() => change(contentExportDefaults(value))}
-            />
-            <span>
-              <strong>{title}</strong>
-              <small>{description}</small>
-            </span>
-          </label>
-        ))}
-      </fieldset>
       <p className="notice info domain-export-privacy">
-        仅导出题库内容，不含作答记录、笔记或系统配置。教材原文件不包含在内，题目引用信息保留；完整恢复请使用数据库备份。
+        仅分享题库内容，不含作答记录、笔记或系统配置。教材原文件不包含在内，题目引用信息保留；完整学习数据请在系统配置中使用
+        SQLite 迁移。
       </p>
       <div className="domain-export-scope">
         <span>
@@ -259,7 +234,7 @@ export function DomainExport() {
               </select>
             </Field>
           </div>
-          <small className="muted">切换导出用途会恢复该用途的默认范围，已选领域会保留。</small>
+          <small className="muted">分享导入后仍需接收方审核，不会沿用来源的审核结论。</small>
         </details>
       </div>
       <div className="domain-export-domain-heading">

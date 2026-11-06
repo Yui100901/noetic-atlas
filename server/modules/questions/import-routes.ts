@@ -15,8 +15,18 @@ import { normalizeQuestionBlankStems } from '../../../shared/questions/blank-mar
 
 export function registerQuestionImportRoutes(app: FastifyInstance, store: Store) {
   app.post('/api/questions/import-preview', readOnlyOperation, (request) => {
-    const { data } = parse(z.object({ data: newQuestionEnvelopeSchema }).strict(), request.body);
-    return previewQuestionImport(store, data.questions.map(normalizeQuestionBlankStems));
+    const { data, dedup } = parse(
+      z
+        .object({ data: newQuestionEnvelopeSchema, dedup: importDedupOptionsSchema.optional() })
+        .strict(),
+      request.body,
+    );
+    return previewQuestionImport(
+      store,
+      data.questions.map(normalizeQuestionBlankStems),
+      undefined,
+      dedup,
+    );
   });
   // Static imports precede /questions/:id in the offline router.
   app.get('/api/questions/import-template', async (_request, reply) =>

@@ -1,4 +1,5 @@
 import type { AssetRecord } from '../assets/assets.js';
+import type { ImportDedupPreview } from './import-dedup.js';
 import type { Domain, Category, Tag, Question, Paper, QuestionBank } from './types.js';
 
 export type ShareKind = 'questions' | 'paper';
@@ -11,4 +12,4 @@ export interface SharePackage {
   questions: Question[]; papers: SharedPaper[]; questionBanks: QuestionBank[];
 }
 export interface ShareCounts { added: number; reused: number; remapped: number }
-export interface SharePreview { title: string; counts: Record<string, ShareCounts>; questions: Array<{ id: string; title: string; status: 'pending' | 'reused' }>; warnings: string[]; fingerprint: string }
+export interface SharePreview { title: string; counts: Record<string, ShareCounts>; questions: Array<{ id: string; title: string; status: 'pending' | 'reused' }>; warnings: string[]; fingerprint: string; dedup?:ImportDedupPreview }

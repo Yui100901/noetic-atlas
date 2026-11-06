@@ -6,6 +6,7 @@ import { SqliteExpressions } from './sqlite-expressions.js';
 import { recordTables, type RecordTable } from './schema.js';
 import { RecordProjections } from './projections.js';
 import { StartupValidation } from './startup-validation.js';
+import { ImportProjections } from './import-projections.js';
 
 /** The only native-driver boundary. Services use compiled, bound queries.
  * SQLite maintenance SQL is intentionally confined to this directory. */
@@ -15,6 +16,7 @@ export class DatabaseConnection {
   readonly expressions = new SqliteExpressions();
   readonly projections: RecordProjections;
   readonly startupValidation: StartupValidation;
+  readonly imports: ImportProjections;
   private readonly statements = new Map<string, ReturnType<DatabaseSync['prepare']>>();
   private readEpoch=0;
   private readonly client: DatabaseSync;
@@ -26,9 +28,10 @@ export class DatabaseConnection {
     this.client.function('atlas_unicode_contains',{deterministic:true},(value,needle)=>Number(String(value).toLowerCase().includes(String(needle))));
     this.projections=new RecordProjections(this);
     this.startupValidation=new StartupValidation(this);
+    this.imports=new ImportProjections(this);
     const missingTables = initialize && recordTables.some(table => !this.hasTable(table));
     this.schemaChanged = false;
-    if (initialize) { this.initialize(); const projectionsChanged=this.projections.initialize(), validationChanged=this.startupValidation.initialize(); this.schemaChanged = projectionsChanged || validationChanged || missingTables; }
+    if (initialize) { this.initialize(); const projectionsChanged=this.projections.initialize(), validationChanged=this.startupValidation.initialize(), importsChanged=this.imports.initialize(); this.schemaChanged = projectionsChanged || validationChanged || importsChanged || missingTables; }
   }
   private initialize() {
     // Single-user portable storage deliberately keeps one-file DELETE journals.
@@ -66,6 +69,9 @@ export class DatabaseConnection {
       ['questions_type_title_idx','questions',['type','title']],
       ['question_feedback_question_status_idx','question_feedback',['questionId','status']],
       ['quality_fingerprints_prompt_idx','quality_fingerprints',['promptHash']],
+      ['focus_submitted_time_idx','focus_sessions',['status','submittedAt']],
+      ['focus_active_time_idx','focus_sessions',['status','updatedAt']],
+      ['attempts_active_time_idx','attempts',['status','updatedAt']],
       ['quality_issues_question_status_idx','quality_issues',['questionId','status']],
       ['quality_issues_status_rule_idx','quality_issues',['status','rule','severity']],
       ['quality_scans_created_idx','quality_scans',['createdAt']],

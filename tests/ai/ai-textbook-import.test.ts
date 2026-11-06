@@ -1,3 +1,4 @@
+import { reviewedAiImport } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -49,6 +50,7 @@ async function fixture(t: test.TestContext) {
   });
   registerAiRoutes(app, store);
   const api = async (url: string, payload?: unknown, expected = 200) => {
+    if (expected === 200) payload = await reviewedAiImport(app, url, payload);
     const response = await app.inject({ url, method: payload === undefined ? 'GET' : 'POST', ...(payload === undefined ? {} : { payload }) });
     assert.equal(response.statusCode, expected, response.body); return response.json();
   };

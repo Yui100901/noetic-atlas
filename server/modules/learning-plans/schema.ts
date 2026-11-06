@@ -43,6 +43,8 @@ export const learningGoalSchema = z
   .strict();
 export const learningTaskSchema = z
   .object({
+    estimatedSeconds: z.number().int().min(1).max(86400).optional(),
+    estimateSource: z.enum(['measured', 'default']).optional(),
     id,
     goalId: id,
     questionId: id,
@@ -70,6 +72,16 @@ const goalDaySchema = z
 const stamp = z.string().datetime({ offset: true });
 export const learningDaySchema = z
   .object({
+    timeBudget: z
+      .object({
+        targetSeconds: z.number().int().min(0).max(86400),
+        estimatedSeconds: z.number().int().min(0).max(86400),
+        measuredTasks: z.number().int().min(0).max(500),
+        defaultTasks: z.number().int().min(0).max(500),
+        limited: z.boolean(),
+      })
+      .strict()
+      .optional(),
     id,
     dateKey: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     generatedAt: stamp,
@@ -101,6 +113,18 @@ export const learningDaySchema = z
     }
     const goalIds = new Set(day.goals.map((g) => g.goal.id)),
       keys = day.tasks.map(taskIdentity);
+    if (
+      day.timeBudget &&
+      (day.timeBudget.estimatedSeconds > day.timeBudget.targetSeconds ||
+        day.tasks.some((t) => !t.estimatedSeconds || !t.estimateSource) ||
+        day.tasks.reduce((n, t) => n + (t.estimatedSeconds || 0), 0) !==
+          day.timeBudget.estimatedSeconds ||
+        day.tasks.filter((t) => t.estimateSource === 'measured').length !==
+          day.timeBudget.measuredTasks ||
+        day.tasks.filter((t) => t.estimateSource === 'default').length !==
+          day.timeBudget.defaultTasks)
+    )
+      ctx.addIssue({ code: 'custom', message: '计划时间估计与任务或预算不一致' });
     if (
       goalIds.size !== day.goals.length ||
       new Set(day.tasks.map((t) => t.id)).size !== day.tasks.length ||

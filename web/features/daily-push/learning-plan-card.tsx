@@ -7,6 +7,7 @@ import type {
 import { idPath, send } from '../../shared/lib/api';
 import { ErrorNotice } from '../../shared/ui/components';
 import './learning-plan.css';
+import { LearningWeekCard } from './learning-week';
 
 export const planHref = (id: string) => `#/daily-plan/${idPath(id)}`;
 export async function launchPlan(
@@ -78,6 +79,14 @@ export function LearningPlanCard({
         </div>
       </div>
       <PlanProgress value={plan.progress} />
+      {plan.timeBudget && (
+        <p className="learning-plan-reason">
+          今日时间预算 {Math.round(plan.timeBudget.targetSeconds / 60)} 分钟 · 预计{' '}
+          {Math.ceil(plan.timeBudget.estimatedSeconds / 60)} 分钟（{plan.timeBudget.measuredTasks}{' '}
+          项按已计时样本，{plan.timeBudget.defaultTasks} 项默认估时）
+        </p>
+      )}
+      <LearningWeekCard compact />
       <div className="learning-plan-goal-links">
         {plan.goals.slice(0, 4).map((g) => (
           <a

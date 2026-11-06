@@ -3,6 +3,9 @@ export const recordTables = ['document_versions', 'domains', 'categories', 'tags
 export type RecordTable = typeof recordTables[number];
 export interface DocumentRow { id: string; data: string }
 export type AtlasDatabase = { [K in RecordTable]: DocumentRow } & {
+  question_import_index: {id:string;content_hash:string;prompt_hash:string;title:string;title_key:string;vocab_key:string;type:string;status:string;source_stamp:string;tokens:string};
+  question_import_terms: {term:string;question_id:string};
+  question_import_pending: {source_table:string;source_id:string};
   metadata: { key: string; value: string };
   'atlas_question_order': { id: string; ordinal: number };
   question_read_model: DocumentRow & { search_text: string; title_key: string };

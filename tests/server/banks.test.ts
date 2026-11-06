@@ -35,10 +35,10 @@ test('new-question JSON template imports all seven types as pending and cannot b
 
 test('bulk new questions are atomic on ID conflicts, invalid references, strict fields and batch limits', async t => {
   const app = await fixture(t); await approved(app, 'existing');
-  const conflict = result(await bulk(app, [minimal('must-rollback'), minimal('existing')]), 409);
-  assert.equal(conflict.error.code, 'ID_EXISTS'); result(await app.inject('/api/questions/must-rollback'), 404);
+  const conflict = result(await bulk(app, [minimal('must-rollback', {title:'全新独立问题',stemMarkdown:'一个独立新问题'}), minimal('existing', {answerMarkdown:'本次修改了答案'})]), 409);
+  assert.equal(conflict.error.code, 'IMPORT_SIMILAR_REVIEW_REQUIRED'); result(await app.inject('/api/questions/must-rollback'), 404);
   assert.equal(result(await app.inject('/api/questions/existing')).status, 'published');
-  result(await bulk(app, [minimal('duplicate'), minimal('duplicate')]), 400);
+  const reused=result(await bulk(app, [minimal('duplicate'), minimal('duplicate')]), 201);assert.equal(reused.added,0);assert.equal(reused.items[0].id,reused.items[1].id);
   result(await bulk(app, [minimal('valid'), minimal('invalid', { tagIds: ['missing-tag'] })]), 400);
   result(await app.inject('/api/questions/valid'), 404);
   result(await bulk(app, [minimal('unexpected', { study: { mastery: 3 } })]), 400);
@@ -46,7 +46,7 @@ test('bulk new questions are atomic on ID conflicts, invalid references, strict 
   result(await bulk(app, Array.from({ length: 501 }, () => minimal())), 400);
   result(await bulk(app, [minimal('missing-bank')], 'absent'), 400); result(await app.inject('/api/questions/missing-bank'), 404);
   const success = result(await bulk(app, [minimal('incoming-published', { status: 'published' }), minimal('incoming-draft', { status: 'draft' })]), 201);
-  assert.ok(success.items.every((q: any) => q.status === 'pending'));
+  assert.equal(success.added,0);assert.ok(success.items.every((q: any) => q.status === 'published')); // Existing reviewed content is reused without changing admission.
 });
 
 test('new custom question IDs cannot collide with UI or template routes and rejected batches remain atomic', async t => {
@@ -63,7 +63,7 @@ test('new custom question IDs cannot collide with UI or template routes and reje
   const batch = result(await bulk(app, [minimal('MY-CUSTOM-002')]), 201);
   assert.equal(single.status, 'pending'); assert.equal(batch.items[0].status, 'pending');
   assert.equal(result(await app.inject('/api/questions/MY-CUSTOM-001')).id, single.id);
-  assert.equal(result(await app.inject('/api/questions/MY-CUSTOM-002')).id, batch.items[0].id);
+  assert.equal(batch.added,0);assert.equal(batch.items[0].id,single.id);result(await app.inject('/api/questions/MY-CUSTOM-002'),404);
   assert.equal(result(await app.inject('/api/questions/import-template')).format, 'learning-new-questions');
 });
 

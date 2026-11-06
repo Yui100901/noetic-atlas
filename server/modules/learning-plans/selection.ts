@@ -9,6 +9,7 @@ import { reviewQueue } from '../review-scheduler/service.js';
 import { learningMetadata } from '../practice/learning-results.js';
 import { taskIdentity } from './schema.js';
 import { createHash } from 'node:crypto';
+import { configuredGoals, dailyMinutes, taskTimeEstimates } from './time.js';
 
 interface Metadata {
   id: string;
@@ -53,10 +54,13 @@ export function selectPlanTasks(
   at: Date,
 ) {
   const day = new Date(dateKey + 'T12:00:00Z').getUTCDay() || 7;
-  const goals = (config.goals || [])
+  const goals = configuredGoals(config)
     .filter((g) => g.enabled && g.weekdays.includes(day))
     .sort((a, b) => b.priority - a.priority || b.weight - a.weight || a.id.localeCompare(b.id));
   const fixed = config.allocationMode === 'fixed';
+  const timeMode = !!config.timeBudget?.enabled,
+    timeLimit = dailyMinutes(config, dateKey) * 60;
+  const estimate = timeMode ? taskTimeEstimates(store) : undefined;
   const reviews = fixed
       ? goals.map((g) => g.reviewPoints)
       : allocateGoalBudget(config.reviewPoints, goals),
@@ -105,6 +109,8 @@ export function selectPlanTasks(
             row.id,
             {
               structured: !!(row.word || row.concept),
+              kind: (row.word ? 'vocabulary' : row.concept ? 'concept' : 'standard') as
+                'standard' | 'vocabulary' | 'concept',
               reverseEnabled: !row.word || row.reverseEnabled !== 0,
             },
           ])
@@ -257,6 +263,12 @@ export function selectPlanTasks(
             continue;
           }
           const value: Candidate = {
+            ...(estimate
+              ? estimate(
+                  direction === 'meaning_to_word' ? 'fill_blank' : part.type,
+                  partId ? 'standard' : flags.get(q.id)?.kind,
+                )
+              : {}),
             ...identity,
             key,
             title:
@@ -279,6 +291,7 @@ export function selectPlanTasks(
   const used = new Set<string>(),
     tasks: LearningTask[] = [];
   let totalCents = 0;
+  let totalSeconds = 0;
   const rootSets = goals.map(() => new Set<string>()),
     containerCounts = goals.map(() => 0);
   const selected = goals.map((goal, index) => ({
@@ -297,11 +310,13 @@ export function selectPlanTasks(
       used.has(c.key) ||
       tasks.length >= 500 ||
       totalCents + Math.round(c.points * 100) > 1_000_000 ||
+      (timeMode && totalSeconds + (c.estimatedSeconds || 0) > timeLimit) ||
       (!rootSets[index]!.has(c.questionId) && containerCounts[index]! + c.containerSlots > 500)
     )
       return false;
     used.add(c.key);
     totalCents += Math.round(c.points * 100);
+    totalSeconds += c.estimatedSeconds || 0;
     if (!rootSets[index]!.has(c.questionId)) {
       rootSets[index]!.add(c.questionId);
       containerCounts[index]! += c.containerSlots;
@@ -321,44 +336,74 @@ export function selectPlanTasks(
     goal[c.kind === 'review' ? 'reviewPoints' : 'newPoints'] += c.points;
     return true;
   };
-  selected.forEach((goal, index) => {
-    const pool = pools[index]!,
-      available = pool.review.filter((c) => !used.has(c.key)).reduce((n, c) => n + c.points, 0),
-      reallocated =
-        settings.reviewScheduling.strategy === 'fsrs' &&
-        settings.reviewScheduling.reduceNewWhenOverdue
-          ? Math.min(goal.targetNewPoints, Math.max(0, available - goal.targetReviewPoints))
-          : 0;
-    const reviewTarget = goal.targetReviewPoints + reallocated;
-    for (const c of pool.review) {
-      if (
-        Math.round(goal.reviewPoints * 100) >= Math.round(reviewTarget * 100) ||
-        tasks.length >= 500
-      )
-        break;
-      add(index, c);
+  if (timeMode) {
+    const seconds = allocateGoalBudget(timeLimit, goals),
+      allocated = goals.map(() => 0);
+    // Complete review allocation across every goal before admitting new work.
+    // A review may exceed its weighted share but still fit the whole day: new
+    // tasks in another goal must not consume that space first.
+    for (const kind of ['review', 'newItems'] as const) {
+      selected.forEach((_goal, index) => {
+        for (const candidate of pools[index]![kind]) {
+          if (allocated[index]! + (candidate.estimatedSeconds || 0) > seconds[index]!) continue;
+          if (add(index, candidate)) allocated[index]! += candidate.estimatedSeconds || 0;
+        }
+      });
+      // Shared/empty scopes can leave spare time. Borrow only within this
+      // phase, preserving priority order and the hard day-wide estimate cap.
+      selected.forEach((_goal, index) => {
+        for (const candidate of pools[index]![kind]) {
+          if (add(index, candidate)) allocated[index]! += candidate.estimatedSeconds || 0;
+        }
+      });
     }
-    const transfer = Math.max(0, reviewTarget - goal.reviewPoints),
-      newTarget = goal.targetNewPoints - reallocated + transfer;
-    for (const c of pool.newItems) {
-      if (Math.round(goal.newPoints * 100) >= Math.round(newTarget * 100) || tasks.length >= 500)
-        break;
-      add(index, c);
-    }
-    if (transfer) goal.reason += `复习不足，${Number(transfer.toFixed(2))}分补给新题。`;
-    if (reallocated)
-      goal.reason += `复习积压，${Number(reallocated.toFixed(2))}分新题额度用于复习。`;
-  });
-  const totalTarget = reviews.reduce((n, v) => n + v, 0) + fresh.reduce((n, v) => n + v, 0);
-  selected.forEach((goal, index) => {
-    let borrowed = 0;
-    for (const c of [...pools[index]!.newItems, ...pools[index]!.review]) {
-      if (totalCents >= Math.round(totalTarget * 100) || tasks.length >= 500) break;
-      if (add(index, c)) borrowed += c.points;
-    }
-    if (borrowed)
-      goal.reason = `部分目标题量不足，本目标补充${Number(borrowed.toFixed(2))}分。` + goal.reason;
-  });
+    selected.forEach((goal) => {
+      goal.targetReviewPoints = goal.reviewPoints;
+      goal.targetNewPoints = goal.newPoints;
+      goal.reason =
+        '按分钟预算选择任务，优先到期复习；预计时间来自已计时单题的中位数或题型默认估时，不代表实际耗时。';
+    });
+  } else {
+    selected.forEach((goal, index) => {
+      const pool = pools[index]!,
+        available = pool.review.filter((c) => !used.has(c.key)).reduce((n, c) => n + c.points, 0),
+        reallocated =
+          settings.reviewScheduling.strategy === 'fsrs' &&
+          settings.reviewScheduling.reduceNewWhenOverdue
+            ? Math.min(goal.targetNewPoints, Math.max(0, available - goal.targetReviewPoints))
+            : 0;
+      const reviewTarget = goal.targetReviewPoints + reallocated;
+      for (const c of pool.review) {
+        if (
+          Math.round(goal.reviewPoints * 100) >= Math.round(reviewTarget * 100) ||
+          tasks.length >= 500
+        )
+          break;
+        add(index, c);
+      }
+      const transfer = Math.max(0, reviewTarget - goal.reviewPoints),
+        newTarget = goal.targetNewPoints - reallocated + transfer;
+      for (const c of pool.newItems) {
+        if (Math.round(goal.newPoints * 100) >= Math.round(newTarget * 100) || tasks.length >= 500)
+          break;
+        add(index, c);
+      }
+      if (transfer) goal.reason += `复习不足，${Number(transfer.toFixed(2))}分补给新题。`;
+      if (reallocated)
+        goal.reason += `复习积压，${Number(reallocated.toFixed(2))}分新题额度用于复习。`;
+    });
+    const totalTarget = reviews.reduce((n, v) => n + v, 0) + fresh.reduce((n, v) => n + v, 0);
+    selected.forEach((goal, index) => {
+      let borrowed = 0;
+      for (const c of [...pools[index]!.newItems, ...pools[index]!.review]) {
+        if (totalCents >= Math.round(totalTarget * 100) || tasks.length >= 500) break;
+        if (add(index, c)) borrowed += c.points;
+      }
+      if (borrowed)
+        goal.reason =
+          `部分目标题量不足，本目标补充${Number(borrowed.toFixed(2))}分。` + goal.reason;
+    });
+  }
   selected.forEach((goal) => {
     goal.reviewPoints = Number(goal.reviewPoints.toFixed(2));
     goal.newPoints = Number(goal.newPoints.toFixed(2));
@@ -371,9 +416,26 @@ export function selectPlanTasks(
         '范围内新题或到期任务不足，也可能与其他目标重叠或达到题集容量限制；保留实际缺口。';
   });
   return {
+    ...(timeMode
+      ? {
+          timeBudget: {
+            targetSeconds: timeLimit,
+            estimatedSeconds: totalSeconds,
+            measuredTasks: tasks.filter((t) => t.estimateSource === 'measured').length,
+            defaultTasks: tasks.filter((t) => t.estimateSource === 'default').length,
+            limited: !!pools.some((pool) =>
+              [...pool.review, ...pool.newItems].some((item) => !used.has(item.key)),
+            ),
+          },
+        }
+      : {}),
     goals: selected,
     tasks,
-    targetReviewPoints: reviews.reduce((n, v) => n + v, 0),
-    targetNewPoints: fresh.reduce((n, v) => n + v, 0),
+    targetReviewPoints: timeMode
+      ? selected.reduce((n, g) => n + g.reviewPoints, 0)
+      : reviews.reduce((n, v) => n + v, 0),
+    targetNewPoints: timeMode
+      ? selected.reduce((n, g) => n + g.newPoints, 0)
+      : fresh.reduce((n, v) => n + v, 0),
   };
 }

@@ -4,7 +4,8 @@ import { Store } from '../../core/store.js';
 import { id, parse } from '../../core/validation.js';
 import { paginationFields } from '../../core/pagination.js';
 import { runAiAction } from './execution.js';
-import { createDocumentJob, deleteDocumentJob, documentJob, documentSummary, documentView, importDocumentJob, processDocumentJob, linkDocumentJobSources } from './document-service.js';
+import { createDocumentJob, deleteDocumentJob, documentJob, documentSummary, documentView, importDocumentJob, previewDocumentJobImport, processDocumentJob, linkDocumentJobSources } from './document-service.js';
+import { readOnlyOperation } from '../../http/operation.js';
 import type { StoredAiDocumentJob } from './document-schema.js';
 
 export function registerAiDocumentRoutes(app: FastifyInstance, store: Store, options: { native?: boolean } = {}) {
@@ -23,5 +24,6 @@ export function registerAiDocumentRoutes(app: FastifyInstance, store: Store, opt
   app.post('/api/ai/document-jobs/:id/plan', async (request, reply) => runAiAction(request, reply, context => processDocumentJob(store, parse(id, (request.params as any).id), 'plan', request.body, context), options));
   app.post('/api/ai/document-jobs/:id/generate', async (request, reply) => runAiAction(request, reply, context => processDocumentJob(store, parse(id, (request.params as any).id), 'generate', request.body, context), options));
   app.post('/api/ai/document-jobs/:id/import', async request => importDocumentJob(store, parse(id, (request.params as any).id), request.body));
+  app.post('/api/ai/document-jobs/:id/import-preview', readOnlyOperation, async request => previewDocumentJobImport(store, parse(id, (request.params as any).id), request.body));
   app.post('/api/ai/document-jobs/:id/link-sources', async request => linkDocumentJobSources(store,parse(id,(request.params as any).id),request.body));
 }

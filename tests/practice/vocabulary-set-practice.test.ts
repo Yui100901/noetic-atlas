@@ -1,3 +1,4 @@
+import { reviewedShareImport as importShare } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../../server/core/store.js';
@@ -8,7 +9,7 @@ import { resolveVocabularyQuestion, reverseVocabularyQuestion } from '../../serv
 import { questionStatistics } from '../../server/modules/questions/history.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
 import { attemptExportDocument } from '../../server/modules/transfer/exports.js';
-import { exportShare, importShare, planShareImport } from '../../server/modules/sharing/service.js';
+import { exportShare, planShareImport } from '../../server/modules/sharing/service.js';
 import { buildApp } from '../../server/index.js';
 
 const vocabulary:VocabularyData={language:'en',headword:'abandon',meaningPrompt:'放弃；遗弃；离弃',acceptedAnswers:['abandon'],pronunciations:[{label:'美式',ipa:'/əˈbændən/',sourceLabel:'IPA source',sourceUrl:'https://example.org/ipa',license:'MIT',method:'source'}]};

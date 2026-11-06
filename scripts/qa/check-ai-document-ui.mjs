@@ -1,3 +1,4 @@
+import { confirmReviewedImport } from './helpers/import-review.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -68,9 +69,9 @@ try {
   const grouped = structuredClone(preview); grouped[0].type = 'group'; grouped[0].answerMarkdown = ''; grouped[0].explanationMarkdown = ''; grouped[0].parts = [{ id: 'choice', title: '选择小题预览', type: 'single_choice', stemMarkdown: '选择正确项。', options: [{ key: 'A', text: '第一项预览内容' }, { key: 'B', text: '第二项预览内容' }], correctAnswers: ['A'], answerMarkdown: 'A', explanationMarkdown: '第一项符合条件。' }, { id: 'short', title: '简答小题预览', type: 'short_answer', stemMarkdown: '说明原因。', answerMarkdown: '依据材料解释。', explanationMarkdown: '按材料核对。' }];
   await editor.fill(JSON.stringify(grouped)); await page.locator(`[data-document-block="${first.id}"] .ai-document-question-previews>details>summary`).first().click(); await page.locator('.part-reading-option').filter({hasText:'第一项预览内容'}).first().waitFor(); checks.push('组合题预览按标题展开，显示小题选项与答案，选择复选框独立操作');
   preview[0].title = '用户核对后的变量题'; await editor.fill(JSON.stringify(preview));
-  await page.getByRole('button', { name: /^确认选中预览到待审核/ }).click(); await settle(async () => (await state()).questions.total === 3, 'pending import');
+  await confirmReviewedImport(page); await settle(async () => (await state()).questions.total === 3, 'pending import');
   const imported = (await state()).questions.items; assert.ok(imported.every(question => question.status === 'pending')); assert.ok(imported.some(question => question.title === '用户核对后的变量题')); assert.ok(imported.every(question => question.categoryIds.includes('document-python') && question.sourceRefs[0].url === 'https://example.invalid/textbook')); checks.push('编辑预览后显式确认新增3题且统一待审核，来源与分类保留');
-  assert.equal(await page.getByRole('button', { name: /^确认选中预览到待审核/ }).isDisabled(), true); checks.push('已导入批次不允许重复确认'); await page.screenshot({ path: resolve(folder, 'document-desktop.png'), fullPage: true });
+  assert.equal(await page.getByRole('button', { name: /^查重并准备导入/ }).isDisabled(), true); checks.push('已导入批次不允许重复确认'); await page.screenshot({ path: resolve(folder, 'document-desktop.png'), fullPage: true });
   // Flush both parent inputs and task edits through their visible controls
   // before refreshing; then explicitly continue each saved context.
   for(const kind of ['documents','document-job']){const controls=page.locator(`[data-draft-kind="${kind}"]`);await controls.getByRole('button',{name:'保存草稿',exact:true}).click();await restoreDraft(kind);}

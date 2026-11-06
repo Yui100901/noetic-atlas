@@ -1,3 +1,4 @@
+import { confirmReviewedImport } from './helpers/import-review.mjs';
 /** Isolated source/learning workflows. Never opens the operator DB or service. */
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -166,11 +167,11 @@ try {
   await wait(() => generate.isEnabled());
   await generate.click();
   const confirm = jobPanel.getByRole('button', {
-    name: '确认选中预览到待审核（1块）',
+    name: '查重并准备导入（1块）',
     exact: true,
   });
   await wait(() => confirm.isEnabled());
-  await confirm.click();
+  await confirmReviewedImport(jobPanel);
   await wait(async () => {
     const data = await api('/api/documents/book/questions?pageSize=100');
     return data.items.some((item) => item.title === '教材自动生成的变量题');

@@ -1,3 +1,4 @@
+import { reviewedNativeAiImport } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -27,6 +28,7 @@ test('native textbook jobs preserve partial results, audit failures, and restore
   await new Promise<void>(done => provider.listen(0, '127.0.0.1', done));
   t.after(async () => { await runtime.close(); await new Promise<void>(done => provider.close(() => done())); });
   const api = async (path: string, method = 'GET', payload?: unknown, status = 200) => {
+    if(status === 200 && method === 'POST')payload=await reviewedNativeAiImport(runtime,path,payload);
     const response = await runtime.fetch(path, { method, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
     const result = await response.json() as any; assert.equal(response.status, status, JSON.stringify(result)); return result;
   };

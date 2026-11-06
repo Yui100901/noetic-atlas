@@ -1,0 +1,116 @@
+.ai-usage-summary,
+.ai-usage-details {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.ai-usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.ai-usage-metrics > div {
+  min-width: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--theme-inset, #f7f8f4);
+}
+.ai-usage-metrics dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-usage-metrics dd {
+  margin: 5px 0 0;
+  font-size: 19px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.ai-usage-metrics dd small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.ai-usage-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 5px 0 0;
+}
+.ai-usage-groups {
+  min-width: 0;
+}
+.ai-usage-groups summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ai-usage-table {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  margin-top: 12px;
+}
+.ai-usage-table table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ai-usage-table th,
+.ai-usage-table td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.ai-usage-table td:first-child {
+  min-width: 180px;
+  max-width: 260px;
+}
+.ai-usage-table th {
+  white-space: nowrap;
+}
+.ai-history-range {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.ai-history-range label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-history-range input {
+  max-width: 210px;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .ai-usage-summary,
+  .ai-usage-details {
+    padding: 12px;
+  }
+  .ai-usage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ai-history-range label {
+    flex: 1;
+    min-width: 130px;
+  }
+  .ai-history-range input {
+    width: 100%;
+    max-width: none;
+  }
+}

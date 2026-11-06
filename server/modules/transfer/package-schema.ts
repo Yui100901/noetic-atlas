@@ -4,6 +4,7 @@ import { DATA_PACKAGE_LIMITS } from '../../../shared/packages/schema.js';
 import { id } from '../../core/validation.js';
 import { configurationPreviewSchema } from '../settings/configuration.js';
 import { shareSelectionSchema } from '../sharing/schema.js';
+import { importDedupDecisionSchema, importDedupPreviewSchema } from '../question-imports/schema.js';
 
 const MiB = 1024 * 1024;
 export const PACKAGE_HTTP_BODY_LIMIT = 192 * MiB;
@@ -31,6 +32,7 @@ export const packageImportInputSchema = packagePreviewInputSchema
     confirmed: z.literal(true),
     confirmedRetention: z.literal(true).optional(),
     confirmedTrusted: z.literal(true).optional(),
+    decisions: z.array(importDedupDecisionSchema).max(50000).optional(),
   })
   .strict();
 const countSchema = z
@@ -57,6 +59,7 @@ export const packagePreviewSchema = z
     counts: z.record(z.string(), countSchema),
     warnings: z.array(z.string()),
     details: configurationPreviewSchema.optional(),
+    dedup: importDedupPreviewSchema.optional(),
     questions: z
       .array(
         z

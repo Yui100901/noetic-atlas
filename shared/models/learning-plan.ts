@@ -1,5 +1,6 @@
 import type { ReviewDirection } from './adaptive-review.js';
 import type { LeafQuestionType } from './types.js';
+import type { LearningDayTime } from './learning-time.js';
 
 export interface LearningGoal {
   id: string;
@@ -18,6 +19,8 @@ export interface LearningGoal {
   direction: 'default' | 'word_to_meaning' | 'meaning_to_word' | 'both';
 }
 export interface LearningTask {
+  estimatedSeconds?: number;
+  estimateSource?: 'measured' | 'default';
   id: string;
   goalId: string;
   questionId: string;
@@ -40,6 +43,7 @@ export interface LearningGoalDay {
   reason: string;
 }
 export interface LearningDay {
+  timeBudget?: LearningDayTime;
   id: string;
   dateKey: string;
   generatedAt: string;

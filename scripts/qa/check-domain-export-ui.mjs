@@ -15,7 +15,7 @@ app.post('/__qa/check-export-import',async request=>{
   const inspect=await receiver.inject({method:'POST',url:'/api/packages/preview',payload:{dataBase64}});
   assert.equal(inspect.statusCode,200,inspect.body);
   const preview=inspect.json();
-  const imported=await receiver.inject({method:'POST',url:'/api/packages/import',payload:{dataBase64,confirmed:true,expectedFingerprint:preview.fingerprint,...(preview.kind==='migration'?{confirmedTrusted:true}:{})}});
+  const imported=await receiver.inject({method:'POST',url:'/api/packages/import',payload:{dataBase64,confirmed:true,expectedFingerprint:preview.fingerprint,decisions:preview.dedup?.items.filter(item=>item.kind==='similar').map(item=>({key:item.key,action:'both'})),...(preview.kind==='migration'?{confirmedTrusted:true}:{})}});
   assert.equal(imported.statusCode,200,imported.body);
   const exported=await receiver.inject('/api/export');assert.equal(exported.statusCode,200,exported.body);
   const data=exported.json();return {questions:data.questions.map(({id,status,collection})=>({id,status,collection})),domains:data.domains.length,categories:data.categories.length,tags:data.tags.length,assets:data.assets.length};

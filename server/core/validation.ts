@@ -1,3 +1,4 @@
+import { importQuestionContent } from '../../shared/questions/import-dedup.js';
 import { z } from 'zod';
 import { conceptPromptIsSafe } from '../../shared/questions/concept.js';
 import { normalizeVocabularyData, vocabularyIssues, vocabularySourceUrlIsValid } from '../../shared/questions/vocabulary.js';
@@ -103,11 +104,11 @@ export const pendingEnvelopeSchema = z.object({ format: z.literal('learning-pend
   if (new Set(v.questions.map(q => q.id)).size !== v.questions.length) ctx.addIssue({ code: 'custom', message: '题号不能重复' });
 });
 export const questionBankSchema = z.object({ id: id.optional(), name, description: text.default(''), questionIds: z.array(id).max(50_000).refine(a => new Set(a).size === a.length, '题库引用的题号不得重复').default([]), createdAt: stamp.optional(), updatedAt: stamp.optional() }).strict();
-export const newQuestionEnvelopeSchema = z.object({ format: z.literal('learning-new-questions'), schemaVersion: z.literal(1), questions: z.array(questionSchema.strict()).min(1).max(500) }).strict().superRefine((v, ctx) => {
-  const specified = v.questions.map(q => q.id).filter(Boolean);
-  if (new Set(specified).size !== specified.length) ctx.addIssue({ code: 'custom', message: '新题导入中指定的题号不得重复' });
+export const newQuestionEnvelopeSchema = z.object({ format: z.literal('learning-new-questions'), schemaVersion: z.literal(1), questions: z.array(questionSchema.strict()).min(1).max(50000) }).strict().superRefine((v, ctx) => {
+  const specified = new Map<string,string>();
+  for(const question of v.questions){if(!question.id)continue;const content=importQuestionContent(question),previous=specified.get(question.id);if(previous!==undefined&&previous!==content)ctx.addIssue({code:'custom',message:'同一导入题号不能对应不同内容'});specified.set(question.id,content);}
 });
-export const bulkQuestionImportSchema = z.object({ data: newQuestionEnvelopeSchema, confirmed: z.literal(true) }).strict();
+export const bulkQuestionImportSchema = z.object({ data: newQuestionEnvelopeSchema.safeExtend({questions:z.array(questionSchema.strict()).min(1).max(500)}), confirmed: z.literal(true) }).strict();
 export const documentSchema = z.object({ mathEnabled: z.boolean().optional(), id: id.optional(), title: name, kind: name.default('学习笔记'), bodyMarkdown: z.string().max(50 * 1024 * 1024).default(''), format: z.enum(['markdown', 'pdf']).default('markdown'), assetId: id.nullable().default(null), fileName: z.string().max(300).nullable().default(null), collection: collection.default('general'), categoryIds: ids.default([]), tagIds: ids.default([]), domainIds: ids.optional(), author: z.string().max(300).default(''), publisher: z.string().max(300).default(''), publishedYear: z.string().max(40).default(''), description: z.string().max(10000).default(''), sourcePath: z.string().max(2000).nullable().default(null), updatedAt: stamp.optional() });
 export const filtersSchema = z.object({ tagIds: ids.optional(), tagMode: z.enum(['all', 'any']).optional(), categoryId: id.optional(), domainId: id.optional(), paperId: id.optional(), types: z.array(types).optional(), difficultyMin: z.number().int().min(1).max(4).optional(), difficultyMax: z.number().int().min(1).max(4).optional(), frequencyMin: z.number().int().min(0).max(3).optional(), collection: z.enum(['general', 'personal', 'all']).optional() }).strict().superRefine((f, c) => { if (f.difficultyMin && f.difficultyMax && f.difficultyMin > f.difficultyMax) c.addIssue({ code: 'custom', message: '最低难度不可高于最高难度' }); });
 export const moneySchema = z.number().finite().min(0).max(10000).refine(v => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, '分值最多保留两位小数');

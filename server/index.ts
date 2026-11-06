@@ -1,4 +1,5 @@
 import { registerQuestionDraftRoutes } from './modules/questions/drafts.js';
+import { registerAiUsageRoutes } from './modules/ai/usage-routes.js';
 import { registerQuestionRevisionRoutes } from './modules/questions/revisions.js';
 import {registerMaintenanceRoutes} from './modules/maintenance/routes.js';
 import {migrateFeedbackQualityIssues} from './modules/content-quality/feedback-links.js';
@@ -80,6 +81,7 @@ export async function buildApp(options: AppOptions = {}) {
   } catch (error) { store.db.close(); throw error; }
 
   registerHttpSecurity(app, store);
+  registerAiUsageRoutes(app, store);
 
   registerVocabularyRoutes(app,store);
   app.get('/api/health', async () => ({ ok: true, application:'noetic-atlas' }));

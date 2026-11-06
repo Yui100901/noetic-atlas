@@ -7,6 +7,7 @@ import { dailyCalendar, isDailyPushDue } from '../daily-push/calendar.js';
 import { buildPaper } from '../practice/service.js';
 import { validateGoalReferences, learningDaySchema } from './schema.js';
 import { selectPlanTasks } from './selection.js';
+import { configuredGoals } from './time.js';
 
 /** The day is claimed under one transaction; goals/settings are frozen once. */
 export function generateLearningDay(store: Store, at = new Date()) {
@@ -17,7 +18,7 @@ export function generateLearningDay(store: Store, at = new Date()) {
   const current = store.get<LearningDay>('learning_days', id);
   if (
     current ||
-    !config.goals?.length ||
+    !configuredGoals(config).length ||
     !isDailyPushDue(config, at) ||
     store.get('daily_pushes', `daily-${dateKey}`)
   )
@@ -26,7 +27,7 @@ export function generateLearningDay(store: Store, at = new Date()) {
     const locked = getSettings(store);
     if (
       locked.updatedAt !== settings.updatedAt ||
-      !locked.dailyPush.goals?.length ||
+      !configuredGoals(locked.dailyPush).length ||
       !isDailyPushDue(locked.dailyPush, at) ||
       dailyCalendar(at, locked.dailyPush.timeZone).dateKey !== dateKey ||
       store.get('daily_pushes', `daily-${dateKey}`)
@@ -34,7 +35,7 @@ export function generateLearningDay(store: Store, at = new Date()) {
       return { generated: false, plan: null };
     const previous = store.get<LearningDay>('learning_days', id);
     if (previous) return { generated: false, plan: previous };
-    validateGoalReferences(store, config.goals!);
+    validateGoalReferences(store, configuredGoals(config));
     const selection = selectPlanTasks(store, config, settings, dateKey, at);
     for (const goal of selection.goals) {
       const tasks = selection.tasks.filter((t) => t.goalId === goal.goal.id);

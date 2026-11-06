@@ -16,6 +16,7 @@ import { requestAiJson } from './provider.js';
 import { auditAiOperation, auditedFailure, aiFailureFromError } from './audit.js';
 import { assertAiActive } from './execution.js';
 import { finalizeImport, importTask } from './import.js';
+import { previewQuestionImport, applyQuestionImport } from '../question-imports/service.js';
 import { importResultSchema } from './schema.js';
 import { aiDocumentCreateSchema, aiDocumentImportSchema, aiDocumentProcessSchema, aiDocumentSummarySchema, aiDocumentCounts, aiDocumentStatus, type StoredAiDocumentJob } from './document-schema.js';
 
@@ -148,28 +149,43 @@ export async function processDocumentJob(store: Store, id: string, stage: 'plan'
     return documentView(job);
   } finally { leave(); }
 }
+/** Preview and commit share normalization, including saved textbook citations. */
+function prepareDocumentImport(store: Store, id: string, body: unknown) {
+  const input = parse(aiDocumentImportSchema, body), job = documentJob(store, id);
+  const selected = input.blockIds.map(blockId => job.blocks.find(block => block.id === blockId) || fail(400, 'AI_DOCUMENT_BLOCK_NOT_FOUND', '选中的资料块不属于此任务'));
+  if (selected.some(block => block.generationStatus !== 'completed')) fail(409, 'AI_DOCUMENT_PREVIEW_REQUIRED', '只能确认已完成出题的资料块');
+  if (selected.some(block => block.importedQuestionIds.length)) fail(409, 'AI_DOCUMENT_ALREADY_IMPORTED', '选中的资料块已导入，不能重复确认');
+  const edits = new Map(input.questions?.map(item => [item.blockId, item.questions]));
+  if (edits.size !== (input.questions?.length || 0) || [...edits.keys()].some(blockId => !input.blockIds.includes(blockId))) fail(400, 'AI_DOCUMENT_EDIT_SCOPE', '编辑预览含重复或未选择的资料块');
+  const sourceCache = new Map();
+  const groups = selected.map(block => {
+    const proposed = edits.get(block.id) || block.questions;
+    if (proposed.length > block.questions.length) fail(400, 'AI_DOCUMENT_EDIT_LIMIT', '编辑预览不能增加本批题量，请另行创建新题');
+    const questions = proposed.map(question => {
+      const candidate = parse(questionSchema, { ...question, id: undefined, status: 'pending', categoryIds: job.categoryIds, tagIds: job.tagIds, sourceDocument: block.sourceName, sourceAnchor: sourceAnchor(block), documentLinks: block.sourceCitation ? [block.sourceCitation] : undefined, createdAt: undefined, updatedAt: undefined });
+      store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store, candidate, true, sourceCache);
+      return candidate;
+    });
+    return { block, questions };
+  });
+  return { input, job, groups, questions: groups.flatMap(group => group.questions) };
+}
+export function previewDocumentJobImport(store: Store, id: string, body: unknown) {
+  return previewQuestionImport(store, prepareDocumentImport(store, id, body).questions);
+}
 export function importDocumentJob(store: Store, id: string, body: unknown) {
-  const input = parse(aiDocumentImportSchema, body), leave = enter(store, id);
+  const leave = enter(store, id);
   try {
     return store.transaction(() => {
-      const job = documentJob(store, id), selected = input.blockIds.map(blockId => job.blocks.find(block => block.id === blockId) || fail(400, 'AI_DOCUMENT_BLOCK_NOT_FOUND', '选中的资料块不属于此任务'));
-      if (selected.some(block => block.generationStatus !== 'completed')) fail(409, 'AI_DOCUMENT_PREVIEW_REQUIRED', '只能确认已完成出题的资料块');
-      if (selected.some(block => block.importedQuestionIds.length)) fail(409, 'AI_DOCUMENT_ALREADY_IMPORTED', '选中的资料块已导入，不能重复确认');
-      const edits = new Map(input.questions?.map(item => [item.blockId, item.questions]));
-      if (edits.size !== (input.questions?.length || 0) || [...edits.keys()].some(blockId => !input.blockIds.includes(blockId))) fail(400, 'AI_DOCUMENT_EDIT_SCOPE', '编辑预览含重复或未选择的资料块');
-      const items: Question[] = [];const sourceCache=new Map();
-      for (const block of selected) {
-        const candidates = edits.get(block.id) || block.questions;
-        if (candidates.length > block.questions.length) fail(400, 'AI_DOCUMENT_EDIT_LIMIT', '编辑预览不能增加本批题量，请另行创建新题');
-        const created = candidates.map(question => {
-          const candidate = parse(questionSchema, { ...question, id: undefined, status: 'pending', categoryIds: job.categoryIds, tagIds: job.tagIds, sourceDocument: block.sourceName, sourceAnchor: sourceAnchor(block), documentLinks:block.sourceCitation?[block.sourceCitation]:undefined, createdAt: undefined, updatedAt: undefined });
-          store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store,candidate,true,sourceCache);
-          const record = { ...candidate, id: makeId('q'), status: 'pending' as const, createdAt: now(), updatedAt: now() };
-          store.insert('questions', record.id, record); return record;
-        });
-        block.questions = created.map(({ id: _id, createdAt: _created, updatedAt: _updated, ...question }) => question); block.importedQuestionIds = created.map(question => question.id); items.push(...created);
+      const { input, job, groups, questions } = prepareDocumentImport(store, id, body);
+      const result = applyQuestionImport(store, questions, input.dedup);
+      let offset = 0;
+      for (const { block, questions } of groups) {
+        const resolved = result.items.slice(offset, offset + questions.length); offset += questions.length;
+        block.questions = resolved.map(({ id: _id, createdAt: _created, updatedAt: _updated, ...question }) => parse(questionSchema, question));
+        block.importedQuestionIds = resolved.map(question => question.id);
       }
-      save(store, job); return { added: items.length, items, job: documentView(job) };
+      save(store, job); return { ...result, job: documentView(job) };
     });
   } finally { leave(); }
 }

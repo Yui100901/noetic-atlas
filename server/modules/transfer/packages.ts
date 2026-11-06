@@ -1,5 +1,6 @@
 /** Manifest-directed transfer orchestration and routes. */
 import { createHash } from 'node:crypto';
+import type { AssetRecord } from '../../../shared/assets/assets.js';
 import type { FastifyInstance } from 'fastify';
 import { base64ToBytes, bytesToBase64 } from '../../../shared/assets/assets.js';
 import {
@@ -14,6 +15,8 @@ import type {
 } from '../../../shared/models/data-packages.js';
 import { now, type Store } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
+import { z } from 'zod';
+import type { QuestionInput } from '../../../shared/models/types.js';
 import { readOnlyOperation } from '../../http/operation.js';
 import { questionImportTemplate } from '../questions/import-template.js';
 import {
@@ -44,6 +47,83 @@ export {
 
 const MiB = 1024 * 1024;
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
+const previewQuestions = new WeakMap<
+  Store,
+  Array<{
+    fingerprint: string;
+    questions: QuestionInput[];
+    images: Map<string, AssetRecord>;
+    at: number;
+    bytes: number;
+  }>
+>();
+const cacheLimit = 256 * MiB,
+  cacheAge = 10 * 60 * 1000;
+function rememberQuestions(
+  store: Store,
+  fingerprint: string,
+  questions: QuestionInput[],
+  assets: AssetRecord[] = [],
+) {
+  const images = new Map(
+    assets
+      .filter((asset) => /^image\/(?:png|jpeg|gif|webp)$/.test(asset.mimeType))
+      .map((asset) => [asset.id, asset]),
+  );
+  const bytes =
+    questions.reduce((sum, question) => sum + JSON.stringify(question).length * 2, 0) +
+    [...images.values()].reduce((sum, asset) => sum + asset.dataBase64.length * 2, 0);
+  if (bytes > cacheLimit) fail(413, 'IMPORT_PREVIEW_TOO_LARGE', '题目预览体积过大，请分片导入');
+  const now = Date.now(),
+    values = (previewQuestions.get(store) || []).filter(
+      (value) => value.fingerprint !== fingerprint && now - value.at < cacheAge,
+    );
+  values.push({ fingerprint, questions, images, at: now, bytes });
+  while (values.length > 2 || values.reduce((sum, value) => sum + value.bytes, 0) > cacheLimit)
+    values.shift();
+  previewQuestions.set(store, values);
+}
+export function packageImportQuestion(store: Store, raw: unknown) {
+  const input = parse(
+    z
+      .object({
+        fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+        index: z.coerce.number().int().min(0).max(50000),
+      })
+      .strict(),
+    raw,
+  );
+  const cached = (previewQuestions.get(store) || []).find(
+    (value) => value.fingerprint === input.fingerprint && Date.now() - value.at < cacheAge,
+  );
+  if (!cached) fail(409, 'IMPORT_PREVIEW_EXPIRED', '题目预览已过期，请重新预览数据包');
+  const question =
+    cached!.questions[input.index] ||
+    fail(404, 'IMPORT_QUESTION_NOT_FOUND', '导入预览中没有这道题');
+  // Only validated images from this package become inline preview resources.
+  // The authoritative payload and its fingerprints remain unchanged.
+  const display = (value: unknown): unknown =>
+    typeof value === 'string'
+      ? value.replace(
+          /\/api\/assets\/([^/\s?#"'()<>\]]+)\/(?:content|data)/g,
+          (original, encoded: string) => {
+            let id: string;
+            try {
+              id = decodeURIComponent(encoded);
+            } catch {
+              return original;
+            }
+            const asset = cached!.images.get(id);
+            return asset ? `data:${asset.mimeType};base64,${asset.dataBase64}` : original;
+          },
+        )
+      : Array.isArray(value)
+        ? value.map(display)
+        : value && typeof value === 'object'
+          ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, display(child)]))
+          : value;
+  return display(question) as QuestionInput;
+}
 
 async function opened(raw: unknown) {
   const input = parse(packagePreviewInputSchema, raw);
@@ -71,7 +151,10 @@ async function opened(raw: unknown) {
 
 export async function previewDataPackage(store: Store, raw: unknown): Promise<DataPackagePreview> {
   const value = await opened(raw);
-  return inspectDataPackage(store, value.kind, value.title, value.data, value.packageHash);
+  const preview = inspectDataPackage(store, value.kind, value.title, value.data, value.packageHash);
+  if (preview.dedup)
+    rememberQuestions(store, preview.fingerprint, value.data.questions, value.data.assets || []);
+  return preview;
 }
 
 export async function importDataPackage(
@@ -93,7 +176,11 @@ export async function importDataPackage(
     if (preview.fingerprint !== input.expectedFingerprint)
       fail(409, 'PACKAGE_PREVIEW_STALE', '数据包或本机相关内容在预览后已变化，请重新预览后导入');
     let result: unknown;
-    if (value.kind === 'share') result = importShare(store, value.data);
+    if (value.kind === 'share')
+      result = importShare(store, value.data, undefined, {
+        expectedFingerprint: preview.dedup!.fingerprint,
+        decisions: input.decisions,
+      });
     else if (value.kind === 'migration') result = importData(store, value.data);
     else if (value.kind === 'configuration')
       result = importConfiguration(store, {
@@ -102,7 +189,11 @@ export async function importDataPackage(
         confirmed: true,
         ...(input.confirmedRetention ? { confirmedRetention: true } : {}),
       });
-    else if (value.kind === 'question-template') result = importNewQuestionData(store, value.data);
+    else if (value.kind === 'question-template')
+      result = importNewQuestionData(store, value.data, {
+        expectedFingerprint: preview.dedup!.fingerprint,
+        decisions: input.decisions,
+      });
     else if (value.kind === 'question-update') result = importPendingQuestions(store, value.data);
     else return fail(422, 'SQLITE_PACKAGE_RESTORE_REQUIRED', '请使用完整数据库恢复入口');
     return { ok: true, ...preview, result };
@@ -226,6 +317,9 @@ export async function exportDataPackage(store: Store, raw: unknown): Promise<Dat
 }
 
 export function registerDataPackageRoutes(app: FastifyInstance, store: Store) {
+  app.get('/api/packages/import-question', (request) =>
+    packageImportQuestion(store, request.query),
+  );
   app.post('/api/packages/export', readOnlyOperation, (request) =>
     exportDataPackage(store, request.body),
   );

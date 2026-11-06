@@ -1,3 +1,4 @@
+import { reviewedShareImport as importShare } from '../helpers/import-review.js';
 import { paperDraftStateSchema } from '../../server/modules/practice/paper-drafts.js';
 import { DEFAULT_SETTINGS } from '../../shared/models/settings.js';
 import test from 'node:test';
@@ -18,7 +19,7 @@ import {
   paperExportDocument,
   attemptExportDocument,
 } from '../../server/modules/transfer/exports.js';
-import { exportShare, importShare } from '../../server/modules/sharing/service.js';
+import { exportShare } from '../../server/modules/sharing/service.js';
 import { exportData, importData } from '../../server/modules/transfer/migration.js';
 import { questionHistory } from '../../server/modules/questions/history.js';
 import { reverseVocabularyQuestion } from '../../server/modules/practice/vocabulary-practice.js';

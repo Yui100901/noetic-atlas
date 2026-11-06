@@ -1,3 +1,4 @@
+import { reviewedAiImport } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -46,6 +47,7 @@ async function fixture(t: test.TestContext) {
   app.setErrorHandler((reason, _request, reply) => reason instanceof ApiError ? reply.code(reason.status).send({ error: { code: reason.code, message: reason.message, details: reason.details } }) : reply.code(500).send({ error: { code: 'INTERNAL', message: reason.message } }));
   registerAiRoutes(app, store); registerAiDocumentRoutes(app, store); registerAssetRoutes(app, store);
   const api = async (path: string, payload?: unknown, expected = 200, method?: 'GET' | 'POST' | 'DELETE') => {
+    if(expected === 200)payload=await reviewedAiImport(app,path,payload);
     const response = await app.inject({ url: path, method: method || (payload === undefined ? 'GET' : 'POST'), ...(payload === undefined ? {} : { payload }) });
     assert.equal(response.statusCode, expected, response.body); return response.json();
   };

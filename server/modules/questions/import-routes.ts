@@ -1,10 +1,23 @@
 import type { FastifyInstance } from 'fastify';
 import type { Store } from '../../core/store.js';
-import { bulkQuestionImportSchema, parse } from '../../core/validation.js';
+import {
+  bulkQuestionImportSchema,
+  newQuestionEnvelopeSchema,
+  parse,
+} from '../../core/validation.js';
+import { z } from 'zod';
+import { importDedupOptionsSchema } from '../question-imports/schema.js';
+import { previewQuestionImport } from '../question-imports/service.js';
+import { readOnlyOperation } from '../../http/operation.js';
 import { importNewQuestionData } from './import-export.js';
 import { questionImportTemplate } from './import-template.js';
+import { normalizeQuestionBlankStems } from '../../../shared/questions/blank-markers.js';
 
 export function registerQuestionImportRoutes(app: FastifyInstance, store: Store) {
+  app.post('/api/questions/import-preview', readOnlyOperation, (request) => {
+    const { data } = parse(z.object({ data: newQuestionEnvelopeSchema }).strict(), request.body);
+    return previewQuestionImport(store, data.questions.map(normalizeQuestionBlankStems));
+  });
   // Static imports precede /questions/:id in the offline router.
   app.get('/api/questions/import-template', async (_request, reply) =>
     reply
@@ -12,8 +25,11 @@ export function registerQuestionImportRoutes(app: FastifyInstance, store: Store)
       .send(questionImportTemplate()),
   );
   app.post('/api/questions/bulk-import', async (request, reply) => {
-    const { data } = parse(bulkQuestionImportSchema, request.body);
-    const result = importNewQuestionData(store, data);
+    const { data, dedup } = parse(
+      bulkQuestionImportSchema.extend({ dedup: importDedupOptionsSchema.optional() }),
+      request.body,
+    );
+    const result = importNewQuestionData(store, data, dedup);
     return reply.code(201).send(result);
   });
 }

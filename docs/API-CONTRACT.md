@@ -41,12 +41,15 @@
 - `POST /api/questions/metadata`：严格接收 `{ids}`，1—50,000个不重复题号，返回 `{items,missingIds}`；按输入顺序提供 `id/title/type/status`，包含未发布状态，不读取正文或学习笔记。用于大型题集编辑与草稿恢复的只读批量核对。
 - `POST /api/questions/review`：`{ids,action:'approve'|'return_to_draft',confirmed:true,expectedUpdatedAt}`。最多 500 道 pending 题，版本 map 恰好覆盖选题，整批校验后原子处理。
 - `GET /api/questions/import-template`：新题 JSON 模板。
-- `POST /api/questions/bulk-import`：`{data:learning-new-questions封包,confirmed:true}`。整批新增全部待审核，不覆盖已有 ID。
+- `POST /api/questions/import-preview`：`{data:learning-new-questions封包}`，只读返回`ImportDedupPreview`，含完全重复、相似候选、输入索引与指纹。
+- `POST /api/questions/bulk-import`：`{data,confirmed:true,dedup?:{expectedFingerprint,decisions}}`，单次最多500题。新题待审核，完全重复复用；相似题必须显式确认。返回`added/reused/updated/items/idMap/dedup`，items与输入一一对应。
 - `POST /api/questions/pending/export`：`{ids}`，导出带版本的待审核 JSON。
 - `POST /api/questions/pending/import`：`{data,confirmed:true}`，批量修订原有待审核题，不新建、不自动发布；保留 id、pending 状态及导出时 updatedAt。
 独立题库集合接口已移除，统一通过 `/api/papers` 管理题集。`QuestionBank` 与 `question_banks` 只作为旧数据库／旧 JSON 的迁移输入保留，不再是可创建的业务实体；迁移规则见下文。
 
 题型为 `true_false、single_choice、multiple_choice、fill_blank、short_answer、essay、group`。判断答案为 `true|false`，选择题答案引用选项 key；填空题的 blanks 按顺序保存可接受答案、大小写及首尾空白规则。group 含 2–30 道独立子题，共用主干材料，组题按整组选择，作答时展开。题集可保存超过500个作答项，每次练习或考试最多500个独立作答项。图片采用托管资源链接或已验证的栅格 data URI。
+
+查重决策为`{key:"i-N",action:"replace"|"keep"|"both",targetId?}`。保留或覆盖必须指向预览候选；所有相似项处理后才能提交。预览指纹过期、同时覆盖同一目标、无法安全映射小题标准均返回409，任何分片不落库。可信迁移与完整恢复不采用普通内容合题规则。
 
 ## 资料与文件
 
@@ -208,13 +211,14 @@ AI 使用 OpenAI-compatible Chat Completions 协议，结果为结构化 JSON，
 | `PUT /api/ai/settings` | enabled、baseUrl、model、supportsImages、sendImages、timeoutSeconds、maxTokens；可附 updatedAt、只写 key 或 clearKey |
 | `POST /api/ai/test` | `{}` → `{ok,message,model}`，真实连通测试 |
 | `GET /api/ai/capabilities` | 开启情况与支持的功能，不等于已验证远端在线 |
-| `GET /api/ai/runs` | 按 kind、questionId、attemptId 过滤并分页 |
+| `GET /api/ai/runs` | 按 kind、questionId、attemptId、状态、模型和日期过滤并分页 |
+| `GET /api/ai/usage` | 使用相同筛选，汇总全范围实际Token及服务／模型／任务分组，不受历史分页限制 |
 | `GET /api/ai/runs/:id` | 单条结构化分析记录 |
 | `DELETE /api/ai/runs/:id` | 删除分析记录，不撤销已经采纳的内容 |
 
 key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根地址或完整 chat/completions 路径；不允许嵌入账号、查询参数或片段。密钥通过 Authorization Bearer 发送，不自动跟随重定向。默认超时 60 秒（可设 5–180），输出上限 16384 tokens（可设 256–32000）。
 
-任务成功返回 `AiRun<Result>`，kind 为 `explain|grade|import|review|paper_plan`，含 id、createdAt、model、warnings、questionIds、result 及应用标记。内部版本上下文和 API 凭据不对外返回。失败不伪造成功记录。
+任务成功返回 `AiRun<Result>`，kind以共享AI类型为准（含`connection_test`连通测试），含 id、createdAt、model、warnings、questionIds、result 及应用标记。内部版本上下文和 API 凭据不对外返回。失败不伪造成功记录。
 
 ### 实时进度与取消
 
@@ -252,7 +256,8 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 ### 转换导入与审核
 
 - `POST /api/ai/import`：`{text,sourceName?,categoryIds?,tagIds?,count?}`，每批最多 50 题。返回候选结构及领域／分类／标签名称建议；文件先在客户端提取文字，扫描 PDF 需先 OCR，不接受任意服务器文件路径。
-- `POST /api/ai/runs/:id/import`：`{confirmed:true,indexes?或questions?,categoryIds?,tagIds?}`。选择或修订后确认，生成新 ID，全量进入 pending。整批校验失败不保存；同一结果不可重复导入。
+- `POST /api/ai/runs/:id/import-preview`：`{indexes?或questions?,categoryIds?,tagIds?}`，对同一规范化选择只读查重。
+- `POST /api/ai/runs/:id/import`：`{confirmed:true,indexes?或questions?,categoryIds?,tagIds?,dedup?}`，确认查重决策后新增／复用／覆盖，新题进入pending。返回逐输入结果及计数；run.importedQuestionIds去重。同一结果不可重复应用，失败不保存。教材分批的`POST /api/ai/document-jobs/:id/import-preview`与`import`使用相同选择体，保留其原有confirmed要求，选中多块整体查重、整体提交。
 - `POST /api/ai/review`：`{questionIds,autoApprove?,expectedUpdatedAt}`。每批 1–20 道 pending 题。返回 valid／needs_changes／uncertain、issues 和可选 suggestedChanges。仅本次明确启用 autoApprove 且模型无问题、无缺图等警告时，valid 项通过审核；发布前再次校验版本。
 - `POST /api/ai/runs/:id/correction`：`{confirmed:true,questionId}`，应用修订建议后仍为 pending，需要再次审核。
 
@@ -295,7 +300,8 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 
 - `POST /api/packages/export` 生成应用可导入的 ZIP。请求包含 `kind`。分享传 `selection`，配置可传 `includeAi`，待审核修改传 `ids`。响应包含 `filename`、`mimeType`、`dataBase64`、`byteLength`。
 - `POST /api/packages/preview` 上传 `{dataBase64}`。读取根 manifest 后返回用途、标题、变更统计、警告和绑定当前包及目标数据的 `fingerprint`。
-- `POST /api/packages/import` 提交同一包及 `{expectedFingerprint,confirmed:true}`。可信迁移还需 `confirmedTrusted:true`，配置清理超限记录时需 `confirmedRetention:true`。分片共用一个事务。
+- `POST /api/packages/import` 提交同一包及 `{expectedFingerprint,confirmed:true}`。普通新增或分享的相似处理在顶层传`decisions`；可信迁移还需 `confirmedTrusted:true`，配置清理超限记录时需 `confirmedRetention:true`。分片共用一个事务。
+- `GET /api/packages/import-question?fingerprint=...&index=N`：按预览指纹读取一条导入内容；图片仅在预览副本转为可显示的data URI，包及其指纹不变。缓存过期返回409，需要重新预览。
 - `/api/sharing/export`、`/api/sharing/preview` 和 `/api/sharing/import` 继续提供内部 JSON 数据接口，应用的文件界面使用 ZIP。协议见[数据包格式](./数据包格式.md)。
 
 - `POST /api/sharing/export-document`：同一选择返回 ExportDocument，由网页／Android 共用渲染器生成含答案的 PDF 或 Markdown；普通题目选择单批最多500题，题集分享受封包大小和完整性校验。
@@ -330,6 +336,10 @@ FSRS完整备份另含`reviewCards、reviewEvents`及`reviewScheduling`配置。
 
 
 ## 多领域学习计划
+
+可选`settings.dailyPush.timeBudget`包含enabled、weekdayMinutes、weekendMinutes、weeklyMinutes；默认关闭、工作日30分钟、周末60分钟，weeklyMinutes=0时由启用时间计划的有效学习日推导。显式周目标可独立启用。
+
+`GET /api/learning-plans/week?date=YYYY-MM-DD`按用户时区返回周起止、目标、正式完成及进行中时长、缺失计时数量和每日细分；日期必须真实有效。按普通答卷与专注来源去重，不回填历史未知时长。时间任务估计及预算保存在学习日快照。
 
 长期目标保存于settings.dailyPush.goals，allocationMode为weights或fixed；单领域字段继续保留，未配置目标时使用原单领域规则。目标引用领域、分类、标签，启用时校验引用与预算；按星期筛选参与目标。
 

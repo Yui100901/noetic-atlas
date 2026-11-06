@@ -31,6 +31,25 @@ import type { AiRunContext } from './run-schema.js';
 import { putCompletedAiRun } from './run-storage.js';
 import { aiIds,aiImportInputSchema,aiLeafIds,aiPaperPlanApplySchema,aiPaperPlanInputSchema,aiSettingsSchema,applySchema,explanationSchema,gradingRequirementsSchema,importResultSchema,reviewResultSchema } from './schema.js';
 import { getPublicAiSettings,readPrivateSettings,saveAiSettings } from './settings.js';
+import { readOnlyOperation } from '../../http/operation.js';
+import { aiImportSelectionSchema as importSelectionSchema, aiImportApplySchema } from './import-apply-schema.js';
+import { previewQuestionImport, applyQuestionImport } from '../question-imports/service.js';
+
+function importCandidates(store: Store, runId: string, raw: unknown) {
+  const input = parse(importSelectionSchema, raw);
+  if (input.indexes && input.questions) fail(400, 'AI_INVALID_CANDIDATE', '编辑题目与序号选择不能同时提交');
+  const run = getCompletedRun(store, runId);
+  if (run.kind !== 'import') fail(400, 'AI_WRONG_RUN_KIND', '仅题目转换结果可以导入');
+  if (run.importedQuestionIds?.length) fail(409, 'AI_ALREADY_IMPORTED', '本次转换结果已导入，请在待审核中修改');
+  const original = (run.result as AiImportResult).questions;
+  const selected = input.questions || (input.indexes ? input.indexes.map(index => original[index] || fail(400, 'AI_INVALID_CANDIDATE', '所选题目序号不存在')) : original);
+  const questions = selected.map(q => {
+    const candidate = parse(questionSchema, { ...q, id: undefined, status: 'pending', categoryIds: input.categoryIds ?? q.categoryIds, tagIds: input.tagIds ?? q.tagIds });
+    store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store, candidate, true);
+    return candidate;
+  });
+  return { input, run, questions };
+}
 
 type RunContext = AiRunContext;
 type StoredRun = AiRun<any> & { _context: RunContext };
@@ -315,15 +334,17 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     if (/!\[|\b(?:如图|见图|图示)\b/.test(input.text)) warnings.push('原资料可能含图，本次导入只处理已提取文字，请补齐图片后审核。');
     return publicRun(completedRun(store, 'import', settings.model, result, [], warnings));
   }, options));
+  app.post('/api/ai/runs/:id/import-preview', readOnlyOperation, async request => {
+    const value = importCandidates(store, parse(id, (request.params as any).id), request.body);
+    return previewQuestionImport(store, value.questions);
+  });
   app.post('/api/ai/runs/:id/import', async request => {
-    const run = getCompletedRun(store, parse(id, (request.params as any).id)); if (run.kind !== 'import') fail(400, 'AI_WRONG_RUN_KIND', '仅题目转换结果可以导入');
-    if (run.importedQuestionIds?.length) fail(409, 'AI_ALREADY_IMPORTED', '本次转换结果已导入，请在待审核中修改');
-    const input = parse(z.object({ confirmed: z.literal(true), indexes: z.array(z.number().int().min(0).max(49)).min(1).max(50).refine(a => new Set(a).size === a.length, '序号不能重复').optional(), questions: z.array(questionSchema).min(1).max(50).optional(), categoryIds: z.array(id).max(100).optional(), tagIds: z.array(id).max(100).optional() }).strict().refine(v => !(v.indexes && v.questions), '编辑题目与序号选择不能同时提交'), request.body);
-    const original = (run.result as AiImportResult).questions;
-    const questions = input.questions || (input.indexes ? input.indexes.map(index => original[index] || fail(400, 'AI_INVALID_CANDIDATE', '所选题目序号不存在')) : original);
+    const { confirmed: _confirmed, ...raw } = parse(aiImportApplySchema, request.body);
     return store.transaction(() => {
-      const created = questions.map(q => { const candidate = parse(questionSchema, { ...q, id: undefined, status: 'pending', categoryIds: input.categoryIds ?? q.categoryIds, tagIds: input.tagIds ?? q.tagIds }); store.validateRefs(candidate); validateAssetReferences(store, candidate, getSettings(store)); validateDocumentCitations(store,candidate,true); const record = { ...candidate, id: makeId('q'), status: 'pending' as const, createdAt: now(), updatedAt: now() }; store.insert('questions', record.id, record); return record; });
-      run.importedQuestionIds = created.map(q => q.id); run.appliedAt = now(); putRun(store, run); return { ok: true, added: created.length, count: created.length, items: created, run: publicRun(run) };
+      const { input, run, questions } = importCandidates(store, parse(id, (request.params as any).id), raw);
+      const result = applyQuestionImport(store, questions, input.dedup);
+      run.importedQuestionIds = [...new Set(result.items.map(q => q.id))]; run.appliedAt = now(); putRun(store, run);
+      return { ok: true, ...result, count: result.items.length, run: publicRun(run) };
     });
   });
   app.post('/api/ai/review', async (request, reply) => runAuditedAiAction(store, 'review', request, reply, async execution => {

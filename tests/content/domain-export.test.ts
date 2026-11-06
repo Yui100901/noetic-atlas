@@ -1,3 +1,4 @@
+import { reviewedShareImport as importShare } from '../helpers/import-review.js';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,7 @@ import { unzipSync } from 'fflate';
 import { readDataPackage } from '../../shared/packages/data-package.js';
 import { Store } from '../../server/core/store.js';
 import { questionSchema } from '../../server/core/validation.js';
-import { importShare } from '../../server/modules/sharing/service.js';
+
 import type { Domain, Question } from '../../shared/models/types.js';
 import type { SharePackage } from '../../shared/models/sharing.js';
 import {

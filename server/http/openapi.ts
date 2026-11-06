@@ -10,6 +10,9 @@ import {cleanupInputSchema,resetInputSchema,maintenanceConfirmationSchema} from 
 import {documentVersionSchema,documentSourceParamsSchema,relatedQuestionsQuerySchema} from '../modules/library/source-schema.js';
 import {aiDocumentLinkSourcesSchema} from '../modules/ai/document-schema.js';
 import {learningDaySchema,learningTaskResultSchema,planStartSchema} from '../modules/learning-plans/schema.js';
+import { aiImportSelectionSchema, aiImportApplySchema } from '../modules/ai/import-apply-schema.js';
+import { aiUsageStatisticsSchema } from '../modules/ai/usage-schema.js';
+import { importDedupPreviewSchema, importDedupOptionsSchema } from '../modules/question-imports/schema.js';
 import { createFocusSchema,focusActionSchema,focusSummarySchema } from '../modules/focus-review/schema.js';
 import packageInfo from '../../package.json' with { type: 'json' };
 import * as quality from '../modules/content-quality/schema.js';
@@ -130,7 +133,10 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/maintenance/reset':resetInputSchema,
   '/api/maintenance/compact':maintenanceConfirmationSchema,
   '/api/maintenance/reindex':maintenanceConfirmationSchema,
-  '/api/questions/bulk-import': validation.bulkQuestionImportSchema, '/api/questions/review': validation.questionReviewSchema,
+  '/api/questions/bulk-import': validation.bulkQuestionImportSchema.extend({dedup:importDedupOptionsSchema.optional()}), '/api/questions/review': validation.questionReviewSchema,
+  '/api/questions/import-preview':z.object({data:validation.newQuestionEnvelopeSchema}).strict(),
+  '/api/ai/runs/:id/import-preview':aiImportSelectionSchema,
+  '/api/ai/runs/:id/import':aiImportApplySchema,
   '/api/vocabulary/prompt-matches':vocabularyPromptMatchesSchema,
   '/api/ai/settings': ai.aiSettingsSchema, '/api/ai/paper-plan': ai.aiPaperPlanInputSchema,
   '/api/attempts/:id/timing': practiceTimingInputSchema,
@@ -140,6 +146,7 @@ const pathBodies: Record<string,z.ZodType> = {
   '/api/ai/document-jobs/:id/plan': aiDocumentProcessSchema,
   '/api/ai/document-jobs/:id/generate': aiDocumentProcessSchema,
   '/api/ai/document-jobs/:id/import': aiDocumentImportSchema,
+  '/api/ai/document-jobs/:id/import-preview': aiDocumentImportSchema,
   '/api/ai/document-jobs/:id/link-sources':aiDocumentLinkSourcesSchema,
   '/api/question-feedback': questionFeedbackInputSchema,
   '/api/question-feedback/summaries': questionFeedbackSummariesSchema,
@@ -233,6 +240,9 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/document-drafts')schema.querystring=toJson(documentDraftQuerySchema);
   if(url==='/api/attempts')schema.querystring=toJson(z.object({...paginationFields,paperId:id.optional(),source:z.enum(['paper','quick']).optional(),status:z.enum(['in_progress','submitted']).optional()}));
   if(url==='/api/ai/runs')schema.querystring=toJson(aiHistoryQuerySchema);
+  if(url==='/api/ai/usage')schema.querystring=toJson(aiHistoryQuerySchema);
+  if(url==='/api/packages/import-question')schema.querystring=toJson(z.object({fingerprint:z.string().regex(/^[a-f0-9]{64}$/),index:z.coerce.number().int().nonnegative()}).strict());
+  if(url==='/api/learning-plans/week')schema.querystring=toJson(z.object({date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()}).strict());
   if(url==='/api/ai/document-jobs')schema.querystring=toJson(z.object(paginationFields));
   if(url==='/api/ai/workspace-drafts')schema.querystring=toJson(aiWorkspaceDraftQuerySchema);
   if(url==='/api/question-feedback')schema.querystring=toJson(questionFeedbackQuerySchema);
@@ -246,6 +256,10 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/packages/export')success=toJson(packageFileSchema);
   if(url==='/api/packages/preview')success=toJson(packagePreviewSchema);
   if(url==='/api/packages/import')success=toJson(packageImportResultSchema);
+  if(url==='/api/packages/import-question')success=toJson(validation.questionSchema);
+  if(url==='/api/questions/import-preview'||url==='/api/ai/runs/:id/import-preview'||url==='/api/ai/document-jobs/:id/import-preview')success=toJson(importDedupPreviewSchema);
+  if(url==='/api/ai/usage')success=toJson(aiUsageStatisticsSchema);
+  if(url==='/api/learning-plans/week')success=toJson(z.object({from:z.string(),to:z.string(),timeZone:z.string(),targetMinutes:z.number().nonnegative(),targetSource:z.enum(['explicit','daily_budgets','none']),elapsedSeconds:z.number().nonnegative(),remainingSeconds:z.number().nonnegative(),percent:z.number().nonnegative(),timedSessions:z.number().int().nonnegative(),missingTimeSessions:z.number().int().nonnegative(),inProgressSeconds:z.number().nonnegative(),daily:z.array(z.object({date:z.string(),targetMinutes:z.number().nonnegative(),elapsedSeconds:z.number().nonnegative()})),note:z.string()}).strict());
   if(url==='/api/maintenance/cleanup-preview')success=toJson(cleanupOutputSchema);
   if(url==='/api/maintenance/cleanup')success=toJson(cleanupOutputSchema.extend({ok:z.literal(true)}));
   if(url==='/api/maintenance/reset-preview')success=toJson(resetOutputSchema);

@@ -1,4 +1,5 @@
 import type { ConfigurationPreview } from './configuration.js';
+import type { ImportDedupPreview } from './import-dedup.js';
 
 export const dataPackageKinds = [
   'share',
@@ -28,6 +29,7 @@ export interface DataPackagePreview {
   counts: Record<string, DataPackageCount>;
   warnings: string[];
   details?: ConfigurationPreview;
+  dedup?: ImportDedupPreview;
   questions?: Array<{ id: string; title: string; status: 'pending' | 'reused' }>;
 }
 export interface DataPackageImportResult extends DataPackagePreview {

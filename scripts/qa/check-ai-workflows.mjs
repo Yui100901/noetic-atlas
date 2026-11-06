@@ -1,3 +1,4 @@
+import { confirmReviewedImport } from './helpers/import-review.mjs';
 /** End-to-end page actions against a disposable in-memory learning station. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -48,11 +49,11 @@ try{
   await gradeDialog.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.locator('#exam-1 textarea').inputValue(),submitted.answers.S1.value);assert.equal(await page.locator('#exam-2 textarea').inputValue(),submitted.answers.S2.value);await page.screenshot({path:resolve(folder,'paper-ai-grading.png'),fullPage:true});
 
   await page.goto(origin+'/#/ai');await page.getByRole('button',{name:'文件 / 文本辅助导入',exact:true}).click();await page.getByLabel('待转换文本',{exact:true}).fill('判断：事务需要整体提交或回滚。答案：正确。解析：不保留部分操作。');await page.getByLabel('本批最多提取题量',{exact:true}).fill('1');
-  await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'确认新增到待审核',exact:true}).waitFor();assert.equal((await state()).totalQuestions,5);checks.push('AI文本转换预览不直接新增题目');
-  await page.getByRole('button',{name:'确认新增到待审核',exact:true}).click();await page.getByText('已新增1道待审核题。',{exact:false}).first().waitFor();
+  await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();assert.equal((await state()).totalQuestions,5);checks.push('AI文本转换预览不直接新增题目');
+  await confirmReviewedImport(page);await page.getByText('新增1道',{exact:false}).first().waitFor();
   const imported=await state();assert.equal(imported.totalQuestions,6);const created=imported.questions.find(q=>q.title==='AI转换的事务判断题');assert.equal(created?.status,'pending');checks.push('页面确认导入后新增1题并保持待审核');
 
-  await page.getByLabel('处理方式',{exact:true}).selectOption('generate');assert.equal(await page.getByRole('button',{name:'确认新增到待审核',exact:true}).count(),0);
+  await page.getByLabel('处理方式',{exact:true}).selectOption('generate');assert.equal(await page.getByRole('button',{name:'查重并准备导入',exact:true}).count(),0);
   const markdown='# Transaction textbook\nA transaction commits all operations or rolls them all back.\nA transfer must debit and credit together.';
   await page.getByLabel('AI导入原始文件',{exact:true}).setInputFiles({name:'transaction-textbook.md',mimeType:'text/markdown',buffer:Buffer.from(markdown)});
   await page.waitForFunction(value=>document.querySelector('.ai-source-text')?.value===value,markdown);assert.equal(await page.getByLabel('来源名称',{exact:true}).inputValue(),'transaction-textbook.md');checks.push('成功导入后已提交预览释放，Markdown教材在本机读取并填写来源');
@@ -62,10 +63,10 @@ try{
   await page.getByText('已在本机提取1页文字。',{exact:false}).waitFor();const extracted=await page.getByLabel('待转换文本',{exact:true}).inputValue();assert.match(extracted,/--- 第1页 ---/);assert.match(extracted,/A transfer must debit and credit together/);assert.equal((await state()).providerRequests.filter(request=>request.kind==='import').length,1);checks.push('电子教材PDF通过真实PDF.js本机解析，页码和正文可核对，上传不请求模型');
   await page.getByLabel('本批最多生成题量',{exact:true}).fill('2');await page.getByLabel('出题或整理要求',{exact:true}).fill('只依据本章，生成概念与转账应用各一题，中文回答。');await page.getByLabel('题目难度',{exact:true}).selectOption('2');
   await page.getByRole('checkbox',{name:'简答 / 场景',exact:true}).check();await page.getByRole('checkbox',{name:'计算机 / 数据库',exact:true}).check();await page.getByLabel('来源链接（可选）',{exact:true}).fill('https://example.invalid/qa-transaction-textbook');
-  await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByText('教材知识出题结果',{exact:true}).waitFor();await page.getByRole('button',{name:'确认新增到待审核',exact:true}).waitFor();
+  await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByText('教材知识出题结果',{exact:true}).waitFor();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();
   assert.equal((await state()).totalQuestions,6);const preview=JSON.parse(await page.getByLabel('AI转换题目JSON',{exact:true}).inputValue());assert.equal(preview.length,2);assert.ok(preview.every(q=>q.type==='short_answer'&&q.difficulty===2&&q.status==='pending'&&q.categoryIds.includes('db')));checks.push('教材正文生成两道不同概念/应用题，限制题型难度，预览阶段不新增');
   const generation=(await state()).providerRequests.filter(request=>request.kind==='import').at(-1);assert.equal(generation.source.mode,'generate');assert.equal(generation.source.name,'transaction-textbook.pdf');assert.match(generation.source.task,/概念与转账应用各一题/);assert.match(generation.source.text,/A transaction commits all operations/);
-  await page.screenshot({path:resolve(folder,'textbook-pdf-preview.png'),fullPage:true});await page.getByRole('button',{name:'确认新增到待审核',exact:true}).click();await page.getByText('已新增2道待审核题。',{exact:false}).first().waitFor();
+  await page.screenshot({path:resolve(folder,'textbook-pdf-preview.png'),fullPage:true});await confirmReviewedImport(page);await page.getByText('新增2道',{exact:false}).first().waitFor();
   const generated=await state();assert.equal(generated.totalQuestions,8);for(const entry of generated.questions.filter(q=>q.title.startsWith('教材生成的'))){const q=await question(entry.id);assert.equal(q.status,'pending');assert.equal(q.sourceDocument,'transaction-textbook.pdf');assert.deepEqual(q.sourceRefs,[{label:'transaction-textbook.pdf',url:'https://example.invalid/qa-transaction-textbook'}]);assert.deepEqual(q.categoryIds,['db']);}checks.push('确认导入教材题保持待审核，保留来源文件/链接/分类，来源链接不发生外部访问');
 
   // Follow the real review link: the workspace saves remaining source inputs

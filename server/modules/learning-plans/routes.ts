@@ -8,8 +8,29 @@ import type { LearningDay } from '../../../shared/models/learning-plan.js';
 import { learningDayView } from './progress.js';
 import { startLearningDay } from './start.js';
 import { planStartSchema } from './schema.js';
+import { learningWeek } from './time.js';
 
 export function registerLearningPlanRoutes(app: FastifyInstance, store: Store) {
+  app.get('/api/learning-plans/week', async (request) => {
+    const input = parse(
+      z
+        .object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .refine((value) => {
+              const instant = new Date(value + 'T00:00:00Z');
+              return (
+                Number.isFinite(instant.getTime()) && instant.toISOString().slice(0, 10) === value
+              );
+            }, '日期无效')
+            .optional(),
+        })
+        .strict(),
+      request.query,
+    );
+    return learningWeek(store, input.date);
+  });
   app.get('/api/learning-plans', async (request) => {
     const input = parse(
         z

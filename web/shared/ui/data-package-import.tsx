@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Archive, Check, Upload } from 'lucide-react';
 import type { DataPackagePreview } from '../../../shared/models/data-packages';
+import type { ImportDedupDecision } from '../../../shared/models/import-dedup';
+import type { QuestionInput } from '../../../shared/models/types';
+import { unresolvedImportItems } from '../lib/import-review-state';
+import { ImportDedupReview } from './import-dedup-review';
 import { readPackageFile } from '../lib/data-package';
 import { ApiError, request } from '../lib/api';
 import { ErrorNotice, useApp } from './components';
@@ -29,6 +33,16 @@ export function DataPackageImport({
     [done, setDone] = useState<DataPackagePreview['kind'] | null>(null);
   const [trusted, setTrusted] = useState(false),
     [retention, setRetention] = useState(false);
+  const [decisions, setDecisions] = useState<ImportDedupDecision[]>([]);
+  const unresolved = preview?.dedup ? unresolvedImportItems(preview.dedup, decisions).length : 0;
+  const readIncoming = useCallback(
+    (index: number, signal?: AbortSignal) =>
+      request<QuestionInput>(
+        `/api/packages/import-question?fingerprint=${encodeURIComponent(preview?.fingerprint || '')}&index=${index}`,
+        { signal },
+      ),
+    [preview?.fingerprint],
+  );
   const generation = useRef(0),
     active = useRef<AbortController | null>(null);
   useEffect(
@@ -52,6 +66,7 @@ export function DataPackageImport({
     setDone(null);
     setTrusted(false);
     setRetention(false);
+    setDecisions([]);
     setFilename(file.name);
     try {
       const dataBase64 = await readPackageFile(file);
@@ -85,6 +100,7 @@ export function DataPackageImport({
     setPhase('preview');
     setTrusted(false);
     setRetention(false);
+    setDecisions([]);
     try {
       const result = await request<DataPackagePreview>('/api/packages/preview', {
         method: 'POST',
@@ -107,6 +123,7 @@ export function DataPackageImport({
       !preview ||
       !encoded ||
       phase ||
+      unresolved > 0 ||
       (preview.kind === 'migration' && !trusted) ||
       ((preview.details?.retention.total || 0) > 0 && !retention)
     )
@@ -121,6 +138,7 @@ export function DataPackageImport({
           dataBase64: encoded,
           expectedFingerprint: preview.fingerprint,
           confirmed: true,
+          ...(preview.dedup ? { decisions } : {}),
           ...(trusted ? { confirmedTrusted: true } : {}),
           ...(retention ? { confirmedRetention: true } : {}),
         }),
@@ -170,13 +188,32 @@ export function DataPackageImport({
         />
       </label>
       {phase && (
-        <p role="status">
-          {phase === 'reading'
-            ? '正在读取数据包…可重新选择其他文件。'
-            : phase === 'preview'
-              ? '正在校验清单、分片和依赖…'
-              : '正在完整导入数据包，请保持当前页面…'}
-        </p>
+        <div className="action-row">
+          <p role="status">
+            {phase === 'reading'
+              ? '正在读取数据包…可重新选择其他文件。'
+              : phase === 'preview'
+                ? '正在校验数据包并检查重复与近似题…'
+                : '正在完整导入数据包，请保持当前页面…'}
+          </p>
+          {phase !== 'import' && (
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                generation.current++;
+                active.current?.abort();
+                active.current = null;
+                setPhase(null);
+                setPreview(null);
+                setEncoded('');
+                setDecisions([]);
+              }}
+            >
+              取消检查
+            </button>
+          )}
+        </div>
       )}
       {error && (
         <>
@@ -211,6 +248,15 @@ export function DataPackageImport({
             retention={retention}
             onRetention={setRetention}
           />
+          {preview.dedup && (
+            <ImportDedupReview
+              preview={preview.dedup}
+              decisions={decisions}
+              onChange={setDecisions}
+              readIncoming={readIncoming}
+              disabled={!!phase}
+            />
+          )}
           <div className="action-row">
             <button
               className="button"
@@ -229,6 +275,7 @@ export function DataPackageImport({
               className="button primary"
               disabled={
                 !!phase ||
+                unresolved > 0 ||
                 (preview.kind === 'migration' && !trusted) ||
                 ((preview.details?.retention.total || 0) > 0 && !retention)
               }

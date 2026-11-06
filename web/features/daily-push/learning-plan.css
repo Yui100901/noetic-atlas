@@ -289,3 +289,67 @@
   background: var(--green);
   border-radius: 20px;
 }
+
+.learning-week {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.learning-week-compact {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.learning-week-heading,
+.learning-week-controls,
+.learning-week-numbers {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.learning-week-heading {
+  justify-content: space-between;
+}
+.learning-week-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+}
+.learning-week-numbers strong {
+  font-size: 24px;
+}
+.learning-week-numbers small,
+.learning-week-numbers span {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.learning-week progress {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--green);
+}
+.learning-week-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.learning-week-days > div {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--green-soft);
+}
+.learning-week-days small {
+  color: var(--muted);
+}
+.learning-time-settings {
+  display: grid;
+  gap: 16px;
+  padding-block: 16px;
+  border-block: 1px solid var(--border);
+}

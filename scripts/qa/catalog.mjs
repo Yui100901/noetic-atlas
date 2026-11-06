@@ -18,6 +18,9 @@ const smoke = new Set([
   'data-package-ui',
 ]);
 const browserIds = [
+  'import-dedup-ui',
+  'learning-time-ui',
+  'ai-usage-ui',
   'adaptive-review-ui',
   'ai-document-ui',
   'ai-grade-entry-ui',
@@ -143,6 +146,7 @@ export const catalog = Object.freeze([
   check('fast-start', 'performance', { requirements: ['web-build'] }),
   ...[
     'ai-grade-live',
+    'ai-usage-live',
     'ai-question-edit-live',
     'ai-batch-live',
     'ai-live-textbook',

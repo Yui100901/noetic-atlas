@@ -16,6 +16,7 @@ const imported = {
   taxonomySuggestions: { domains: [], categories: [], tags: [] },
 };
 const results = {
+  connection_test: { ok: true, message: '连接成功', model: 'fixture' },
   explain: { explanationMarkdown: '解释', followUpsMarkdown: '', pitfallsMarkdown: '' },
   grade: {
     items: [
@@ -98,10 +99,7 @@ const run = (kind: keyof typeof results = 'explain', result: unknown = results[k
 });
 
 test('every completed AI kind has an explicit strict durable result contract', () => {
-  assert.deepEqual(
-    Object.keys(completedAiResultSchemas),
-    AI_RUN_KINDS.filter((kind) => kind !== 'connection_test'),
-  );
+  assert.deepEqual(Object.keys(completedAiResultSchemas).sort(), [...AI_RUN_KINDS].sort());
   for (const [kind, result] of Object.entries(results))
     assert.ok(
       storedCompletedAiRunSchema.safeParse(run(kind as keyof typeof results, result)).success,

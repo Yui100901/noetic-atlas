@@ -127,7 +127,7 @@ try {
   assert.equal(await guidance.getAttribute('open'), null);
   assert.equal(await guidance.locator('li').first().isVisible(), false);
   assert.equal(
-    await page.getByText('分享新增题目进入待审核。', { exact: false }).isVisible(),
+    await page.getByText('分享新增题目进入待审核，完全重复复用原题；', { exact: false }).isVisible(),
     true,
   );
   await guidance.locator('summary').click();

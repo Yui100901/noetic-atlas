@@ -12,6 +12,8 @@ import { previewConfiguration } from '../settings/configuration.js';
 import { planShareImport } from '../sharing/service.js';
 import { migrationDataKey as migrationKey } from './migration.js';
 import { canonicalPackageValue, packageRecordId } from './package-payload.js';
+import { previewQuestionImport } from '../question-imports/service.js';
+import { normalizeQuestionBlankStems } from '../../../shared/questions/blank-markers.js';
 
 const zero = (): DataPackageCount => ({ added: 0, reused: 0, remapped: 0, skipped: 0 });
 function relevantIds(kind: DataPackageKind, data: any): Map<Table, Set<string>> {
@@ -138,7 +140,9 @@ export function inspectDataPackage(
   let localFingerprint: string;
   const preview: DataPackagePreview = { kind, title, fingerprint: '', counts: {}, warnings: [] };
   if (kind === 'share') {
-    const planned = planShareImport(store, data).preview;
+    const sharePlan = planShareImport(store, data),
+      planned = sharePlan.preview;
+    preview.dedup = sharePlan.dedup;
     for (const [key, value] of Object.entries(planned.counts))
       preview.counts[key] = { ...zero(), ...value };
     preview.questions = planned.questions;
@@ -162,8 +166,6 @@ export function inspectDataPackage(
       for (const q of entries) {
         if (kind === 'question-template') {
           assertNewQuestionId(q.id);
-          if (q.id && store.get('questions', q.id))
-            fail(409, 'ID_EXISTS', `题号已存在，未覆盖现有题目：${q.id}`);
         } else {
           const local = store.require<any>('questions', q.id!);
           if (local.status !== 'pending')
@@ -189,6 +191,17 @@ export function inspectDataPackage(
         title: x.title,
         status: 'pending',
       }));
+      if (kind === 'question-template') {
+        preview.dedup = previewQuestionImport(
+          store,
+          data.questions.map(normalizeQuestionBlankStems),
+        );
+        preview.counts.questions.added = preview.dedup.counts.new + preview.dedup.counts.similar;
+        preview.counts.questions.reused = preview.dedup.counts.exact;
+        localFingerprint = createHash('sha256')
+          .update(localFingerprint + preview.dedup.fingerprint)
+          .digest('hex');
+      }
     }
   }
   preview.fingerprint = createHash('sha256')

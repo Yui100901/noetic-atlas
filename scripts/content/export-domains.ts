@@ -109,10 +109,10 @@ function validatePart(part: DomainPart): void {
     throw new Error('领域题目导出不应包含个人卷或题库集合');
   const recipient = new Store(':memory:');
   try {
-    const preview = planShareImport(recipient, part.share).preview;
+    const plan = planShareImport(recipient, part.share), preview = plan.preview;
     if (preview.counts.questions?.added !== part.share.questions.length)
       throw new Error('独立分包预览题数不一致：' + part.name);
-    importShare(recipient, part.share, preview.fingerprint);
+    importShare(recipient, part.share, preview.fingerprint, { expectedFingerprint: plan.dedup.fingerprint, decisions: plan.dedup.items.filter(item => item.kind === 'similar').map(item => ({ key: item.key, action: 'both' })) });
     const imported = recipient.all<Question>('questions');
     if (
       imported.length !== part.share.questions.length ||

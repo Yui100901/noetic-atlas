@@ -1,3 +1,4 @@
+import { reviewedNativeAiImport } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
@@ -21,6 +22,7 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   let runtime = await createLocalRuntime(sql, fullSeed, storage);
   t.after(async () => { if (runtime) await runtime.close(); });
   async function call(url: string, method = 'GET', body?: unknown, status = 200): Promise<any> {
+    if(status < 400 && method === 'POST')body=await reviewedNativeAiImport(runtime,url,body);
     const response = await runtime.fetch(url, { method, headers: { 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const value = await response.json(); assert.equal(response.status, status, JSON.stringify(value)); return value;
   }
@@ -82,9 +84,9 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   assert.equal(bulk.added, 2); assert.ok(bulk.items.every((q: any) => q.status === 'pending'));
   assert.equal((await call(`/api/questions?paperId=${questionSet.id}`)).total, 1, 'pending imports do not silently join a published question set');
   assert.equal((await call('/api/questions?search=MOBILE-BULK&status=pending')).total, 2);
-  const collision = structuredClone(bulkData); collision.questions[0].id = 'MOBILE-BULK-ROLLBACK';
+  const collision = structuredClone(bulkData); collision.questions[0].id = 'MOBILE-BULK-ROLLBACK'; collision.questions[0].stemMarkdown = '一个全新的原生导入题目'; collision.questions[1].answerMarkdown = '更新后的持久化说明';
   await call('/api/questions/bulk-import', 'POST', { data: collision, confirmed: true }, 409);
-  assert.equal((await call('/api/questions?search=MOBILE-BULK-ROLLBACK&status=all')).total, 0, 'bulk ID conflicts must roll back every item');
+  assert.equal((await call('/api/questions?search=MOBILE-BULK-ROLLBACK&status=all')).total, 0, 'unresolved similar questions must leave every item unapplied');
   const bulkBackup = await call('/api/export');
   assert.deepEqual(bulkBackup.questionBanks, [], 'new backups have no second question collection model');
   assert.ok(bulkBackup.papers.some((entry: any) => entry.id === questionSet.id && entry.questionIds.includes(objective.id)));

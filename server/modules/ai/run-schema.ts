@@ -1,6 +1,6 @@
 import { readingSourceSchema } from './reading-source.js';
 import { z } from 'zod';
-import { AI_RUN_KINDS, type AiRunKind } from '../../../shared/ai/ai.js';
+import type { AiRunKind } from '../../../shared/ai/ai.js';
 import { id, leafId, types } from '../../core/validation.js';
 import { aiDiagnosticsSchema } from './audit-schema.js';
 import {
@@ -63,6 +63,9 @@ export const storedAiPaperPlanResultSchema = aiPaperPlanOutputSchema
 /** Strict saved results. Provider coercion/repair belongs in the model adapters;
  * a new kind must explicitly register its durable contract here. */
 export const completedAiResultSchemas = {
+  connection_test: z
+    .object({ ok: z.literal(true), message: z.string().max(2000), model: z.string().max(200) })
+    .strict(),
   explain: explanationSchema,
   grade: gradeResultSchema,
   import: aiImportResultOutputSchema,
@@ -73,14 +76,14 @@ export const completedAiResultSchemas = {
   feedback_review: questionFeedbackReviewSchema,
   similar_questions: aiSimilarQuestionsResultSchema,
   question_edit: aiQuestionEditResultSchema,
-} satisfies Record<Exclude<AiRunKind, 'connection_test'>, z.ZodType>;
+} satisfies Record<AiRunKind, z.ZodType>;
 
 export const completedAiRunMetadataSchema = z
   .object({
     readingSource: readingSourceSchema.optional(),
     mathEnabled: z.boolean().optional(),
     id,
-    kind: z.enum(AI_RUN_KINDS.filter((kind) => kind !== 'connection_test')),
+    kind: z.enum(Object.keys(completedAiResultSchemas) as [AiRunKind, ...AiRunKind[]]),
     status: z.literal('completed'),
     createdAt: stamp,
     model: z.string().max(200),

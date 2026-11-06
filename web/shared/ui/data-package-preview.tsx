@@ -45,8 +45,14 @@ const labels: Record<string, string> = {
   qualityIssues: '质量问题',
 };
 
-function PackageCounts({ counts }: { counts: DataPackagePreview['counts'] }) {
-  const entries = Object.entries(counts);
+function PackageCounts({
+  counts,
+  omitQuestions = false,
+}: {
+  counts: DataPackagePreview['counts'];
+  omitQuestions?: boolean;
+}) {
+  const entries = Object.entries(counts).filter(([key]) => !omitQuestions || key !== 'questions');
   const active = entries.filter(([, value]) => Object.values(value).some((count) => count > 0));
   const empty = entries.length - active.length;
   if (!entries.length) return null;
@@ -155,10 +161,10 @@ export function DataPackagePreviewBody({
       <p>
         已识别用途：<strong>{kinds[preview.kind] || preview.kind}</strong>
       </p>
-      <PackageCounts counts={preview.counts} />
+      <PackageCounts counts={preview.counts} omitQuestions={!!preview.dedup} />
       {preview.kind === 'share' && (
         <p className="notice info">
-          分享新增题目进入待审核。同内容复用，同ID不同内容另存。含新题的题集先归档，审核后可恢复。
+          分享新增题目进入待审核，完全重复复用原题；相似内容可核对差异后覆盖、保留原题或保留两者。含新题的题集先归档，审核后可恢复。
         </p>
       )}
       {preview.kind === 'question-template' && (

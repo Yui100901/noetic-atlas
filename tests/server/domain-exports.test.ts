@@ -1,3 +1,4 @@
+import { reviewedShareImport as importShare } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
@@ -13,7 +14,7 @@ import {
 } from '../../server/modules/transfer/domain-exports.js';
 import { importData } from '../../server/modules/transfer/migration.js';
 import { importDataPackage, previewDataPackage } from '../../server/modules/transfer/packages.js';
-import { exportShare, importShare } from '../../server/modules/sharing/service.js';
+import { exportShare } from '../../server/modules/sharing/service.js';
 import {
   contentExportContext,
   detachQuestionLinks,

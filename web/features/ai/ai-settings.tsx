@@ -30,11 +30,9 @@ export function AiSettingsForm({
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   useEffect(() => {
-    if (resource.data) {
-      setForm(resource.data);
-      setKey('');
-      setClearKey(false);
-    }
+    // Only initialize here. A late read must not reset an input entered between
+    // updating the resource baseline and running this passive effect.
+    if (resource.data) setForm((current) => current || resource.data);
   }, [resource.data]);
   const dirty =
     !!form && (JSON.stringify(form) !== JSON.stringify(resource.data) || !!key || clearKey);
@@ -44,15 +42,21 @@ export function AiSettingsForm({
     onStatusChange?.({ dirty, busy });
   }, [dirty, busy, onStatusChange]);
   useEffect(() => {
-    if (!active) return;
+    if (!active || !resource.data) return;
     let cancelled = false;
+    const requestedStamp = latest.current.stamp;
     void request<AiSettingsView>('/api/ai/settings')
       .then((value) => {
         if (cancelled || latest.current.busy) return;
+        // Saving or explicitly adopting an external version invalidates a
+        // previously started read, even if that read finishes after the save.
+        if (latest.current.stamp !== requestedStamp && latest.current.stamp !== value.updatedAt)
+          return;
         if (latest.current.dirty) {
           if (latest.current.stamp !== value.updatedAt) setExternalSettings(value);
         } else {
           resource.setData(value);
+          setForm(value);
           setExternalSettings(null);
         }
       })
@@ -62,7 +66,7 @@ export function AiSettingsForm({
     return () => {
       cancelled = true;
     };
-  }, [active, refreshToken, resource.setData]);
+  }, [active, refreshToken, !!resource.data, resource.setData]);
   const discard = () => {
     const saved = externalSettings || resource.data;
     if (!saved || busy) return;
@@ -93,6 +97,9 @@ export function AiSettingsForm({
         clearKey,
       });
       resource.setData(result);
+      setForm(result);
+      setKey('');
+      setClearKey(false);
       setExternalSettings(null);
       reload();
       toast('AI辅助配置已保存');

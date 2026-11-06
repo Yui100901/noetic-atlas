@@ -1,3 +1,4 @@
+import { reviewedAiImport } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
@@ -54,7 +55,7 @@ async function fixture(t: test.TestContext) {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as { port: number }; const baseUrl = `http://127.0.0.1:${address.port}/v1`;
   t.after(async () => { await app.close(); store.db.close(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  const api = async (path: string, method: any = 'GET', payload?: unknown, code = 200) => json(await app.inject({ method, url: path, ...(payload === undefined ? {} : { payload }) }), code);
+  const api = async (path: string, method: any = 'GET', payload?: unknown, code = 200) => { if(code === 200 && method === 'POST')payload=await reviewedAiImport(app,path,payload);return json(await app.inject({ method, url: path, ...(payload === undefined ? {} : { payload }) }), code); };
   const enable = async (changes = {}) => api('/api/ai/settings', 'PUT', { ...await api('/api/ai/settings'), hasKey: undefined, enabled: true, baseUrl, model: 'local-test-model', key: 'secret-do-not-export-7654321', ...changes });
   const submitted = () => {
     const paper = buildPaper(store, { title: '混合卷', mode: 'manual', description: '', questionIds: ['S1', 'S2', 'O1'], scoring: { enabled: true, questionPoints: { S1: 6, S2: 4, O1: 2 } } }); store.put('papers', paper.id, paper);

@@ -50,7 +50,7 @@ test('new-content validation rejects published or private records and broken cro
   }
 });
 
-test('large vocabulary sharing indexes existing questions once and retains separate identical source IDs',()=>{
+test('large vocabulary sharing indexes existing questions once and coalesces identical source IDs',()=>{
   const pack=driving(),store=new Store(':memory:');
   try {
     const base=pack.questions[0];
@@ -60,8 +60,8 @@ test('large vocabulary sharing indexes existing questions once and retains separ
     let questionScans=0;const all=store.all.bind(store);
     store.all=((table:any)=>{if(table==='questions')questionScans++;return all(table);}) as typeof store.all;
     const plan=planShareImport(store,asShare(pack,'large vocabulary'));
-    assert.equal(plan.preview.counts.questions.added,2001);
-    assert.equal(new Set(plan.preview.questions.map(q=>q.id)).size,2001);
+    assert.equal(plan.preview.counts.questions.added,2000);
+    assert.equal(new Set(plan.preview.questions.map(q=>q.id)).size,2000);
     assert.ok(questionScans<=3,`Unexpected full scans: ${questionScans}`);
   }finally{store.db.close();}
 });

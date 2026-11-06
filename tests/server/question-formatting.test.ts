@@ -1,3 +1,4 @@
+import { reviewedAiImport } from '../helpers/import-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildApp} from '../../server/index.js';
@@ -17,7 +18,7 @@ test('question writes and bulk imports normalize fill markers without changing a
   const update=await app.inject({method:'PUT',url:'/api/questions/FORMAT',payload:{...q,stemMarkdown:'再问{{blank_1}}。'}});assert.equal(update.statusCode,200,update.body);assert.equal(update.json().stemMarkdown,'再问'+BLANK_LINE+'。');
   const template=(await app.inject('/api/questions/import-template')).json();
   // Use the supported template envelope; newly authored questions always wait for review.
-  const bulk=await app.inject({method:'POST',url:'/api/questions/bulk-import',payload:{confirmed:true,data:{...template,questions:[{...blank,id:'BULK'}]}}});
+  const bulk=await app.inject({method:'POST',url:'/api/questions/bulk-import',payload:await reviewedAiImport(app,'/api/questions/bulk-import',{confirmed:true,data:{...template,questions:[{...blank,id:'BULK'}]}})});
   assert.equal(bulk.statusCode,201,bulk.body);assert.equal(bulk.json().items[0].stemMarkdown,'坐标名称是'+BLANK_LINE+'。\n\n`{{answer}}`');
 });
 test('frozen historical snapshots export readable blanks without being rewritten',t=>{

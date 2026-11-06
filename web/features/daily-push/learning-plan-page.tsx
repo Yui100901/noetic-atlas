@@ -14,6 +14,7 @@ import {
 import { launchPlan, PlanProgress } from './learning-plan-card';
 import { LearningPlanHistory } from './learning-plan-history';
 import './learning-plan.css';
+import { LearningWeekCard } from './learning-week';
 
 export function LearningPlanPage({ id }: { id: string }) {
   const resource = useResource<LearningDayView>(`/api/learning-plans/${idPath(id)}`),
@@ -83,6 +84,23 @@ export function LearningPlanPage({ id }: { id: string }) {
         }
       />
       {error && <ErrorNotice message={error} />}
+      <LearningWeekCard />
+      {day.timeBudget && (
+        <section className="card">
+          <h2>今日时间安排</h2>
+          <p>
+            预算 {Math.round(day.timeBudget.targetSeconds / 60)} 分钟，预计{' '}
+            {Math.ceil(day.timeBudget.estimatedSeconds / 60)} 分钟；{day.timeBudget.measuredTasks}{' '}
+            项按已计时单题样本，{day.timeBudget.defaultTasks} 项使用题型默认估时。
+          </p>
+          <p className="muted">
+            估时不代表实际耗时。
+            {day.timeBudget.limited
+              ? '已按时间或容量限制控制任务量；剩余到期任务可到实时复习队列处理。'
+              : '当前可用任务已全部安排。'}
+          </p>
+        </section>
+      )}
       <section className="card">
         <PlanProgress value={day.progress} />
         <p className="muted">

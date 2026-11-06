@@ -183,6 +183,65 @@ try {
   await page.getByRole('button', { name: '放弃 AI 修改', exact: true }).click();
   checks.push('AI 与普通配置分别保存且互不丢输入；Back保留分类与编辑；真正离开可取消放弃确认');
 
+  // A background read started before editing can finish after a successful
+  // save. Its old version must never become the form's new baseline.
+  let releaseAiRead,
+    staleReadSeen = false;
+  const aiReadGate = new Promise((done) => (releaseAiRead = done));
+  const delayedAiRead = async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    staleReadSeen = true;
+    await aiReadGate;
+    return route.fulfill({ response });
+  };
+  await page.route('**/api/ai/settings', delayedAiRead);
+  await tab('练习与计分');
+  await tab('AI 辅助');
+  await wait(() => staleReadSeen, 'background AI read captured before editing');
+  await page.getByLabel('模型名称', { exact: true }).fill('迟到读取不能覆盖已保存模型');
+  await page.getByRole('button', { name: '保存 AI 配置', exact: true }).click();
+  await wait(
+    async () => (await api('/api/ai/settings')).model === '迟到读取不能覆盖已保存模型',
+    'AI settings saved before stale read finishes',
+  );
+  await wait(
+    () => page.getByRole('button', { name: '放弃 AI 修改', exact: true }).isDisabled(),
+    'AI draft is clean after saving',
+  );
+  releaseAiRead();
+  await delay(80);
+  assert.equal(
+    await page.getByLabel('模型名称', { exact: true }).inputValue(),
+    '迟到读取不能覆盖已保存模型',
+  );
+  await page.unroute('**/api/ai/settings', delayedAiRead);
+
+  // Exercise the read→baseline→input timing that previously lost drafts under
+  // load. Capture each response before delaying, rather than delaying the read.
+  let aiReadIndex = 0;
+  const jitterAiRead = async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const index = aiReadIndex++;
+    const response = await route.fetch();
+    await delay([0, 1, 2, 4, 8, 16, 32][index % 7]);
+    return route.fulfill({ response });
+  };
+  await page.route('**/api/ai/settings', jitterAiRead);
+  for (let index = 0; index < 30; index++) {
+    const abandon = page.getByRole('button', { name: '放弃 AI 修改', exact: true });
+    if (await abandon.isEnabled()) await abandon.click();
+    await tab('练习与计分');
+    await tab('AI 辅助');
+    const text = `时序测试未保存模型${index}`;
+    await page.getByLabel('模型名称', { exact: true }).fill(text);
+    await delay(40);
+    assert.equal(await page.getByLabel('模型名称', { exact: true }).inputValue(), text);
+  }
+  await page.unroute('**/api/ai/settings', jitterAiRead);
+  await page.getByRole('button', { name: '放弃 AI 修改', exact: true }).click();
+  checks.push('迟到读取不能覆盖已保存 AI 版本，30轮切换后立即编辑也完整保留未保存输入');
+
   await tab('练习与计分');
   await duration().fill('65');
   await tab('AI 辅助');

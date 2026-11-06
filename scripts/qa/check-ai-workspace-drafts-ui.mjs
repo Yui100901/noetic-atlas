@@ -1,3 +1,4 @@
+import { confirmReviewedImport } from './helpers/import-review.mjs';
 /** AI workspace drafts: disposable SQLite app, real page actions, loopback model. */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -80,18 +81,18 @@ try{
 
  await page.getByRole('button',{name:'文件 / 文本辅助导入',exact:true}).click();await page.getByLabel('待转换文本',{exact:true}).fill('一组操作整体提交或回滚称为事务原子性。转账的扣款和入账应一起完成。');
  await page.getByLabel('来源名称',{exact:true}).fill('草稿验收教材');await page.getByLabel('处理方式',{exact:true}).selectOption('generate');await page.getByLabel('本批最多生成题量',{exact:true}).fill('2');
- await page.getByLabel('出题或整理要求',{exact:true}).fill('仅据上述材料生成概念题和应用题。');await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'确认新增到待审核',exact:true}).waitFor();
+ await page.getByLabel('出题或整理要求',{exact:true}).fill('仅据上述材料生成概念题和应用题。');await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();
  await page.getByText('编辑完整题目结构 JSON',{exact:true}).click();const jsonField=page.getByLabel('AI转换题目JSON',{exact:true});const generated=JSON.parse(await jsonField.inputValue());assert.equal(generated.length,2);generated[0].title='人工核对后的导入预览';await jsonField.fill(JSON.stringify(generated));
  await page.locator('.ai-checkbox-list input[type=checkbox]').nth(1).uncheck();
  await page.getByLabel('处理方式',{exact:true}).selectOption('extract');assert.match(await jsonField.inputValue(),/人工核对后的导入预览/);await page.getByLabel('处理方式',{exact:true}).selectOption('generate');
  const inputBeforeBadFile=await page.getByLabel('待转换文本',{exact:true}).inputValue();await page.getByLabel('AI导入原始文件',{exact:true}).setInputFiles({name:'invalid-utf8.txt',mimeType:'text/plain',buffer:Buffer.from([0xff,0xfe,0xff])});await page.locator('.notice.error').waitFor();
  assert.equal(await page.getByLabel('待转换文本',{exact:true}).inputValue(),inputBeforeBadFile);assert.match(await jsonField.inputValue(),/人工核对后的导入预览/);assert.equal(await page.locator('.ai-checkbox-list input:checked').count(),1);checks.push('切换整理方式及读取无效文件失败后仍保留输入、上次预览与人工选择');await save();
  const importDraft=await settle(async()=>{const item=(await drafts('import'))[0];return item?.state.json.includes('人工核对后的导入预览')&&item.state.selected.length===1?item:null;},'import preview saved');
- await go('');await go('ai?tab=import');await recover();await page.getByRole('button',{name:'确认新增到待审核',exact:true}).waitFor();
+ await go('');await go('ai?tab=import');await recover();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();
  assert.equal(await page.getByLabel('来源名称',{exact:true}).inputValue(),'草稿验收教材');assert.match(await page.getByLabel('AI转换题目JSON',{exact:true}).inputValue(),/人工核对后的导入预览/);assert.equal(await page.locator('.ai-checkbox-list input:checked').count(),1);
  assert.equal((await drafts('import'))[0].id,importDraft.id);checks.push('普通导入保留文本、要求、处理方式、手改JSON及勾选，离开重入恢复同一草稿');
- await page.getByRole('button',{name:'确认新增到待审核',exact:true}).click();await settle(async()=>((await state()).questions.total===5),'import selected question');
- await page.getByLabel('出题或整理要求',{exact:true}).fill('完成导入后继续整理');await save();await page.reload();await maybeRecover(page.getByLabel('待转换文本',{exact:true}));await page.getByLabel('待转换文本',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'确认新增到待审核',exact:true}).count(),0);checks.push('导入只写入选中题且保持待审核，恢复不复活已导入预览');
+ await confirmReviewedImport(page);await settle(async()=>((await state()).questions.total===5),'import selected question');
+ await page.getByLabel('出题或整理要求',{exact:true}).fill('完成导入后继续整理');await save();await page.reload();await maybeRecover(page.getByLabel('待转换文本',{exact:true}));await page.getByLabel('待转换文本',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'查重并准备导入',exact:true}).count(),0);checks.push('导入只写入选中题且保持待审核，恢复不复活已导入预览');
 
  const conflictBase=(await drafts('import'))[0];await api('/api/ai/workspace-drafts/'+encodeURIComponent(conflictBase.id),'PUT',{expectedUpdatedAt:conflictBase.updatedAt,state:{...conflictBase.state,requirements:'另一个页面的新版本'}});
  await page.getByLabel('出题或整理要求',{exact:true}).fill('本页尚未保存的冲突分支');await page.getByRole('button',{name:'保存草稿',exact:true}).first().click();
@@ -114,14 +115,14 @@ try{
  await jobRegion.getByRole('checkbox',{name:'选择知识块 '+lastBlock.label,exact:true}).uncheck();await save(jobRegion);const jobDraft=await settle(async()=>{const item=(await drafts('document-job',jobId))[0];return item?.state.edits[firstBlock.id]?.json.includes('保留手改')?item:null;},'document job edits saved');
  assert.equal(jobDraft.state.selected.length,1);await save(page.locator('.ai-document-workspace').getByLabel('AI工作台草稿',{exact:true}).first());
  await page.reload();await recover();await recover();await jobRegion.waitFor();
- await jobRegion.getByRole('button',{name:/^确认选中预览到待审核/}).waitFor();assert.equal(await jobRegion.getByRole('checkbox',{name:'选择知识块 '+lastBlock.label,exact:true}).isChecked(),false);
+ await jobRegion.getByRole('button',{name:/^查重并准备导入/}).waitFor();assert.equal(await jobRegion.getByRole('checkbox',{name:'选择知识块 '+lastBlock.label,exact:true}).isChecked(),false);
  await blockCard.getByRole('button',{name:/展开知识块|收起知识块/}).waitFor();if(!await blockJson.isVisible()){const expand=blockCard.getByRole('button',{name:/^展开知识块/});if(await expand.count())await expand.click();await blockCard.getByText('编辑本块完整题目 JSON',{exact:true}).click();}assert.match(await blockJson.inputValue(),/保留手改的教材分块题/);checks.push('已创建任务按权威数据重载，知识块勾选与手改JSON按任务恢复');
  const latestBlockQuestions=JSON.parse(await blockJson.inputValue());latestBlockQuestions[0].title='父草稿切换前最后输入';await blockJson.fill(JSON.stringify(latestBlockQuestions));
  const parentControls=page.locator('[data-draft-kind="documents"]');await parentControls.getByRole('button',{name:'草稿操作',exact:true}).click();await page.getByRole('menuitem',{name:'新建草稿',exact:true}).click();await jobRegion.waitFor({state:'hidden'});
  assert.ok((await drafts('document-job',jobId)).some(item=>item.id===jobDraft.id&&item.state.edits[firstBlock.id].json.includes('父草稿切换前最后输入')),'parent draft switch must flush child before unmount');
  await parentControls.getByRole('button',{name:'草稿操作',exact:true}).click();await page.getByRole('menuitem',{name:'切换草稿',exact:true}).click();await recover();await recover();await jobRegion.waitFor();
  await blockCard.getByRole('button',{name:/展开知识块|收起知识块/}).waitFor();if(!await blockJson.isVisible()){const expand=blockCard.getByRole('button',{name:/^展开知识块/});if(await expand.count())await expand.click();await blockCard.getByText('编辑本块完整题目 JSON',{exact:true}).click();}assert.match(await blockJson.inputValue(),/父草稿切换前最后输入/);checks.push('父级新建与切换草稿先保存子任务最后输入，重开可恢复同一任务编辑');
- await jobRegion.getByRole('button',{name:/^确认选中预览到待审核/}).click();await settle(async()=>(await api('/api/ai/document-jobs/'+jobId)).importedCount===1,'document edited import');assert.ok((await state()).questions.items.some(question=>question.title==='父草稿切换前最后输入'));checks.push('恢复后的教材编辑可确认导入，已导入分块不可重复新增');
+ await confirmReviewedImport(jobRegion);await settle(async()=>(await api('/api/ai/document-jobs/'+jobId)).importedCount===1,'document edited import');assert.ok((await state()).questions.items.some(question=>question.title==='父草稿切换前最后输入'));checks.push('恢复后的教材编辑可确认导入，已导入分块不可重复新增');
 
  for(let index=0;index<4;index++)await api('/api/ai/workspace-drafts','POST',{kind:'paper',contextId:null,state:{prompt:'保留数量验收'+index}},201);
  const recent=await drafts('paper');assert.equal(recent.length,3);assert.deepEqual(recent.map(item=>item.state.prompt),['保留数量验收3','保留数量验收2','保留数量验收1']);checks.push('同类最多保留最近三份草稿，按更新时间排序');

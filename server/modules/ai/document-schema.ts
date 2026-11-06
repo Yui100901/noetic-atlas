@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AI_DOCUMENT_LIMITS } from '../../../shared/ai/ai-document.js';
 import { id, types, questionSchema, fail, documentCitationSchema } from '../../core/validation.js';
 import { aiImportResultOutputSchema } from './schema.js';
+import { importDedupOptionsSchema } from '../question-imports/schema.js';
 
 const ids = z.array(id).min(1).max(AI_DOCUMENT_LIMITS.maxBlocks).refine(values => new Set(values).size === values.length, '分块不能重复');
 const url = z.string().trim().url().max(3000).refine(value => { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password; }, '来源链接须为无账号密码的HTTP(S)地址');
@@ -15,7 +16,7 @@ export const aiDocumentCreateSchema = z.object({
 }).strict().refine(value => value.maxQuestions >= value.questionsPerBlock, '任务总题量预算不能小于每块题量');
 export const aiDocumentProcessSchema = z.object({ blockIds: ids.max(AI_DOCUMENT_LIMITS.maxBlocksPerRequest), retryFailed: z.boolean().default(false), questionsPerBlock: z.number().int().min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock).optional() }).strict();
 export const aiDocumentLinkSourcesSchema=z.object({confirmed:z.literal(true),expectedUpdatedAt:z.string().datetime({offset:true})}).strict();
-export const aiDocumentImportSchema = z.object({ confirmed: z.literal(true), blockIds: ids, questions: z.array(z.object({ blockId: id, questions: z.array(questionSchema).min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock) }).strict()).max(AI_DOCUMENT_LIMITS.maxBlocks).optional() }).strict();
+export const aiDocumentImportSchema = z.object({ confirmed: z.literal(true), blockIds: ids, questions: z.array(z.object({ blockId: id, questions: z.array(questionSchema).min(1).max(AI_DOCUMENT_LIMITS.maxQuestionsPerBlock) }).strict()).max(AI_DOCUMENT_LIMITS.maxBlocks).optional(), dedup: importDedupOptionsSchema.optional() }).strict();
 export const aiDocumentSummarySchema = z.object({ title: z.string().trim().min(1).max(300), summary: z.string().trim().min(1).max(5000), topics: z.array(z.string().trim().min(1).max(300)).min(1).max(30) }).strict();
 export const aiDocumentPlanResultSchema = aiDocumentSummarySchema.extend({ sourceName: z.string().min(1).max(300), label: z.string().max(300) });
 export const aiDocumentGenerateResultSchema = aiImportResultOutputSchema;

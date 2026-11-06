@@ -8,6 +8,7 @@ import type { StoredPaper } from '../practice/service.js';
 import { paperExportDocument } from '../transfer/exports.js';
 import { shareSelectionSchema } from './schema.js';
 import { exportShare, importShare, planShareImport } from './service.js';
+import { importDedupOptionsSchema } from '../question-imports/schema.js';
 
 export function registerSharingRoutes(app: FastifyInstance, store: Store) {
   app.post('/api/sharing/export', readOnlyOperation, async (request) =>
@@ -27,11 +28,12 @@ export function registerSharingRoutes(app: FastifyInstance, store: Store) {
           data: z.unknown(),
           confirmed: z.literal(true),
           expectedFingerprint: z.string().length(64).optional(),
+          dedup:importDedupOptionsSchema.optional(),
         })
         .strict(),
       request.body,
     );
-    return importShare(store, input.data, input.expectedFingerprint);
+    return importShare(store, input.data, input.expectedFingerprint,input.dedup);
   });
   app.post('/api/sharing/export-document', readOnlyOperation, async (request) => {
     const input = parse(shareSelectionSchema, request.body);

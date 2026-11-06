@@ -16,7 +16,7 @@ try{
  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>void dialog.accept());await page.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin===origin||['data:','blob:'].includes(url.protocol))return route.continue();external.push(url.href);return route.abort();});
  const api=async(url,method='GET',data)=>{const response=await page.request.fetch(origin+url,{method,...(data===undefined?{}:{data})});assert.ok(response.ok(),await response.text());return response.json();};
  await page.goto(origin+'/#/questions/import');const entry=page.getByRole('link',{name:'AI辅助转换 PDF / 文本',exact:true});await entry.click();await page.getByLabel('待转换文本',{exact:true}).waitFor();assert.equal(await page.locator('.ai-section-tabs .selected').innerText(),'文件 / 文本辅助导入');checks.push('批量新增的AI转换入口直达文件/文本导入，不落入组题');
- await page.getByLabel('待转换文本',{exact:true}).fill('判断事务是否整体提交，答案正确。');await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'确认新增到待审核',exact:true}).waitFor();
+ await page.getByLabel('待转换文本',{exact:true}).fill('判断事务是否整体提交，答案正确。');await page.getByRole('button',{name:'分析并生成结构化预览',exact:true}).click();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();
  const examples=[
   {title:'判断预览',type:'true_false',stemMarkdown:'判断占位',correctAnswers:['false']},
   {title:'单选预览',type:'single_choice',stemMarkdown:'请选择',options:[{key:'A',text:'甲选项'},{key:'B',text:'乙选项'}],correctAnswers:['B']},

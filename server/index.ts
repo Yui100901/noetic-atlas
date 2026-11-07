@@ -18,6 +18,7 @@ import { registerSettingsRoutes } from './modules/settings/routes.js';
 import { ensureSettings, getSettings } from './modules/settings/service.js';
 import { registerAssetRoutes } from './modules/assets/routes.js';
 import { validateStartupAssetReferences } from './modules/assets/service.js';
+import { registerPdfIndexRoutes } from './modules/library/pdf-index-routes.js';
 import { registerLibraryRoutes } from './modules/library/routes.js';
 import { registerDocumentDraftRoutes } from './modules/library/document-drafts.js';
 import { registerSharingRoutes } from './modules/sharing/routes.js';
@@ -95,6 +96,7 @@ export async function buildApp(options: AppOptions = {}) {
   registerSettingsRoutes(app, store);
   registerAssetRoutes(app, store);
   registerLibraryRoutes(app, store);
+  registerPdfIndexRoutes(app,store);
   registerDocumentDraftRoutes(app, store);
   registerSharingRoutes(app, store);
   registerAiRoutes(app, store, { native: options.native });

@@ -247,6 +247,8 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 
 相关错误：`AI_PAPER_INSUFFICIENT_QUESTIONS`、`AI_PAPER_COUNT_TOO_LARGE`、`AI_PAPER_FILTER_INVALID`、`AI_PAPER_TOO_MANY_PARTS`、`AI_PAPER_SELECTION_INVALID`、`AI_PAPER_CANDIDATE_MISMATCH`、`AI_PAPER_ALREADY_CREATED`、`AI_QUESTION_VERSION_CONFLICT`。数量不足、提示词条件不合法或题目变更时明确失败，不静默放宽范围；分批任务全部成功后才生成一条完整分析记录。
 
+AI选择批次中的`selectionCount`（兼容字段`requestedCount`）只表示本批选题数，`paperQuestionCount`表示全卷题量。模型的title／description必须描述全卷，不得把首批数量作为总数或根据首批候选虚构全卷覆盖。最终按实际选题核对说明；单批语义或错误题量使用确定性全卷说明并记录警告，不额外增加模型轮次。预览增删题与创建时同步明确题量短语，不改N5／N1、章节、年份或不同的子集数量。
+
 ### 解析与主观评价
 
 - `POST /api/ai/explain`：`{questionId,partId?}` → explanationMarkdown、followUpsMarkdown、pitfallsMarkdown。结合题干、原答案解析和追问补充说明，不替换原解析。
@@ -255,9 +257,17 @@ key 省略保留，空字符串或 clearKey 清除。baseUrl 支持 HTTP(S) 根�
 - 评价返回逐题 verdict（correct／partial／incorrect）、score、maxPoints、comment、strengths、improvements。有分卷建议分与判定须一致；无分卷分数二者为 null，仍给出判定。服务保存实际使用的逐题标准及全卷补充gradingRequirements，不信任模型回填要求。旧无明确判定且无分值的分析标 requiresRegrade，显示未判定并阻止应用，须重新评价。
 - `POST /api/ai/runs/:id/apply`：`{confirmed:true,applyScores?,appendNotes?,questionIds?}`。至少选择一项；applyScores 应用已提交作答的判定，有分题另应用分值；返回 appliedScores、appliedVerdicts。单次临时评价可写笔记，不能伪造已提交统计。笔记包含判题要求与结果并保留原内容，同一结果不重复追加。应用前校验源题／作答版本，客观成绩不变。
 
+### AI材料容量与分批
+
+界面统一为“分享与导入 → AI整理题目”，内部选择单次或教材分批；旧`tab=documents`、任务及资料链接保留上下文。不同模式分别保存原草稿，切换前完成保存，不自动请求模型。
+
+`SystemSettings.aiImport`控制原始文件本机提取和任务正文预算：默认`fileMiB=128,totalMiB=256,files=20,pdfPages=5000,sourceCharacters=8000000,sourceMiB=24,blocks=1200`。缺失字段按默认值读取，设置及配置协议共用严格Schema；总文件大小不能小于单文件大小。安全上界分别为256MiB、512MiB、50文件、10000页、1200万字符、32MiB和2000块。
+
+原始文件不上传服务器，前端读取前检查文件数量、单文件及总字节；提取时检查PDF页数、文本字符、UTF-8字节和块数。`POST /api/ai/document-jobs`独立核对当前配置的正文字符、UTF-8字节及拆分后的块数，超出返回413 `AI_DOCUMENT_TOO_LARGE`／`AI_DOCUMENT_TOO_MANY_BLOCKS`，事务不保存部分资料。每块仍最多12000字符／45000字节，当前任务最多2000道预览题，不放大单次模型上下文。HTTP请求体上限80MiB；可恢复AI草稿76MiB，并保留原有结构与深度校验，避免JSON转义及预览结构被较小旧限制提前拒绝。降低当前配置不删除既有任务，SQLite恢复按安全硬上限验证历史任务。
+
 ### 转换导入与审核
 
-- `POST /api/ai/import`：`{text,sourceName?,categoryIds?,tagIds?,count?}`，每批最多 50 题。返回候选结构及领域／分类／标签名称建议；文件先在客户端提取文字，扫描 PDF 需先 OCR，不接受任意服务器文件路径。
+- `POST /api/ai/import`：`{text,sourceName?,categoryIds?,tagIds?,count?}`，每批最多 50 题，单次模型正文预算400,000 UTF-8字节／字符；超过返回413 `AI_IMPORT_USE_BATCH`并提示使用同页教材分批，未截断或请求模型。返回候选结构及领域／分类／标签名称建议；文件先在客户端提取文字，扫描 PDF 需先 OCR，不接受任意服务器文件路径。
 - `POST /api/ai/runs/:id/import-preview`：`{indexes?或questions?,categoryIds?,tagIds?,dedup?}`，对同一规范化选择只读查重；dedup.enabled默认true。
 - `POST /api/ai/runs/:id/import`：`{confirmed:true,indexes?或questions?,categoryIds?,tagIds?,dedup?}`，确认查重决策后新增／复用／覆盖，新题进入pending。返回逐输入结果及计数；run.importedQuestionIds去重。同一结果不可重复应用，失败不保存。教材分批的`POST /api/ai/document-jobs/:id/import-preview`与`import`使用相同选择体，保留其原有confirmed要求，选中多块整体查重、整体提交。
 - `POST /api/ai/review`：`{questionIds,autoApprove?,expectedUpdatedAt}`。每批 1–20 道 pending 题。返回 valid／needs_changes／uncertain、issues 和可选 suggestedChanges。仅本次明确启用 autoApprove 且模型无问题、无缺图等警告时，valid 项通过审核；发布前再次校验版本。
@@ -424,3 +434,20 @@ learning_days保存生成时的目标与任务快照，learning_task_results以�
 维护表为`question_drafts`、`question_revisions`，完整JSON对应`questionDrafts`、`questionRevisions`，普通内容分享不带维护记录。默认每个编辑上下文3份草稿、每题20份修订，由`maxQuestionDrafts`／`maxQuestionRevisions`控制。配置预览与导入指纹包含这两表，调低上限的确认结果含`questionDrafts?`／`questionRevisions?`数量。
 
 草稿仅保存安全、有界的作者字段，不能夹带身份时间戳、学习状态或反馈字段；恢复和正式保存使用完整题型及资源校验。损坏源题的`baseline`可保留无效答案或已丢失附件作为只读证据，不承诺该内容可直接恢复；其他修订、当前题和草稿仍严格检查附件引用。所有版本都参与现存附件的引用保护。
+
+## PDF全文索引与原文定位
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/pdf-index/jobs` | 轻量索引任务与逐页进度，不包含提取正文或工作租约 |
+| `POST /api/pdf-index/jobs` | `{assetId}`建立单个PDF索引，或`{all:true}`为现有有效PDF资料排队；相同文件内容与提取器版本复用缓存 |
+| `POST /api/pdf-index/jobs/:id/claim` | 领取任务及短期独占租约，返回下一待处理文件页；未过期的同文件任务不能被重复领取 |
+| `POST /api/pdf-index/jobs/:id/pages` | 持租约提交连续页面，每批最多8页；`pageCount`声明文件页数，`complete:true`仅在全部页已提交后生效 |
+| `POST /api/pdf-index/jobs/:id/control` | `pause / resume / retry / cancel`控制任务，`fail / release`用于持租约客户端的失败报告与后台暂停 |
+| `GET /api/pdf-index/assets/:id/search?q=...` | 检索已索引页面，返回`{job,cache,total,hits,page,pageSize}`，命中包含`pageNumber,excerpt`，默认20页 |
+
+新增PDF资料自动排队。客户端以PDF.js工作线程逐页提取，持久化原文、坐标、规范化文本和进度；应用切到后台会中止提取并释放任务，下次打开从已提交页继续。普通搜索和应用启动不会临时解析PDF。零文字文件标记为`needs_ocr`，混合文件说明无可提取文字的页数；这不等同于已经执行OCR。失败任务记录实际错误，可以重试。
+
+统一搜索的`scope.pdf`为`indexed_text`。PDF资料仍按一个资料计数和分页，命中时提供`pdfTotalPages`与最多3项`pdfHits`；每项链接带固定内容版本、文件页码及关键词，读者可在原文中查找并显示坐标高亮。当前版本的全文参与全局搜索，旧版本通过原引用及文件内查找访问。
+
+完整与按领域SQLite迁移保留相关的提取页、内容哈希与任务进度。FTS是可重建投影，原生恢复先丢弃传入虚表及影子表，再从验证过的提取页重建。普通题目分享不附带整本教材或全文缓存。

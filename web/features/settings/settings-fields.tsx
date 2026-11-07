@@ -1,3 +1,8 @@
+import {
+  AI_IMPORT_HARD_LIMITS,
+  DEFAULT_AI_IMPORT_LIMITS,
+  type AiImportLimits,
+} from '../../../shared/ai/import-limits';
 import type { ReactNode } from 'react';
 import { DEFAULT_SETTINGS, type SystemSettings } from '../../../shared/models/settings';
 import { typeLabels, type QuestionType } from '../../../shared/models/types';
@@ -22,6 +27,15 @@ export function SettingsFields({
   route: SettingsRoute;
   busy: boolean;
 }) {
+  const materialFields: Array<{ key: keyof AiImportLimits; label: string; min: number }> = [
+    { key: 'fileMiB', label: 'AI材料单文件上限（MiB）', min: 1 },
+    { key: 'totalMiB', label: 'AI材料每次总大小上限（MiB）', min: 1 },
+    { key: 'files', label: 'AI材料每次最多文件数', min: 1 },
+    { key: 'pdfPages', label: 'AI材料单份PDF最多页数', min: 1 },
+    { key: 'sourceCharacters', label: 'AI任务提取正文最多字符数', min: 1000 },
+    { key: 'sourceMiB', label: 'AI任务提取正文上限（MiB）', min: 1 },
+    { key: 'blocks', label: 'AI任务最多资料块数', min: 1 },
+  ];
   const panel = (tab: SettingsRoute['tab'], sub: string, children: ReactNode) => (
     <div
       className="settings-fields-panel ui-stack"
@@ -292,6 +306,30 @@ export function SettingsFields({
               '默认5 MiB，支持 PNG、JPEG、WebP 和 GIF。',
             )}
           </div>
+          <h3>AI 整理材料</h3>
+          <div className="form-grid">
+            {materialFields.map(({ key, label, min }) => (
+              <div className="settings-option" key={key}>
+                <Field label={label}>
+                  <input
+                    required
+                    type="number"
+                    min={min}
+                    max={AI_IMPORT_HARD_LIMITS[key]}
+                    disabled={busy}
+                    value={form.aiImport[key]}
+                    onChange={(event) =>
+                      set('aiImport', { ...form.aiImport, [key]: Number(event.target.value) })
+                    }
+                  />
+                </Field>
+                <small>默认 {DEFAULT_AI_IMPORT_LIMITS[key].toLocaleString()}。</small>
+              </div>
+            ))}
+          </div>
+          <p className="muted">
+            原始文件在本机提取，任务正文按大小和分块数再次校验。大材料使用分批处理；这些限额不会放大单次模型上下文。
+          </p>
           <p className="muted">
             只影响后续上传。已有文件继续保留，可在“文件管理”中查看和清理未引用资源。
           </p>

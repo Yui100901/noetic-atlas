@@ -1,12 +1,13 @@
 import type { QuestionInput, QuestionType } from '../models/types.js';
 import type { AiImportMode } from './ai.js';
 import type { DocumentCitation } from '../models/document-citations.js';
+import { AI_IMPORT_HARD_LIMITS } from './import-limits.js';
 
 /** Saved only after explicit confirmation. Source text stays private to this job. */
 export const AI_DOCUMENT_LIMITS = {
-  maxSourceBytes: 12_000_000,
-  maxSourceCharacters: 4_000_000,
-  maxBlocks: 600,
+  maxSourceBytes: AI_IMPORT_HARD_LIMITS.sourceMiB * 1024 * 1024,
+  maxSourceCharacters: AI_IMPORT_HARD_LIMITS.sourceCharacters,
+  maxBlocks: AI_IMPORT_HARD_LIMITS.blocks,
   blockCharacters: 12_000,
   blockBytes: 45_000,
   maxBlocksPerRequest: 5,

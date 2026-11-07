@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { useAssetObjectUrl } from './asset-render';
 import { ErrorNotice, Loading } from '../ui/components';
+import { pdfMatchingItems } from '../../../shared/pdf/text';
 
 /** One page at a time on both browser and Android; no external PDF reader is
  * needed to follow a citation. Source text is never executed as HTML. */
@@ -10,10 +11,14 @@ export function PdfSourceReader({
   assetId,
   initialPage = 1,
   onPage,
+  targetPage,
+  searchQuery = '',
 }: {
   assetId: string;
   initialPage?: number;
   onPage?: (page: number) => void;
+  targetPage?: number;
+  searchQuery?: string;
 }) {
   const file = useAssetObjectUrl(assetId),
     canvas = useRef<HTMLCanvasElement>(null),
@@ -24,11 +29,17 @@ export function PdfSourceReader({
     [error, setError] = useState(''),
     [rendering, setRendering] = useState(true);
   const [draftPage, setDraftPage] = useState(String(initialPage));
+  const [highlights, setHighlights] = useState<
+    Array<{ left: number; top: number; width: number; height: number }>
+  >([]);
+  useEffect(() => {
+    if (targetPage && pdf) setPage(Math.min(targetPage, pdf.numPages));
+  }, [targetPage, pdf]);
   useEffect(() => {
     const parent = container.current;
     if (!parent) return;
     const observer = new ResizeObserver((entries) =>
-      setWidth(Math.max(200, Math.min(1200, entries[0].contentRect.width))),
+      setWidth(Math.max(1, Math.min(1200, entries[0].contentRect.width))),
     );
     observer.observe(parent);
     return () => observer.disconnect();
@@ -99,6 +110,31 @@ export function PdfSourceReader({
         const task = source.render({ canvas: element, viewport });
         render = task;
         await task.promise;
+        if (active) {
+          const content = searchQuery ? await source.getTextContent() : null,
+            items = content?.items.filter((item) => 'str' in item) || [],
+            found = pdfMatchingItems(
+              items.map((item) => ({ text: 'str' in item ? item.str : '' })),
+              searchQuery,
+            ),
+            boxes: Array<{ left: number; top: number; width: number; height: number }> = [];
+          items.forEach((item, index) => {
+            if (!found.has(index) || !('str' in item)) return;
+            const [, , , , x, y] = item.transform,
+              h = item.height || Math.hypot(item.transform[2]!, item.transform[3]!),
+              rect = [
+                ...viewport.convertToViewportPoint(x!, y! - h * 0.15),
+                ...viewport.convertToViewportPoint(x! + item.width, y! + h * 0.85),
+              ],
+              left = Math.max(0, Math.min(rect[0]!, rect[2]!) / dpr),
+              top = Math.max(0, Math.min(rect[1]!, rect[3]!) / dpr),
+              right = Math.min(viewport.width / dpr, Math.max(rect[0]!, rect[2]!) / dpr),
+              bottom = Math.min(viewport.height / dpr, Math.max(rect[1]!, rect[3]!) / dpr);
+            if (right > left && bottom > top)
+              boxes.push({ left, top, width: right - left, height: bottom - top });
+          });
+          setHighlights(boxes);
+        }
       } catch (reason) {
         if (active && (reason as Error).name !== 'RenderingCancelledException')
           setError((reason as Error).message);
@@ -110,7 +146,7 @@ export function PdfSourceReader({
       active = false;
       render?.cancel();
     };
-  }, [pdf, page, width]);
+  }, [pdf, page, width, searchQuery]);
   return (
     <section aria-label="PDF原文阅读器">
       <div className="source-pdf-toolbar">
@@ -166,7 +202,13 @@ export function PdfSourceReader({
       {(error || file.error) && <ErrorNotice message={error || file.error} />}
       <div ref={container} className="source-pdf-canvas">
         {!pdf && !error && !file.error && <Loading text="正在读取原文PDF…" />}
-        <canvas ref={canvas} aria-label={`PDF文件第${page}页`} aria-busy={rendering} />
+        <div className="pdf-highlight-stage" style={{ width, margin: '0 auto' }}>
+          <canvas ref={canvas} aria-label={`PDF文件第${page}页`} aria-busy={rendering} />
+          {!rendering &&
+            highlights.map((box, index) => (
+              <span key={index} className="pdf-text-highlight" style={box} aria-hidden="true" />
+            ))}
+        </div>
       </div>
     </section>
   );

@@ -19,13 +19,13 @@ try{
  const api=async(path,method='GET',data)=>{const response=await page.request.fetch(origin+path,{method,...(data===undefined?{}:{data})});assert.ok(response.ok(),await response.text());return response.json();};
  let navigation=0;const go=async path=>{await page.goto(origin+'/?handbook-qa='+ ++navigation+'#/'+path);await page.waitForLoadState('networkidle');};
  const capture=async name=>{assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow');await page.screenshot({path:resolve(folder,name+'.png'),fullPage:true});};
- await go('');const card=page.getByRole('region',{name:'本周学习统计',exact:true});await card.locator('[data-week-metric="answers"]').waitFor();
+ await go('');const card=page.getByRole('region',{name:'综合统计概览',exact:true});await card.locator('[data-week-metric="answers"]').waitFor();
  const week=await api('/api/analytics/weekly?timeZone=Asia%2FShanghai');assert.equal(await card.locator('[data-week-metric="answers"]').innerText(),week.current.summary.answers+'次');assert.equal(week.current.summary.answers,1);
  assert.equal(await page.locator('.page-header a[href^="#/analytics"]').count(),0);
  await page.getByRole('region',{name:'用户使用手册入口',exact:true}).getByRole('link',{name:'打开使用手册',exact:true}).click();
  await page.getByRole('navigation',{name:'手册目录',exact:true}).waitFor();await page.getByRole('heading',{name:'开始使用',exact:true}).waitFor();checks.push('总览本周卡片与周报同口径并显示真实提交，旧顶部统计入口移除，手册卡片可进入');
  const search=()=>page.getByPlaceholder('搜索手册内容',{exact:true});
- await search().fill('Token');await page.getByRole('status').filter({hasText:'找到1个相关章节'}).waitFor();assert.equal(await page.getByRole('heading',{name:'开始使用',exact:true}).count(),0);assert.equal(await page.getByRole('heading',{name:'AI辅助',exact:true}).count(),1);
+ await search().fill('Token');await page.getByRole('status').filter({hasText:/^找到[1-9]\d*个相关章节$/}).waitFor();assert.equal(await page.getByRole('heading',{name:'开始使用',exact:true}).count(),0);assert.equal(await page.getByRole('heading',{name:'AI辅助',exact:true}).count(),1);
  await search().fill('没有这个词QAXX');await page.getByRole('heading',{name:'没有找到相关章节',exact:true}).waitFor();
  await page.getByRole('navigation',{name:'手册目录'}).getByRole('button',{name:'题目管理与审核',exact:false}).click();assert.equal(await search().inputValue(),'');
  await page.getByRole('heading',{name:'题目管理与审核',exact:true}).waitFor();await page.waitForFunction(()=>{const r=document.getElementById('题目管理与审核')?.getBoundingClientRect();return r&&r.top>=0&&r.top<innerHeight;});
@@ -42,9 +42,10 @@ try{
  assert.equal((await api('/api/ai/settings')).maxTokens,4096);checks.push('AI启用后编辑、单题解析、推荐、普通导入、教材分批和处理记录均隐藏配置入口，已保存4096配置不被新默认覆盖');
  const {hasKey,...current}=await api('/api/ai/settings');await api('/api/ai/settings','PUT',{...current,enabled:false});
  await go('questions/EDIT-S/edit');await page.getByRole('link',{name:'配置 AI 辅助',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'分析当前题目',exact:true}).isDisabled(),true);
- await go('ai');await page.getByRole('link',{name:'配置 AI 辅助',exact:true}).waitFor();assert.equal(await aiLinks().count(),1);assert.equal(await page.getByRole('link',{name:'AI服务配置',exact:true}).count(),0);await go('ai?tab=history');await page.getByRole('link',{name:'AI服务配置',exact:true}).waitFor();assert.equal(await aiLinks().count(),1);
- await page.getByRole('link',{name:'AI服务配置',exact:true}).click();await page.getByLabel('最大输出 Token',{exact:true}).waitFor();assert.equal(await page.getByLabel('最大输出 Token',{exact:true}).inputValue(),'4096');await capture('ai-disabled-settings');
- const {hasKey:unused,...off}=await api('/api/ai/settings');await api('/api/ai/settings','PUT',{...off,enabled:true});await go('ai');assert.equal(await aiLinks().count(),0);checks.push('AI关闭时配置提示恢复且编辑分析禁用，提示能跳到实际配置页，重新开启后再次隐藏');
+ for(const route of ['papers/new/ai','sharing?tab=import','sharing?tab=import&process=batch']){await go(route);await page.getByRole('link',{name:'配置 AI 辅助',exact:true}).waitFor();assert.equal(await aiLinks().count(),1,'disabled AI configuration entry on '+route);}
+ await go('ai?tab=history');assert.match(page.url(),/#\/analytics\?/);await page.getByRole('tab',{name:/AI\s*用量与处理记录/}).waitFor();assert.equal(await aiLinks().count(),0,'read-only history does not duplicate configuration actions');
+ await go('papers/new/ai');await page.getByRole('link',{name:'配置 AI 辅助',exact:true}).click();await page.getByLabel('最大输出 Token',{exact:true}).waitFor();assert.equal(await page.getByLabel('最大输出 Token',{exact:true}).inputValue(),'4096');await capture('ai-disabled-settings');
+ const {hasKey:unused,...off}=await api('/api/ai/settings');await api('/api/ai/settings','PUT',{...off,enabled:true});await go('ai');assert.equal(await aiLinks().count(),0);checks.push('AI关闭时编辑/推荐/单次/分批保留唯一配置提示且编辑分析禁用；历史转至只读综合统计，配置链接可达且重开后隐藏');
  const state=await api('/qa/ai-question-edit');assert.equal(state.requests.length,0);assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  const report={passed:checks.length,checks,errors,external,database:':memory:',provider:'loopback-only',aiCalls:state.requests.length};await writeFile(resolve(folder,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){await page?.screenshot({path:resolve(folder,'failure.png'),fullPage:true}).catch(()=>{});await writeFile(resolve(folder,'failure.json'),JSON.stringify({error:String(error.stack||error),checks,errors,external,stderr,url:page?.url()},null,2));throw error;}

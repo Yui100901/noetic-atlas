@@ -24,7 +24,7 @@ try{
   await page.waitForTimeout(1100);assert.match(await page.getByLabel('AI处理进度').innerText(),/已用时 [1-9]\d* 秒/);await release();
   await page.getByRole('button',{name:'确认创建题集',exact:true}).waitFor();assert.equal(await page.locator('.ai-plan-selection>li').count(),2);assert.ok(await page.getByText('可用范围 1,000 题 · 检索命中 400 题 · 本次模型审阅 360 题 / 3 批',{exact:true}).isVisible());
   await page.getByText('查看本次工作步骤',{exact:true}).click();assert.ok(await page.getByText('正在校验题号与范围',{exact:true}).count());checks.push('完成后显示校验结果、真实耗时、检索范围与工作步骤');
-  await page.locator('.ai-plan-expand').first().scrollIntoViewIfNeeded();assert.match(page.url(),/#\/ai$/);await page.screenshot({path:resolve(folder,'desktop-completed.png')});
+  await page.locator('.ai-plan-expand').first().scrollIntoViewIfNeeded();assert.match(page.url(),/#\/papers\/new\/ai$/);await page.screenshot({path:resolve(folder,'desktop-completed.png')});
   const oldTitle=await page.getByLabel('题集名称',{exact:true}).inputValue();
   await page.getByLabel('AI组题要求').fill('failure');await page.getByRole('button',{name:'重新推荐',exact:true}).click();await page.getByLabel('AI生成中预览').waitFor();await release();
   await page.getByRole('alert').filter({hasText:'隔离测试：服务拒绝本次生成'}).waitFor();assert.equal(await page.getByLabel('题集名称',{exact:true}).inputValue(),oldTitle);assert.ok(await page.getByText('以下为上次已完成的推荐，本次处理完成后才会替换。',{exact:true}).isVisible());checks.push('流式业务错误保留原完成结果，不把未完成预览作为新结果');

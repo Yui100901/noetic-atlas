@@ -1,3 +1,4 @@
+import { ShareButton } from '../sharing/share-button';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, CalendarCheck2, ChevronRight, Star, Target } from 'lucide-react';
 import type { GlobalLearningKind, GlobalLearningQuestion, GlobalLearningSummary } from '../../../shared/practice/global-learning';
@@ -31,7 +32,7 @@ export function GlobalLearningPage({ kind }: { kind: GlobalLearningKind }) {
   useEffect(()=>{if(!questions.data||questions.loading)return;const maximum=Math.max(1,Math.ceil(questions.data.total/pageSize));if(page>maximum)setPage(maximum);},[questions.data,questions.loading,page,pageSize]);
   return <section className="global-learning-page">
     <a className="back-link" href="#/papers"><ArrowLeft size={15} />返回题集与练习</a>
-    <PageHeader eyebrow="SMART QUESTION SET" title={view.title} description={view.description} actions={<>{kind==='due'&&!adaptive&&<FocusLauncher/>}<button type="button" className="button" onClick={refresh}>刷新题集</button></>} />
+    <PageHeader eyebrow="SMART QUESTION SET" title={view.title} description={view.description} actions={<>{!adaptive&&<ShareButton kind="learning" learning={{kind}} />}{kind==='due'&&!adaptive&&<FocusLauncher/>}<button type="button" className="button" onClick={refresh}>刷新题集</button></>} />
     <nav className="global-learning-tabs" aria-label="系统汇总题集">{views.map(({ kind: value, title, Icon }) => <a key={value} href={`#/learning/${value}`} className={value === kind ? 'selected' : ''} aria-current={value === kind ? 'page' : undefined}><Icon size={17} /><span>{title}</span><strong>{!summary.loading && !summary.error && summary.data ? summary.data.counts[value].toLocaleString() : '—'}</strong></a>)}</nav>
     {summary.error && <ErrorNotice message={`汇总题数刷新失败：${summary.error}`} retry={summary.refresh} />}
     {adaptive && <AdaptiveReviewQueue />}

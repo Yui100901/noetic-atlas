@@ -5,10 +5,11 @@ export const SEARCH_TYPE_LABELS: Record<SearchType, string> = { question: 'é¢˜ç›
 export interface SearchItem {
   key: string; type: SearchType; id: string; title: string; excerpt: string; href: string; description: string;
   status?: string; domainIds: string[]; questionId?: string; partId?: string; updatedAt?: string;
-  matchIn: 'title' | 'id' | 'content' | 'reference';
+  matchIn: 'title' | 'id' | 'content' | 'reference' | 'pdf';
+  pdfHits?: {pageNumber:number;excerpt:string;href:string}[]; pdfTotalPages?:number;
 }
 export interface SearchResponse {
   query: string; type: SearchType | 'all'; sort: SearchSort; includeUnpublished: boolean;
   page: number; pageSize: number; total: number; totalAll: number; counts: Record<SearchType, number>; items: SearchItem[];
-  scope: { pdf: 'metadata'; answers: 'match_only'; notes: boolean; excluded: string[] };
+  scope: { pdf: 'indexed_text'; answers: 'match_only'; notes: boolean; excluded: string[] };
 }

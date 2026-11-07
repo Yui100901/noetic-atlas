@@ -1,7 +1,7 @@
 /** Selection and serial execution only; individual checks own their fixtures. */
 import { spawn, execFile } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { finished } from 'node:stream/promises';
 import { resolve, relative } from 'node:path';
 import { promisify } from 'node:util';
@@ -147,6 +147,39 @@ export async function executeCheck(entry, { root, directory, env = process.env, 
   };
 }
 
+/** Optional source packs are absent from a clean software checkout. Only
+ * ENOENT/ENOTDIR mean "not provided"; permission and other IO failures stay
+ * real failures instead of silently skipping a supplied, broken fixture. */
+export async function missingOptionalInputs(entry, root) {
+  const input = entry.optionalInputs;
+  if (!input) return;
+  const missing = [];
+  for (const file of input.files || []) {
+    try {
+      await access(resolve(root, file));
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
+      missing.push(file);
+    }
+  }
+  if (input.directory) {
+    let files = [];
+    try {
+      files = await readdir(resolve(root, input.directory), { withFileTypes: true });
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error;
+    }
+    const count = files.filter(
+      (file) => file.isFile() && file.name.endsWith(input.suffix || ''),
+    ).length;
+    if (count < input.minimum)
+      missing.push(
+        `${input.directory}/*${input.suffix || ''}：需要至少${input.minimum}份，现有${count}份`,
+      );
+  }
+  return missing.length ? `缺少可选公开内容包；未执行内容核验：${missing.join('；')}` : undefined;
+}
+
 export async function runSuite(
   checks,
   { root, directory, env, signal, execute = executeCheck, onProgress = () => {} },
@@ -163,6 +196,7 @@ export async function runSuite(
       script: entry.script || null,
       args: entry.args || [],
       timeoutMs: entry.timeoutMs || null,
+      ...(entry.optionalInputs ? { optionalInputs: entry.optionalInputs } : {}),
     })),
     results: [],
   };
@@ -172,14 +206,14 @@ export async function runSuite(
   for (const entry of checks) {
     if (signal?.aborted) break;
     let result;
-    if (entry.platform && entry.platform !== process.platform)
-      result = { id: entry.id, status: 'skipped', reason: `requires ${entry.platform}` };
-    else {
-      try {
-        result = await execute(entry, { root, directory, env, signal });
-      } catch (error) {
-        result = { id: entry.id, status: 'failed', error: String(error.message || error) };
-      }
+    try {
+      const missing = await missingOptionalInputs(entry, root);
+      if (missing) result = { id: entry.id, status: 'skipped', reason: missing };
+      else if (entry.platform && entry.platform !== process.platform)
+        result = { id: entry.id, status: 'skipped', reason: `requires ${entry.platform}` };
+      else result = await execute(entry, { root, directory, env, signal });
+    } catch (error) {
+      result = { id: entry.id, status: 'failed', error: String(error.message || error) };
     }
     report.results.push(result);
     await save();

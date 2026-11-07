@@ -1,1 +1,87 @@
-.sharing-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px}.sharing-layout>section{padding:25px;min-width:0}.share-export-actions{display:flex;flex-wrap:wrap;gap:12px;margin:22px 0}.share-preview-table{width:100%;border-collapse:collapse}.share-preview-table th,.share-preview-table td{padding:12px 10px;border-bottom:1px solid var(--border);text-align:left}.share-warnings{padding-left:20px;line-height:1.9}.sharing-layout textarea{width:100%;overflow:auto;word-break:break-all}.sharing-layout details{max-height:300px;overflow:auto}.sharing-layout details li{margin:8px 0}@media(max-width:850px){.sharing-layout{grid-template-columns:1fr}.sharing-layout>section{padding:18px}}
+.sharing-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px;
+}
+.sharing-layout > section {
+  padding: 25px;
+  min-width: 0;
+}
+.share-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 22px 0;
+}
+.share-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.share-preview-table th,
+.share-preview-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.share-warnings {
+  padding-left: 20px;
+  line-height: 1.9;
+}
+.sharing-layout textarea {
+  width: 100%;
+  overflow: auto;
+  word-break: break-all;
+}
+.sharing-layout details {
+  max-height: 300px;
+  overflow: auto;
+}
+.sharing-layout details li {
+  margin: 8px 0;
+}
+@media (max-width: 850px) {
+  .sharing-layout {
+    grid-template-columns: 1fr;
+  }
+  .sharing-layout > section {
+    padding: 18px;
+  }
+}
+.paper-sharing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.paper-sharing-actions .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.paper-sharing-list {
+  display: grid;
+  gap: 0.65rem;
+}
+.paper-sharing-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem;
+  cursor: pointer;
+}
+.paper-sharing-row input {
+  flex: none;
+}
+.paper-sharing-row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.paper-sharing-row strong {
+  overflow-wrap: anywhere;
+}
+.paper-sharing-row small {
+  color: var(--muted);
+}

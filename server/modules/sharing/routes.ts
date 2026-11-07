@@ -10,12 +10,15 @@ import {
   shareImportInputSchema,
   shareImportPreviewInputSchema,
 } from './schema.js';
+import { assertExportAllowed, previewPackageExport } from '../transfer/export-preflight.js';
 import { exportShare, importShare, planShareImport } from './service.js';
 
 export function registerSharingRoutes(app: FastifyInstance, store: Store) {
-  app.post('/api/sharing/export', readOnlyOperation, async (request) =>
-    exportShare(store, parse(shareSelectionSchema, request.body)),
-  );
+  app.post('/api/sharing/export', readOnlyOperation, async (request) => {
+    const selection = parse(shareSelectionSchema, request.body);
+    assertExportAllowed(previewPackageExport(store, { kind: 'share', selection }));
+    return exportShare(store, selection);
+  });
   app.post('/api/sharing/preview', readOnlyOperation, async (request) => {
     const input = parse(shareImportPreviewInputSchema, request.body);
     return planShareImport(store, input.data, input.dedup, true, input).preview;
@@ -26,7 +29,16 @@ export function registerSharingRoutes(app: FastifyInstance, store: Store) {
   });
   app.post('/api/sharing/export-document', readOnlyOperation, async (request) => {
     const input = parse(shareSelectionSchema, request.body);
+    const preflight=previewPackageExport(store,{kind:'share',selection:input});
+    assertExportAllowed(preflight);
+    if(preflight.questionCount>500)fail(422,'SHARE_PDF_LIMIT','PDF或Markdown单次最多500道题，请缩小范围或使用ZIP分享包');
     if (input.kind === 'paper') {
+      if (!input.id)
+        fail(
+          422,
+          'SHARE_DOCUMENT_SINGLE_PAPER',
+          '批量题集请使用ZIP分享包；PDF或Markdown请在单个题集中分享。',
+        );
       const paper = store.require<StoredPaper>(
         'papers',
         input.id || fail(400, 'SHARE_SELECTION_REQUIRED', '请选择题集'),

@@ -32,12 +32,42 @@ export const shareImportInputSchema = shareImportPreviewInputSchema
 
 export const shareSelectionSchema = z
   .object({
-    kind: z.enum(['questions', 'paper']),
+    kind: z.enum(['questions', 'paper', 'learning']),
+    learning: z
+      .object({
+        kind: z.enum(['wrong', 'favorite', 'due']),
+        source: z.enum(['paper', 'quick']).optional(),
+        paperId: id.optional(),
+      })
+      .strict()
+      .optional(),
     id: id.optional(),
     ids: z.array(id).min(1).max(50000).optional(),
     filters: z.record(z.string(), z.unknown()).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.kind === 'learning' && !value.learning)
+      ctx.addIssue({ code: 'custom', path: ['learning'], message: '请选择学习题集范围' });
+    if (value.kind !== 'learning' && value.learning)
+      ctx.addIssue({ code: 'custom', path: ['learning'], message: '普通分享不使用学习题集范围' });
+    if (value.learning?.source === 'paper' && !value.learning.paperId)
+      ctx.addIssue({ code: 'custom', path: ['learning', 'paperId'], message: '请选择来源题集' });
+    if (value.learning?.paperId && value.learning.source !== 'paper')
+      ctx.addIssue({
+        code: 'custom',
+        path: ['learning', 'paperId'],
+        message: '只有题集范围可以指定来源题集',
+      });
+    if (value.kind === 'paper' && value.ids && value.ids.length > 100)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ids'],
+        message: '一次最多分享100份题集，请缩小筛选范围',
+      });
+    if (value.ids && new Set(value.ids).size !== value.ids.length)
+      ctx.addIssue({ code: 'custom', path: ['ids'], message: '分享ID不能重复' });
+  });
 
 export const shareQuestionSchema = questionSchema.safeExtend({ id });
 const shareQuestion = shareQuestionSchema;

@@ -1,9 +1,16 @@
 import type { QuestionType } from './types.js';
 import { DEFAULT_DAILY_PUSH, type DailyPushSettings } from './daily-push.js';
+import { DEFAULT_AI_IMPORT_LIMITS, type AiImportLimits } from '../ai/import-limits.js';
 
 export const THEMES = ['green', 'dark', 'pink', 'sky', 'mint'] as const;
-export type Theme = typeof THEMES[number];
-export const THEME_LABELS: Record<Theme, string> = { green: '森林绿', dark: '暗色', pink: '淡粉色', sky: '天蓝色', mint: '薄荷绿' };
+export type Theme = (typeof THEMES)[number];
+export const THEME_LABELS: Record<Theme, string> = {
+  green: '森林绿',
+  dark: '暗色',
+  pink: '淡粉色',
+  sky: '天蓝色',
+  mint: '薄荷绿',
+};
 
 export interface ReviewSchedulingSettings {
   strategy: 'fsrs' | 'fixed';
@@ -16,9 +23,14 @@ export interface ReviewSchedulingSettings {
   reduceNewWhenOverdue: boolean;
 }
 export const DEFAULT_REVIEW_SCHEDULING: ReviewSchedulingSettings = {
-  strategy: 'fsrs', desiredRetention: 0.9, maximumIntervalDays: 36500,
-  learningStepsMinutes: [1, 10], relearningStepsMinutes: [10], enableFuzz: false,
-  autoRateObjective: true, reduceNewWhenOverdue: true,
+  strategy: 'fsrs',
+  desiredRetention: 0.9,
+  maximumIntervalDays: 36500,
+  learningStepsMinutes: [1, 10],
+  relearningStepsMinutes: [10],
+  enableFuzz: false,
+  autoRateObjective: true,
+  reduceNewWhenOverdue: true,
 };
 
 export interface SystemSettings {
@@ -47,21 +59,55 @@ export interface SystemSettings {
   autosaveDebounceMs: number;
   maxDocumentMiB: number;
   maxImageMiB: number;
+  aiImport: AiImportLimits;
   dailyPush: DailyPushSettings;
 }
 
 export const DEFAULT_SETTINGS: SystemSettings = {
-  id: 'system', updatedAt: '1970-01-01T00:00:00.000Z', theme: 'green',
-  maxDraftsPerPaper: 3, maxQuickDrafts: 3,
-  maxPaperDrafts: 3, maxDocumentDrafts: 3, maxQuestionDrafts: 3, maxQuestionRevisions: 20, examDurationMinutes: 120,
-  maxHistoryPerPaper: 0, maxQuickHistory: 0, maxQuestionHistory: 10,
-  randomQuestionCount: 20, scoringEnabledByDefault: false,
-  randomTotalPoints: 100, objectivePercent: 60,
-  pointsByType: { short_answer: 3, true_false: 1, single_choice: 2, multiple_choice: 4, fill_blank: 2, essay: 10, group: 6 },
-  reviewIntervalsDays: [1, 2, 7, 21], autosaveDebounceMs: 1000,
+  id: 'system',
+  updatedAt: '1970-01-01T00:00:00.000Z',
+  theme: 'green',
+  maxDraftsPerPaper: 3,
+  maxQuickDrafts: 3,
+  maxPaperDrafts: 3,
+  maxDocumentDrafts: 3,
+  maxQuestionDrafts: 3,
+  maxQuestionRevisions: 20,
+  examDurationMinutes: 120,
+  maxHistoryPerPaper: 0,
+  maxQuickHistory: 0,
+  maxQuestionHistory: 10,
+  randomQuestionCount: 20,
+  scoringEnabledByDefault: false,
+  randomTotalPoints: 100,
+  objectivePercent: 60,
+  pointsByType: {
+    short_answer: 3,
+    true_false: 1,
+    single_choice: 2,
+    multiple_choice: 4,
+    fill_blank: 2,
+    essay: 10,
+    group: 6,
+  },
+  reviewIntervalsDays: [1, 2, 7, 21],
+  autosaveDebounceMs: 1000,
   reviewScheduling: structuredClone(DEFAULT_REVIEW_SCHEDULING),
-  maxDocumentMiB: 20, maxImageMiB: 5,
+  maxDocumentMiB: 20,
+  maxImageMiB: 5,
+  aiImport: { ...DEFAULT_AI_IMPORT_LIMITS },
   dailyPush: { ...DEFAULT_DAILY_PUSH, categoryIds: [] },
 };
 
-export interface RetentionPreview { focusDrafts?:number;focusHistory?:number; drafts: number; history: number; total: number; authoring?: number; questionHistory?: number; documentDrafts?: number; questionDrafts?: number; questionRevisions?: number }
+export interface RetentionPreview {
+  focusDrafts?: number;
+  focusHistory?: number;
+  drafts: number;
+  history: number;
+  total: number;
+  authoring?: number;
+  questionHistory?: number;
+  documentDrafts?: number;
+  questionDrafts?: number;
+  questionRevisions?: number;
+}

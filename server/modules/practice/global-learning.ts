@@ -141,6 +141,18 @@ export function globalLearningQuestions(store:Store,query:{kind:GlobalLearningKi
   const selected=candidates.slice((query.page-1)*query.pageSize,query.page*query.pageSize);
   return {items:hydrate(store,selected,query.kind,contexts),total:candidates.length,page:query.page,pageSize:query.pageSize};
 }
+/** Shares the exact current global view, without loading notes or provenance. */
+export function globalLearningShareSource(store:Store,kind:GlobalLearningKind) {
+  const contexts=attemptContexts(store);
+  const candidates:GlobalCandidate[]=kind==='wrong'?wrongCandidates(contexts):libraryLeaves(store).filter(leaf=>kind==='favorite'?leaf.favorite:leaf.due).map(leaf=>({...leaf,entries:[]}));
+  return {title:{wrong:'全部错题',favorite:'全部收藏',due:'待复习'}[kind],items:candidates.map(item=>({id:item.id,sourceId:item.sourceId,attemptId:item.selected?.attempt.id})),paperIds:[] as string[],load:()=>{
+    const snapshots=learningSnapshots(store,candidates.flatMap(candidate=>candidate.selected?[{...candidate,attemptId:candidate.selected.attempt.id}]:[]));
+    const roots=[...new Set(candidates.map(item=>item.sourceId))],db=store.database;
+    const current=kind==='wrong'?new Map<string,Question>():new Map(db.all(db.query.selectFrom('questions').select('data').where(db.expressions.idInJson('id',roots))).flatMap(row=>flattenQuestions([JSON.parse(row.data) as Question]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q] as const)));
+    return candidates.map(item=>item.selected?snapshots.get(item.selected.attempt.id)!.get(item.key)!:current.get(item.key)!);
+  }};
+}
+
 export function learningCardSummaries(store:Store,paperIds:readonly string[]):LearningCardSummaries {
   const contexts=attemptContexts(store,paperIds),byPaper=new Map(contexts.map(context=>[context.paperId,context])),paperRows=papers(store,{paperIds}),paperMap=new Map(paperRows.map(paper=>[paper.id,paper]));
   const members=new Map<string,Map<string,Leaf>>();

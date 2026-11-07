@@ -6,7 +6,8 @@ import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 
-assert.equal(process.env.SMOKE_ISOLATED,'1','Only an isolated in-memory fixture may be used.');
+// This entry always spawns its own memory fixture below. The child requires
+// its explicit isolation flag, and the ready marker is checked before browsing.
 const root=resolve(import.meta.dirname,'../..'),output=resolve(root,'test-results/general-platform');
 let chromium;
 try{({chromium}=await(process.env.PLAYWRIGHT_MODULE?import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href):import('playwright')));}

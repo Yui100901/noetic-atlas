@@ -33,7 +33,7 @@ const FIELD_GROUPS = [
       'maxQuestionHistory',
     ],
   },
-  { tab: 'assets', sub: 'uploads', fields: ['maxDocumentMiB', 'maxImageMiB'] },
+  { tab: 'assets', sub: 'uploads', fields: ['maxDocumentMiB', 'maxImageMiB', 'aiImport'] },
 ] as const;
 
 /** Reset only visible configuration. Hidden learning plans and limits survive. */

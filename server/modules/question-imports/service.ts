@@ -492,12 +492,16 @@ export function prepareQuestionImport(
       allowUnresolved,
     ),
     stamp = now();
+  let resolvedIds: Record<string, string> | undefined;
+  // The mapping is shared by every rich-text rewrite. Building N source IDs
+  // once per incoming question makes large imports quadratic; only a genuine
+  // identity collapse below invalidates it.
   const idMap = () =>
-    Object.fromEntries(
+    (resolvedIds ??= Object.fromEntries(
       questions.flatMap((question, index) =>
         question.id ? [[question.id, targets.get(`i-${index}`)!]] : [],
       ),
-    );
+    ));
   const rewrite = (value: any, map: Record<string, string>): any =>
     typeof value === 'string'
       ? value.replace(
@@ -592,6 +596,7 @@ export function prepareQuestionImport(
             '覆盖会产生完全重复题，请改为保留原题或调整选择',
           );
         for (const [key, value] of targets) if (value === target) targets.set(key, same);
+        resolvedIds = undefined;
         updates.delete(target);
       } else {
         const bucket = seen.get(hash) || [];

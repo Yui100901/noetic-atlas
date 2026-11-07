@@ -354,9 +354,8 @@ try {
   await page.evaluate((id) => {
     location.hash = '#/papers/' + encodeURIComponent(id);
   }, paper.id);
-  await page.getByRole('button', { name: '导出与分享', exact: true }).click();
-  await page.getByRole('menuitem', { name: '导出题集', exact: true }).click();
-  const exportDialog = page.getByRole('dialog', { name: '导出题集', exact: true });
+  await page.getByRole('button', { name: '分享', exact: true }).click();
+  const exportDialog = page.getByRole('dialog', { name: '分享题集', exact: true });
   await exportDialog.getByRole('button', { name: '下载文件', exact: true }).click();
   await until(
     () => electronApp.evaluate(() => globalThis.__noeticSmokeDownload.done),

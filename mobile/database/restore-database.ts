@@ -29,6 +29,14 @@ const derivedTables = [
   'question_import_terms',
   'question_import_pending',
 ];
+const pdfFtsTables = [
+  'pdf_page_fts',
+  'pdf_page_fts_content',
+  'pdf_page_fts_segments',
+  'pdf_page_fts_segdir',
+  'pdf_page_fts_docsize',
+  'pdf_page_fts_stat',
+];
 const stamp = z.string().datetime({ offset: true });
 const invalid = (message: string): never => {
   throw new Error(`SQLite 备份校验失败：${message}`);
@@ -69,7 +77,12 @@ export function inspectSQLite(sql: SqlJsStatic, bytes: Uint8Array) {
     );
     if (!names.has('metadata') || coreTables.some((table) => !names.has(table)))
       invalid('缺少认知星图核心数据表或元数据');
-    const allowed = new Set<string>([...recordTables, ...derivedTables, 'metadata']);
+    const allowed = new Set<string>([
+      ...recordTables,
+      ...derivedTables,
+      ...pdfFtsTables,
+      'metadata',
+    ]);
     if ([...names].some((name) => !allowed.has(name)) || objects.some((row) => row.type === 'view'))
       invalid('包含当前应用不支持的数据表或视图');
     for (const table of ['metadata', ...recordTables.filter((table) => names.has(table))]) {
@@ -165,6 +178,9 @@ export function inspectSQLite(sql: SqlJsStatic, bytes: Uint8Array) {
       invalid('导入查重索引版本比当前应用更新');
     for (const row of objects.filter((row) => row.type === 'trigger'))
       db.run(`DROP TRIGGER ${quote(String(row.name))}`);
+    // Drop the virtual owner first; SQLite removes its FTS shadows together.
+    if (names.has('pdf_page_fts')) db.run('DROP TABLE pdf_page_fts');
+    for (const table of pdfFtsTables.slice(1)) db.run(`DROP TABLE IF EXISTS ${quote(table)}`);
     for (const table of derivedTables) if (names.has(table)) db.run(`DROP TABLE ${quote(table)}`);
     for (const row of rows(
       db,

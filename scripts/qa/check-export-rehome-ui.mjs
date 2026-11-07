@@ -52,9 +52,8 @@ try {
   checks.push('AI推荐位于创建题集，归位后仍可恢复原有种类的推荐草稿');
 
   await goto('papers/' + h.state.paperId);
-  await page.getByRole('button', { name: '导出与分享', exact: true }).click();
-  await page.getByRole('menuitem', { name: '导出题集', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '导出题集', exact: true });
+  await page.getByRole('button', { name: '分享', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '分享题集', exact: true });
   await dialog.getByRole('radio', { name: '题集数据包（ZIP）', exact: true }).check();
   const button = dialog.getByRole('button', { name: '下载文件', exact: true });
   await dialog.getByText('导出规模检查通过', { exact: true }).waitFor();
@@ -120,9 +119,8 @@ try {
     }),
   );
   await goto('papers/' + h.state.paperId);
-  await page.getByRole('button', { name: '导出与分享', exact: true }).click();
-  await page.getByRole('menuitem', { name: '导出题集', exact: true }).click();
-  const blocked = page.getByRole('dialog', { name: '导出题集', exact: true });
+  await page.getByRole('button', { name: '分享', exact: true }).click();
+  const blocked = page.getByRole('dialog', { name: '分享题集', exact: true });
   await blocked.getByRole('radio', { name: '题集数据包（ZIP）', exact: true }).check();
   await blocked.getByText('当前范围不适合一次导出', { exact: true }).waitFor();
   assert.equal(

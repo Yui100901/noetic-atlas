@@ -98,6 +98,7 @@ try {
     else if (url.pathname === '/api/questions/' + question.id + '/statistics') data = { answered: 0, correct: 0, partial: 0, incorrect: 0, ungraded: 0, lastAnsweredAt: null };
     else if (url.pathname === '/api/ai/runs') data = { items: [], total: 0, page: 1, pageSize: 20 };
     else if (url.pathname === '/api/paper-drafts') data = [];
+    else if (url.pathname === '/api/pdf-index/jobs' && request.method() === 'GET' && !url.search) data = [];
     else if (url.pathname === '/api/study/' + question.id && request.method() === 'PUT') {
       favorite = request.postDataJSON().favorite; data = { questionId: question.id, favorite, mastery: null, notes: '', wrongCount: 0 };
     } else {
@@ -193,6 +194,11 @@ try {
   await page.getByRole('button', { name: 'Change Markdown', exact: true }).click();
   await page.getByRole('heading', { name: 'Updated heading', exact: true }).waitFor();
   checks.push('计时/输入等父级更新保持正文DOM，Markdown内容变化仍正常重解析');
+  const pdfPolls = requests.filter(item => item.path === '/api/pdf-index/jobs');
+  assert.ok(pdfPolls.every(item => item.method === 'GET' && !item.query));
+  const pollSpan = pdfPolls.length > 1 ? pdfPolls.at(-1).started - pdfPolls[0].started : 0;
+  assert.ok(pdfPolls.length <= 2 + Math.floor(pollSpan / 4000), 'PDF任务元数据不应密集轮询');
+  checks.push('允许有界的只读PDF任务元数据轮询，空任务不读教材全文、不领取或写入索引');
   assert.deepEqual(unexpected, []); assert.deepEqual(pageErrors, []);
   preparation.assertStable(vite);
   checks.push('全部请求使用隔离本地fixture，无真实数据库、AI调用或页面异常');

@@ -45,6 +45,32 @@ function put(s: Store, q: QuestionInput) {
 }
 const count = (s: Store) => s.database.records('questions').length;
 
+test('reference rewrites follow identities collapsed earlier in the same import', (t) => {
+  const store = fixture(t);
+  const anchor = put(store, question('local-anchor', { title: '锚点原题' }));
+  const incoming = [
+    { ...anchor, id: 'source-anchor' },
+    question('first-link', { title: '关联概念', stemMarkdown: '参见 #/questions/source-anchor' }),
+    question('second-link', { title: '关联概念', stemMarkdown: '参见 #/questions/local-anchor' }),
+    question('dependent-link', { title: '后续引用', stemMarkdown: '参见 #/questions/second-link' }),
+  ];
+  const preview = previewQuestionImport(store, incoming);
+  const decisions = preview.items
+    .filter((item) => item.kind === 'similar')
+    .map((item) => ({ key: item.key, action: 'both' as const }));
+  const result = applyQuestionImport(store, incoming, {
+    expectedFingerprint: preview.fingerprint,
+    decisions,
+  });
+  assert.equal(result.idMap['source-anchor'], anchor.id);
+  assert.equal(result.idMap['second-link'], result.idMap['first-link']);
+  assert.equal(
+    store.require<Question>('questions', result.idMap['dependent-link']!).stemMarkdown,
+    `参见 #/questions/${result.idMap['first-link']}`,
+  );
+  assert.equal(count(store), 3);
+});
+
 test('strict identity ignores record metadata and local part IDs but preserves case, title, answers and grading criteria', () => {
   const a = question('a'),
     b = question('b', {

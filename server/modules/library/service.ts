@@ -1,3 +1,4 @@
+import { queueDocumentPdf } from './pdf-index-service.js';
 import type { Category, DocumentRecord } from '../../../shared/models/types.js';
 import { documentDomainIds, type DocumentListItem } from '../../../shared/models/library.js';
 import { Store, makeId, nextStamp, now } from '../../core/store.js';
@@ -124,6 +125,7 @@ export function createDocument(store: Store, body: unknown) {
   } as DocumentRecord);
   validateDocument(store, document);
   store.insert('documents', document.id, document);
+  queueDocumentPdf(store, document);
   return document;
 }
 
@@ -142,6 +144,7 @@ export function updateDocument(store: Store, documentId: string, body: unknown) 
   store.transaction(() => {
     captureDocumentVersion(store, previous);
     store.put('documents', documentId, document);
+    queueDocumentPdf(store, document);
   });
   return document;
 }

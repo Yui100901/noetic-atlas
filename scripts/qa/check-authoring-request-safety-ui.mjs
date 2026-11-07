@@ -97,8 +97,8 @@ try {
   assert.equal(await page.getByRole('dialog', { name: 'AI处理结果', exact: true }).count(), 0);
   checks.push('离开AI记录页取消详情读取，迟到结果不会在其他页面弹窗');
 
-  await page.goto(`${origin}/#/settings?tab=backup`);
-  const panel = page.getByRole('region', { name: '从数据包合并导入' });
+  await page.goto(`${origin}/#/sharing?tab=package`);
+  const panel = page.getByRole('region', { name: '导入内容数据包' });
   await panel.waitFor();
   await page.evaluate(() => {
     const original = File.prototype.arrayBuffer;
@@ -196,7 +196,12 @@ try {
   checks.push('无效ZIP后可重新选择，可信迁移要求明确确认');
   await choose('shared.zip', zip('分享用途', 0, true));
   await panel.getByText('内容分享', { exact: true }).waitFor();
-  assert.equal(await panel.getByRole('checkbox').count(), 0);
+  assert.equal(
+    await panel
+      .getByRole('checkbox', { name: '我确认这是自己的备份或可信来源的迁移包。', exact: true })
+      .count(),
+    0,
+  );
   checks.push('同一上传入口依据manifest识别分享用途并展示待审核规则');
 
   h.assertClean();

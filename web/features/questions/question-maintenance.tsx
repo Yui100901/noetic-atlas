@@ -8,7 +8,7 @@ import type {
   QuestionRevisionDetail,
 } from '../../../shared/models/question-maintenance';
 import { idPath, localDate, qs, request, send, useResource } from '../../shared/lib/api';
-import { ErrorNotice, Field, Loading, Pagination, useApp } from '../../shared/ui/components';
+import { ErrorNotice, Field, Loading, Modal, Pagination, useApp } from '../../shared/ui/components';
 import { questionEditorSources, questionEditorValue } from './question-editor-state';
 import {
   questionContentDifferences,
@@ -54,6 +54,8 @@ export function useQuestionMaintenance(props: Props) {
   const [draftsOpen, setDraftsOpen] = useState(false),
     [historyOpen, setHistoryOpen] = useState(false),
     [conflictOpen, setConflictOpen] = useState(false);
+  const offeredDrafts = useRef(false);
+  const [draftChoiceOpen, setDraftChoiceOpen] = useState(false);
   const [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(5),
     [historyRefresh, setHistoryRefresh] = useState(0);
@@ -71,6 +73,23 @@ export function useQuestionMaintenance(props: Props) {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (props.questionId || offeredDrafts.current || drafts.loading || drafts.dataUrl !== draftUrl)
+      return;
+    if (!drafts.data) return;
+    offeredDrafts.current = true;
+    // Do not interrupt typing if the initial request completes after editing
+    // starts. The persistent draft manager remains available in that case.
+    if (drafts.data.total && !props.dirty && !active) setDraftChoiceOpen(true);
+  }, [
+    props.questionId,
+    props.dirty,
+    drafts.loading,
+    drafts.dataUrl,
+    drafts.data,
+    draftUrl,
+    active,
+  ]);
   const activeNow = () => mounted.current;
 
   async function run(operation: () => Promise<void>) {
@@ -150,6 +169,7 @@ export function useQuestionMaintenance(props: Props) {
       const changed = !!current && draft.baseUpdatedAt !== current.updatedAt;
       setConflictOpen(changed);
       latest.current.onLoad(value, draft.state.sources);
+      setDraftChoiceOpen(false);
       toast(
         changed
           ? '草稿已载入，请先对照当前原题并确认编辑基础'
@@ -283,8 +303,86 @@ export function useQuestionMaintenance(props: Props) {
         )
       : [];
   const draftLimit = bootstrap.settings?.maxQuestionDrafts ?? 3;
+  const draftList =
+    drafts.loading || (drafts.dataUrl !== draftUrl && !drafts.error) ? (
+      <Loading text="正在读取编辑草稿…" />
+    ) : drafts.error ? (
+      <ErrorNotice message={drafts.error} retry={drafts.refresh} />
+    ) : !drafts.data?.total ? (
+      <p className="muted">暂无编辑草稿。未填完整的题目也可以保存草稿。</p>
+    ) : (
+      <>
+        <div className="question-maintenance-list">
+          {drafts.data.items.map((draft) => (
+            <article className="question-maintenance-item" key={draft.id}>
+              <div>
+                <strong>{draft.title || '未命名题目'}</strong>
+                <small>
+                  {localDate(draft.updatedAt)}
+                  {draft.conflict ? ' · 原题已更新' : ''}
+                  {active?.id === draft.id ? ' · 正在编辑' : ''}
+                </small>
+              </div>
+              <div className="question-maintenance-actions">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => void loadDraft(draft.id)}
+                >
+                  继续此草稿
+                </button>
+                <button
+                  className="button danger"
+                  type="button"
+                  aria-label={`删除编辑草稿 ${draft.id}`}
+                  disabled={disabled}
+                  onClick={() => void removeDraft(draft)}
+                >
+                  <Trash2 size={15} />
+                  删除
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={drafts.data.total}
+          onPage={setPage}
+          onPageSize={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          label="编辑草稿"
+        />
+      </>
+    );
   const panel = (
     <section className="question-maintenance card form-stack" aria-label="题目内容维护">
+      {draftChoiceOpen && (
+        <Modal
+          title="继续新题草稿或新建题目"
+          onClose={() => {
+            if (!busy) setDraftChoiceOpen(false);
+          }}
+        >
+          <div className="form-stack">
+            <p>有{drafts.data?.total ?? 0}份未完成的新题草稿。请选择一份继续，或从空白题目开始。</p>
+            {error && <ErrorNotice message={error} />}
+            {draftList}
+            <button
+              type="button"
+              className="button primary"
+              disabled={disabled}
+              onClick={() => setDraftChoiceOpen(false)}
+            >
+              新建空白题目
+            </button>
+          </div>
+        </Modal>
+      )}
       <div className="question-maintenance-heading">
         <div className="question-maintenance-actions">
           <button
@@ -419,61 +517,7 @@ export function useQuestionMaintenance(props: Props) {
               </button>
             )}
           </div>
-          {drafts.loading || (drafts.dataUrl !== draftUrl && !drafts.error) ? (
-            <Loading text="正在读取编辑草稿…" />
-          ) : drafts.error ? (
-            <ErrorNotice message={drafts.error} retry={drafts.refresh} />
-          ) : !drafts.data?.total ? (
-            <p className="muted">暂无编辑草稿。未填完整的题目也可以保存草稿。</p>
-          ) : (
-            <>
-              <div className="question-maintenance-list">
-                {drafts.data.items.map((draft) => (
-                  <article className="question-maintenance-item" key={draft.id}>
-                    <div>
-                      <strong>{draft.title || '未命名题目'}</strong>
-                      <small>
-                        {localDate(draft.updatedAt)}
-                        {draft.conflict ? ' · 原题已更新' : ''}
-                        {active?.id === draft.id ? ' · 正在编辑' : ''}
-                      </small>
-                    </div>
-                    <div className="question-maintenance-actions">
-                      <button
-                        className="button"
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => void loadDraft(draft.id)}
-                      >
-                        继续此草稿
-                      </button>
-                      <button
-                        className="button danger"
-                        type="button"
-                        aria-label={`删除编辑草稿 ${draft.id}`}
-                        disabled={disabled}
-                        onClick={() => void removeDraft(draft)}
-                      >
-                        <Trash2 size={15} />
-                        删除
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-              <Pagination
-                page={page}
-                pageSize={pageSize}
-                total={drafts.data.total}
-                onPage={setPage}
-                onPageSize={(size) => {
-                  setPageSize(size);
-                  setPage(1);
-                }}
-                label="编辑草稿"
-              />
-            </>
-          )}
+          {draftList}
         </div>
       )}
       <details className="question-revision-reason">

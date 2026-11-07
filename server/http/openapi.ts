@@ -1,3 +1,4 @@
+import { pdfQueueInputSchema,pdfControlInputSchema,pdfIngestInputSchema,pdfSearchQuerySchema,pdfJobSchema,pdfCacheSchema } from '../modules/library/pdf-index-schema.js';
 import { migrationSelectionSchema, migrationDatabaseQuerySchema, migrationPreviewSchema } from '../modules/transfer/sqlite-migration.js';
 import { shareImportPreviewInputSchema, shareImportInputSchema, shareSelectionSchema as shareSelection } from '../modules/sharing/schema.js';
 import * as questionMaintenance from '../modules/questions/maintenance-schema.js';
@@ -115,6 +116,7 @@ const globalLearningSummaryOutput:JsonSchema={type:'object',required:['counts'],
 const learningPage=(item:JsonSchema):JsonSchema=>({type:'object',required:['items','total','page','pageSize'],properties:{items:{type:'array',items:item},total:{type:'integer'},page:{type:'integer'},pageSize:{type:'integer'}}});
 const learningResetPreviewOutput:JsonSchema={type:'object',required:['fingerprint','counts','retained'],properties:{fingerprint:{type:'string',pattern:'^[a-f0-9]{64}$'},counts:{type:'object',properties:Object.fromEntries(['states','partStates','reviews','results'].map(key=>[key,{type:'integer',minimum:0}]))},retained:{type:'object',properties:{attempts:{type:'integer',minimum:0},drafts:{type:'integer',minimum:0}}}}};
 const pathBodies: Record<string,z.ZodType> = {
+  '/api/pdf-index/jobs':pdfQueueInputSchema,'/api/pdf-index/jobs/:id/claim':z.object({}).strict(),'/api/pdf-index/jobs/:id/control':pdfControlInputSchema,'/api/pdf-index/jobs/:id/pages':pdfIngestInputSchema,
   '/api/content-quality/scans':quality.qualityScanCreateSchema,
   '/api/content-quality/scans/:id/process':quality.qualityScanProcessSchema,
   '/api/content-quality/scans/:id/cancel':z.object({}).strict(),
@@ -226,6 +228,7 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/analytics')schema.querystring=toJson(analyticsQuerySchema);
   if(url==='/api/analytics/weekly')schema.querystring=toJson(weeklyQuerySchema);
   if(url==='/api/search')schema.querystring=toJson(searchQuerySchema);
+  if(url.startsWith('/api/pdf-index/')){schema.tags=['学习资料'];schema.description+=' PDF全文索引由前台PDF.js任务逐页提交，搜索仅查询派生FTS。扫描件返回needs_ocr；运行租约可取消、暂停及恢复。';if(url.endsWith('/search'))schema.querystring=toJson(pdfSearchQuerySchema);}
   if(url==='/api/review-scheduler/card'&&method==='GET')schema.querystring=toJson(cardQuerySchema);
   if(url==='/api/review-scheduler/queue')schema.querystring=toJson(queueQuerySchema);
   if(url==='/api/maintenance/health')schema.querystring=toJson(z.object({integrity:z.enum(['true','false']).default('false')}).strict());
@@ -332,6 +335,9 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/documents/:id/versions/:versionId')success=toJson(documentVersionSchema.extend({currentVersionId:validation.documentVersionIdSchema.nullable(),currentTitle:z.string().nullable(),archived:z.boolean()}));
   if(url==='/api/documents/:id/questions')success=learningPage(toJson(z.object({id:validation.id,title:z.string(),type:validation.types,status:z.string(),documentLinks:z.array(validation.documentCitationSchema)})));
   if(url==='/api/ai/document-jobs/:id/link-sources')success={type:'object',required:['job','linked'],properties:{job:aiDocumentJobOutput,linked:{type:'integer',minimum:0},skipped:{type:'integer',minimum:0}}};
+  if(url==='/api/pdf-index/jobs')success=method==='GET'?toJson(z.array(pdfJobSchema.omit({lease:true}).extend({cache:pdfCacheSchema.optional()}))):{};
+  if(url.startsWith('/api/pdf-index/jobs/')&&method==='POST')success=toJson(pdfJobSchema);
+  if(url==='/api/pdf-index/assets/:id/search')success=toJson(z.object({job:pdfJobSchema.omit({lease:true}).nullable(),cache:pdfCacheSchema.nullable(),total:z.number().int(),hits:z.array(z.object({pageNumber:z.number().int(),excerpt:z.string()})),page:z.number().int(),pageSize:z.number().int()}));
   if(url==='/api/documents/kinds')success={type:'array',items:{type:'string'}};
   if(url==='/api/study')success={type:'object',properties:{items:{type:'array',items:object},reviews:{type:'array',items:object}}};
   if(url==='/api/exams/active'||url==='/api/exams/sync')success={type:'object',properties:{attempt:{anyOf:[attemptOutput,{type:'null'}]}}};

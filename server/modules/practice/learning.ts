@@ -112,7 +112,7 @@ function historyItem(attempt:StoredAttempt):AttemptHistoryItem {
   const gradingStatus=!scoring.enabled?'not_applicable':!pending&&attempt.status==='submitted'?'complete':pending<subjective.length?'partial':'pending';
   return {id:attempt.id,...(attempt.practiceKind?{practiceKind:attempt.practiceKind}:{}),...(attempt.vocabularyDirection?{vocabularyDirection:attempt.vocabularyDirection}:{}),source:attempt.source||'paper',paperId:attempt.paperId,paperTitle:attempt.paperTitle,paperVersion:attempt.paperVersion,status:attempt.status,referenceViewedAt:attempt.referenceViewedAt??null,practiceMode:attempt.practiceMode||'practice',startedAt:attempt.startedAt,updatedAt:attempt.updatedAt||attempt.submittedAt||attempt.startedAt,submittedAt:attempt.submittedAt,elapsedSeconds:attemptElapsedSeconds(attempt),durationMinutes:attempt.durationMinutes??null,deadlineAt:attempt.deadlineAt??null,autoSubmitted:!!attempt.autoSubmitted,questionCount:attempt.questions.length,answeredCount:attempt.questions.filter(q=>isAnswerPresent(attempt.answers[q.id])).length,scoringEnabled:scoring.enabled,totalPoints:scoring.totalPoints,objectiveScore:attempt.objectiveScore,objectiveMax:attempt.objectiveMax,subjectiveScore:attempt.subjectiveScore,subjectiveMax:attempt.subjectiveMax,totalScore:scoring.enabled&&attempt.status==='submitted'&&!pending?Math.round((attempt.objectiveScore+attempt.subjectiveScore)*100)/100:null,pendingSubjectiveCount:pending,gradingStatus};
 }
-function hydrateQuestions(store:Store,resolved:ResolvedContext,candidates:Candidate[]):ContextLearningQuestion[] {
+function hydrateQuestions(store:Store,resolved:ResolvedContext,candidates:Candidate[],includeStudy=true):ContextLearningQuestion[] {
   if(!candidates.length)return [];
   const db=store.database;
   const snapshots=learningSnapshots(store,candidates.flatMap(candidate=>candidate.attemptId?[{...candidate,attemptId:candidate.attemptId}]:[]));
@@ -121,9 +121,15 @@ function hydrateQuestions(store:Store,resolved:ResolvedContext,candidates:Candid
   const paperQuestions=paper?new Map(flattenQuestions(JSON.parse(paper.snapshot) as Question[]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q])):new Map<string,StoredLeafQuestion>();
   const roots=[...new Set(missing.filter(candidate=>!paperQuestions.has(candidateKey(candidate))).map(candidate=>candidate.sourceId))];
   const current=new Map((roots.length?db.all(db.query.selectFrom('questions').select('data').where(db.expressions.idInJson('id',roots))):[]).flatMap(row=>flattenQuestions([JSON.parse(row.data) as Question]).map(q=>[learningQuestionKey(q.sourceQuestionId||q.id,q.id),q] as const)));
-  const study=loadLeafStudies(store,candidates,{includeNotes:true});
+  const study=includeStudy?loadLeafStudies(store,candidates,{includeNotes:true}):new Map();
   return candidates.map(candidate=>{const key=candidateKey(candidate);return {question:(candidate.attemptId?snapshots.get(candidate.attemptId)?.get(key):undefined)||paperQuestions.get(key)||current.get(key)!,...(candidate.attemptId?{attemptId:candidate.attemptId,historyAvailable:candidate.historyAvailable}:{}),wrongCount:candidate.wrongCount,...(candidate.answerState?{answerState:candidate.answerState}:{}),...(candidate.lastPracticedAt?{lastPracticedAt:candidate.lastPracticedAt}:{}),...(study.has(key)?{study:study.get(key)!}:{})};});
 }
+/** Export selection reads compact learning identities before any snapshot body. */
+export function contextLearningShareSource(store:Store,input:LearningContext & {kind:'wrong'|'favorite'|'due'}) {
+  const resolved=resolveContext(store,input), candidates=contextQuestions(store,resolved)[input.kind];
+  return {title:`${resolved.title} · ${{wrong:'错题集',favorite:'收藏集',due:'待复习'}[input.kind]}`,items:candidates.map(item=>({id:item.id,sourceId:item.sourceId,attemptId:item.attemptId})),paperIds:input.source==='paper'?[input.paperId!]:[],load:()=>hydrateQuestions(store,resolved,candidates,false).map(item=>item.question)};
+}
+
 export function registerContextLearningRoutes(app:FastifyInstance,store:Store) {
   app.get('/api/learning/summary',async request=>summary(store,resolveContext(store,parse(learningSummaryQuerySchema,request.query))));
   app.get('/api/learning/attempts',async request=>{

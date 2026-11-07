@@ -9,7 +9,7 @@ export const searchResponseOutputSchema = z.object({
   items: z.array(z.object({
     key: z.string(), type: z.enum(SEARCH_TYPES), id: z.string(), title: z.string(), excerpt: z.string(), href: z.string(), description: z.string(),
     status: z.string().optional(), domainIds: z.array(z.string()), questionId: z.string().optional(), partId: z.string().optional(), updatedAt: z.string().optional(),
-    matchIn: z.enum(['title', 'id', 'content', 'reference']),
+    pdfHits:z.array(z.object({pageNumber:z.number(),excerpt:z.string(),href:z.string()})).optional(),pdfTotalPages:z.number().optional(),matchIn: z.enum(['title', 'id', 'content', 'reference', 'pdf']),
   })),
-  scope: z.object({ pdf: z.literal('metadata'), answers: z.literal('match_only'), notes: z.boolean(), excluded: z.array(z.string()) }),
+  scope: z.object({ pdf: z.literal('indexed_text'), answers: z.literal('match_only'), notes: z.boolean(), excluded: z.array(z.string()) }),
 }) satisfies z.ZodType<SearchResponse>;

@@ -109,3 +109,41 @@
     min-height: 160px;
   }
 }
+
+.ai-import-unified .ai-import-mode-switch {
+  display: grid;
+  gap: 0.6rem;
+  padding: 14px 16px;
+  margin-bottom: 0;
+}
+.ai-import-mode-switch h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.ai-import-mode-help {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-import-mode-help p {
+  margin: 8px 0 0;
+}
+.ai-import-unified .ai-import-mode-switch .segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.ai-import-unified .ai-import-mode-switch .segmented button {
+  min-height: 42px;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+}
+.ai-import-unified .ai-import-mode-switch .segmented button.selected {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--green);
+  font-weight: 650;
+}

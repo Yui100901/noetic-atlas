@@ -30,7 +30,7 @@ import {
   importPendingQuestions,
 } from '../questions/import-export.js';
 import { exportConfiguration, importConfiguration } from '../settings/configuration.js';
-import { exportShare, importShare } from '../sharing/service.js';
+import { exportShare, planShareImport, commitPreparedShareImport } from '../sharing/service.js';
 import { exportData, importData } from './migration.js';
 import { combinePackagePayloads } from './package-payload.js';
 import { inspectDataPackage } from './package-preview.js';
@@ -195,6 +195,22 @@ export async function importDataPackage(
   if (value.kind === 'migration' && !input.confirmedTrusted)
     fail(400, 'PACKAGE_TRUST_CONFIRMATION_REQUIRED', '请确认此迁移包来自可信来源');
   return store.transaction(() => {
+    // Build the authoritative plan once, after decoding and within this write
+    // transaction. Comparing its fingerprint still rejects stale previews;
+    // committing it does not repeat all content comparisons and dependency work.
+    const sharePlan =
+      value.kind === 'share'
+        ? planShareImport(
+            store,
+            value.data,
+            {
+              ...input.dedup,
+              decisions: input.decisions || input.dedup?.decisions,
+            },
+            true,
+            { taxonomyMapping: input.taxonomyMapping, hashSources: value.hashSources },
+          )
+        : undefined;
     const preview = inspectDataPackage(
       store,
       value.kind,
@@ -202,22 +218,12 @@ export async function importDataPackage(
       value.data,
       value.packageHash,
       { ...input, hashSources: value.hashSources },
+      sharePlan,
     );
     if (preview.fingerprint !== input.expectedFingerprint)
       fail(409, 'PACKAGE_PREVIEW_STALE', '数据包或本机相关内容在预览后已变化，请重新预览后导入');
     let result: unknown;
-    if (value.kind === 'share')
-      result = importShare(
-        store,
-        value.data,
-        undefined,
-        {
-          expectedFingerprint: preview.dedup!.fingerprint,
-          ...input.dedup,
-          decisions: input.decisions || input.dedup?.decisions,
-        },
-        { taxonomyMapping: input.taxonomyMapping, hashSources: value.hashSources },
-      );
+    if (value.kind === 'share') result = commitPreparedShareImport(store, sharePlan!);
     else if (value.kind === 'migration') result = importData(store, value.data);
     else if (value.kind === 'configuration')
       result = importConfiguration(store, {

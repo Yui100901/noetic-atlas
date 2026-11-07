@@ -87,7 +87,7 @@ test('Markdown body and PDF metadata are searchable while binary payloads, scrip
   assert.equal(search('UNCLOSED_SCRIPT_CANARY').total, 0); assert.equal(search('可检索前文').items[0].id, 'unclosed-html');
   const index = store.db.all(store.db.query.selectFrom('search_read_model').select('search_text')).map(row => row.search_text).join('');
   assert.doesNotMatch(index, /base64|script_private|resource_private|binary_private/);
-  assert.equal(search('routing').scope.pdf, 'metadata');
+  assert.equal(search('routing').scope.pdf, 'indexed_text');
 });
 
 test('choices, blank prompts and normalized long-prefix excerpts remain discoverable without leaking standard answers', t => {
@@ -173,7 +173,7 @@ test('empty search performs no I/O and warm queries never read full records, ans
   store.all = () => { throw new Error('No full-table reads'); }; store.get = () => { throw new Error('No full-record reads'); };
   store.db.run = () => { throw new Error('Warm search must not write'); };
   store.db.all = ((query: any) => { reads++; const rows = all(query); assert.doesNotMatch(JSON.stringify(rows), /PRIVATE_REFERENCE_CANARY|REFERENCE_EXPLANATION_CANARY/); return rows; }) as typeof store.db.all;
-  assert.equal(search('COMMON').items.length, 7); assert.ok(reads <= 2);
+  assert.equal(search('COMMON').items.length, 7); assert.ok(reads <= 3, 'one FTS lookup, one grouped search and one page-local taxonomy read');
   store.db.all = () => { throw new Error('Empty query must not read'); }; store.db.one = () => { throw new Error('Empty query must not read'); };
   assert.equal(search('   ').total, 0);
 });

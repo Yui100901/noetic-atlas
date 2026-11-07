@@ -6,6 +6,7 @@ import { SqliteExpressions } from './sqlite-expressions.js';
 import { recordTables, type RecordTable } from './schema.js';
 import { RecordProjections } from './projections.js';
 import { StartupValidation } from './startup-validation.js';
+import { PdfTextIndex } from './pdf-index.js';
 import { ImportProjections } from './import-projections.js';
 
 /** The only native-driver boundary. Services use compiled, bound queries.
@@ -17,6 +18,7 @@ export class DatabaseConnection {
   readonly projections: RecordProjections;
   readonly startupValidation: StartupValidation;
   readonly imports: ImportProjections;
+  readonly pdf: PdfTextIndex;
   private readonly statements = new Map<string, ReturnType<DatabaseSync['prepare']>>();
   private readEpoch=0;
   private readonly client: DatabaseSync;
@@ -29,9 +31,10 @@ export class DatabaseConnection {
     this.projections=new RecordProjections(this);
     this.startupValidation=new StartupValidation(this);
     this.imports=new ImportProjections(this);
+    this.pdf=new PdfTextIndex(this);
     const missingTables = initialize && recordTables.some(table => !this.hasTable(table));
     this.schemaChanged = false;
-    if (initialize) { this.initialize(); const projectionsChanged=this.projections.initialize(), validationChanged=this.startupValidation.initialize(), importsChanged=this.imports.initialize(); this.schemaChanged = projectionsChanged || validationChanged || importsChanged || missingTables; }
+    if (initialize) { this.initialize(); const pdfChanged=this.pdf.initialize(), projectionsChanged=this.projections.initialize(), validationChanged=this.startupValidation.initialize(), importsChanged=this.imports.initialize(); this.schemaChanged = pdfChanged || projectionsChanged || validationChanged || importsChanged || missingTables; }
   }
   private initialize() {
     // Single-user portable storage deliberately keeps one-file DELETE journals.

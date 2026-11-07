@@ -15,7 +15,7 @@ import { fail } from '../../core/validation.js';
 import { collectAssetReferences, validateAssetReferences } from '../assets/service.js';
 import { assertNewQuestionId } from '../questions/import-export.js';
 import { previewConfiguration } from '../settings/configuration.js';
-import { planShareImport } from '../sharing/service.js';
+import { planShareImport, type ShareImportPlan } from '../sharing/service.js';
 import { migrationDataKey as migrationKey } from './migration.js';
 import { canonicalPackageValue, packageRecordId } from './package-payload.js';
 import { previewQuestionImport } from '../question-imports/service.js';
@@ -147,6 +147,7 @@ export function inspectDataPackage(
     taxonomyMapping?: ImportTaxonomyMapping;
     hashSources?: ReadonlyArray<PackageQuestionHashSource>;
   } = {},
+  preparedSharePlan?: ShareImportPlan,
 ): DataPackagePreview {
   let localFingerprint: string;
   const preview: DataPackagePreview = { kind, title, fingerprint: '', counts: {}, warnings: [] };
@@ -161,7 +162,8 @@ export function inspectDataPackage(
       '此包保留原迁移身份或使用本地模板归类，不能执行来源归类映射；请使用分享包调整归属。',
     );
   if (kind === 'share') {
-    const sharePlan = planShareImport(store, data, options.dedup, true, options),
+    const sharePlan =
+        preparedSharePlan || planShareImport(store, data, options.dedup, true, options),
       planned = sharePlan.preview;
     preview.dedup = sharePlan.dedup;
     preview.taxonomy = sharePlan.preview.taxonomy;

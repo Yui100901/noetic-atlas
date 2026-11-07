@@ -3,7 +3,9 @@ import { exportBudget } from '../../../shared/packages/export-budget.js';
 import { estimatedQuestionHashesBytes } from '../../../shared/packages/question-hashes.js';
 import { type Store, type Table, tables } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
+import { learningShareSource, selectedPaperIds } from '../sharing/selection.js';
 import { shareFilters } from '../sharing/service.js';
+import { projectionSources, type ProjectionSource } from '../../database/projections.js';
 import { packageExportSchema } from './package-schema.js';
 
 /** Read byte lengths and identities in SQL, never materialize exported bodies
@@ -13,6 +15,10 @@ export function contentExportBudget(
   ids: string[],
   options: {
     paperId?: string;
+    paperIds?: string[];
+    questionCount?: number;
+    sourceRecords?: Array<{ table: Table; ids: string[] }>;
+    fullTaxonomy?: boolean;
     multiplicity?: number;
     split?: boolean;
     questionBytes?: number;
@@ -22,7 +28,16 @@ export function contentExportBudget(
   const db = store.database,
     q = db.query,
     x = db.expressions;
-  db.projections.ensure(['questions', 'papers']);
+  const sources: ProjectionSource[] = [
+    'questions',
+    'papers',
+    ...(options.sourceRecords || []).flatMap((source) =>
+      projectionSources.includes(source.table as ProjectionSource)
+        ? [source.table as ProjectionSource]
+        : [],
+    ),
+  ];
+  db.projections.ensure([...new Set(sources)]);
   const stats = (table: Table, selected?: string[]) => {
     let query = q
       .selectFrom(table)
@@ -34,8 +49,13 @@ export function contentExportBudget(
     const row = db.one(query)!;
     return { bytes: Number(row.bytes || 0), largest: Number(row.largest || 0) };
   };
+  const paperIds = options.paperIds || (options.paperId ? [options.paperId] : []);
   const question = stats('questions', ids),
-    paper = options.paperId ? stats('papers', [options.paperId]) : { bytes: 0, largest: 0 };
+    paper = paperIds.length ? stats('papers', paperIds) : { bytes: 0, largest: 0 };
+  const sourceStats = (options.sourceRecords || []).map((source) =>
+    stats(source.table, source.ids),
+  );
+  const sourceBytes = sourceStats.reduce((sum, row) => sum + row.bytes, 0);
   const metadata = ids.length
     ? db
         .all(
@@ -66,16 +86,20 @@ export function contentExportBudget(
     stats('categories', [...categories]).bytes +
     stats('tags', [...tags]).bytes +
     stats('domains', [...domains]).bytes;
-  if (options.paperId) taxonomyBytes += stats('domains').bytes;
+  if (paperIds.length || options.fullTaxonomy)
+    taxonomyBytes = stats('domains').bytes + stats('categories').bytes + stats('tags').bytes;
   const refs = q
     .selectFrom('asset_references')
     .select('asset_id')
     .where((eb) =>
       eb.or([
         eb.and([eb('source_table', '=', 'questions'), x.idInJson('source_id', ids)]),
-        ...(options.paperId
-          ? [eb.and([eb('source_table', '=', 'papers'), eb('source_id', '=', options.paperId)])]
+        ...(paperIds.length
+          ? [eb.and([eb('source_table', '=', 'papers'), x.idInJson('source_id', paperIds)])]
           : []),
+        ...(options.sourceRecords || []).map((source) =>
+          eb.and([eb('source_table', '=', source.table), x.idInJson('source_id', source.ids)]),
+        ),
       ]),
     );
   const assets = db.all(
@@ -103,6 +127,7 @@ export function contentExportBudget(
     Math.ceil(
       ((options.questionBytes ?? question.bytes) +
         paper.bytes +
+        sourceBytes +
         (taxonomyBytes + assetMetadata) * multiplier) *
         2,
     ) + 8192;
@@ -119,9 +144,12 @@ export function contentExportBudget(
         Math.max(16 * 1024 * 1024, question.largest * 2 + taxonomyBytes * 2 + 8192),
       )
     : jsonBytes;
-  const hashBytes = estimatedQuestionHashesBytes(ids.length * multiplier, payloadCount);
+  const hashBytes = estimatedQuestionHashesBytes(
+    (options.questionCount ?? ids.length) * multiplier,
+    payloadCount,
+  );
   return exportBudget({
-    questionCount: ids.length,
+    questionCount: options.questionCount ?? ids.length,
     jsonBytes: jsonBytes + hashBytes,
     attachmentBytes,
     largestFileBytes: Math.max(
@@ -201,14 +229,53 @@ export function previewPackageExport(store: Store, raw: unknown) {
     const selection =
       input.selection || fail(400, 'PACKAGE_SELECTION_REQUIRED', '请选择需要分享的内容');
     if (selection.kind === 'paper') {
-      const row =
-        db.one(
-          q
-            .selectFrom('papers')
-            .select(db.expressions.field<string>('data', 'questionIds').as('ids'))
-            .where('id', '=', selection.id || ''),
-        ) || fail(404, 'NOT_FOUND', '题集不存在');
-      return contentExportBudget(store, JSON.parse(row.ids || '[]'), { paperId: selection.id });
+      const paperIds = selectedPaperIds(store, selection);
+      const rows = db.all(
+        q
+          .selectFrom('papers')
+          .select('id')
+          .select(db.expressions.field<string>('data', 'questionIds').as('ids'))
+          .where(db.expressions.idInJson('id', paperIds)),
+      );
+      if (rows.length !== paperIds.length) fail(404, 'NOT_FOUND', '所选题集不存在，请刷新列表');
+      const ids = [...new Set(rows.flatMap((row) => JSON.parse(row.ids || '[]') as string[]))];
+      const snapshotCount = rows.reduce(
+        (sum, row) => sum + (JSON.parse(row.ids || '[]') as string[]).length,
+        0,
+      );
+      return contentExportBudget(store, ids, { paperIds, questionCount: snapshotCount });
+    }
+    if (selection.kind === 'learning') {
+      const source = learningShareSource(store, selection.learning!, selection.filters);
+      const roots = [...new Set(source.items.map((item) => item.sourceId))],
+        attempts = [
+          ...new Set(source.items.flatMap((item) => (item.attemptId ? [item.attemptId] : []))),
+        ];
+      const histories = attempts.length
+        ? db
+            .all(
+              q
+                .selectFrom('question_history')
+                .select('id')
+                .where(
+                  db.expressions.valueInJson(
+                    db.expressions.field<string>('data', 'attemptId'),
+                    attempts,
+                  ),
+                ),
+            )
+            .map((row) => row.id)
+        : [];
+      return contentExportBudget(store, roots, {
+        questionCount: source.items.length,
+        paperIds: source.paperIds,
+        sourceRecords: [
+          { table: 'attempts', ids: attempts },
+          { table: 'learning_results', ids: attempts },
+          { table: 'question_history', ids: histories },
+        ],
+        fullTaxonomy: true,
+      });
     }
     const ids = selection.id
       ? [selection.id]

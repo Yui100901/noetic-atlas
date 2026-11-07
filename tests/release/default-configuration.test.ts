@@ -20,6 +20,9 @@ test('release base configuration rejects opaque credentials and private fields e
     (data:any)=>{data.system.dailyPush.enabled=true;},
     (data:any)=>{data.system.dailyPush.domainId='private-domain';},
     (data:any)=>{data.system.dailyPush.categoryIds=['private-category'];},
+    (data:any)=>{data.system.aiImport.key='opaque-token';},
+    (data:any)=>{data.system.aiImport.files='private-value';},
+    (data:any)=>{data.system.aiImport.fileMiB=256;},
     (data:any)=>{data.questions=[];},
   ]){const data=clean();mutate(data);assert.throws(()=>validateBaseConfiguration(data));}
 });

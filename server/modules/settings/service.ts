@@ -25,6 +25,7 @@ import {
 } from '../questions/maintenance-retention.js';
 import { reviewSchedulingSettingsSchema } from './review-scheduling.js';
 import { mirrorReviewStudy } from '../review-scheduler/service.js';
+import { aiImportSettingsSchema } from './ai-import-settings.js';
 
 export const settingsSchema = z
   .object({
@@ -60,6 +61,7 @@ export const settingsSchema = z
     autosaveDebounceMs: z.number().int().min(100).max(10000),
     maxDocumentMiB: z.number().int().min(1).max(50),
     maxImageMiB: z.number().int().min(1).max(20),
+    aiImport: aiImportSettingsSchema.default(DEFAULT_SETTINGS.aiImport),
     dailyPush: dailyPushSettingsSchema,
     reviewScheduling: reviewSchedulingSettingsSchema,
   })
@@ -70,6 +72,7 @@ export function getSettings(store: Store): SystemSettings {
   return structuredClone({
     ...DEFAULT_SETTINGS,
     ...value,
+    aiImport: { ...DEFAULT_SETTINGS.aiImport, ...value?.aiImport },
     dailyPush: { ...DEFAULT_DAILY_PUSH, ...value?.dailyPush },
     reviewScheduling: { ...DEFAULT_REVIEW_SCHEDULING, ...value?.reviewScheduling },
   });

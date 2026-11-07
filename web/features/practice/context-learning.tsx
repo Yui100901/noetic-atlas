@@ -1,3 +1,4 @@
+import { ShareButton } from '../sharing/share-button';
 import { FocusLauncher, FocusHistory } from '../review-scheduler/focus-launcher';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, CalendarCheck2, ChevronRight, Clock3, History, NotebookPen, Star, Target } from 'lucide-react';
@@ -98,7 +99,7 @@ function LearningPanelBody({ source, paperId, practiceKind, initialTab, refreshK
     {showTabs && <div className="section-tabs context-learning-tabs" role="tablist" aria-label="学习内容">{tabs.map(({ id, label, count, Icon }) => <button type="button" role="tab" id={`${panelId}-${id}`} aria-controls={`${panelId}-content`} aria-selected={tab === id} className={tab === id ? 'selected' : ''} key={id} onClick={() => changeTab(id)}><Icon size={16} />{label}<span>{count.toLocaleString()}</span></button>)}</div>}
     <div id={`${panelId}-content`} {...(showTabs ? { role: 'tabpanel', 'aria-labelledby': `${panelId}-${tab}` } : {})}>
       {tab==='review'&&source==='paper'&&<div className="focus-context-entry">{!summary.deleted&&<FocusLauncher paperId={paperId} practiceKind={practiceKind}/>}<FocusHistory paperId={paperId}/></div>}
-    <div className="context-learning-heading"><div><h2>{tabLabels[tab]}</h2><p>{source === 'quick' ? '仅包含随机抽题与单题自测的作答。' : '仅包含这份题集中的学习与作答。'}</p></div><button type="button" className="text-button" onClick={refreshLists}>刷新进度</button></div>
+    <div className="context-learning-heading"><div><h2>{tabLabels[tab]}</h2><p>{source === 'quick' ? '仅包含随机抽题与单题自测的作答。' : '仅包含这份题集中的学习与作答。'}</p></div><div className="button-row">{showQuestions && <ShareButton kind="learning" learning={{kind,source,...(source==='paper'?{paperId}:{})}} />}<button type="button" className="button" onClick={refreshLists}>刷新进度</button></div></div>
       {tab === 'review' && <>
         <section className="card context-review-suggestions"><h3><CalendarCheck2 size={18} />下一步学习建议</h3>{summary.suggestions.length ? <ul>{summary.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}</ul> : <p className="muted">先完成一次练习，再根据错题与掌握程度安排复习。</p>}<p className="context-rule-note">建议依据{scopeLabel}的最近答题结果、到期日期和收藏数量生成，使用本地规则，不调用 AI，也不代表完整能力评估。</p></section>
         <div className="context-review-switch segmented" aria-label="复习题目范围"><button type="button" className={reviewKind === 'due' ? 'selected' : ''} aria-pressed={reviewKind === 'due'} onClick={() => changeReviewKind('due')}><CalendarCheck2 size={15} />到期复习 <span>{summary.counts.due}</span></button><button type="button" className={reviewKind === 'favorite' ? 'selected' : ''} aria-pressed={reviewKind === 'favorite'} onClick={() => changeReviewKind('favorite')}><Star size={15} />我的收藏 <span>{summary.counts.favorite}</span></button></div>

@@ -87,8 +87,15 @@ try {
   assert.equal((await drafts()).items[0].questionId, null);
   await page.reload();
   await field('标题 *').waitFor();
-  await openDrafts();
-  await button('继续此草稿').click();
+  const choice = () => page.getByRole('dialog', { name: '继续新题草稿或新建题目' });
+  await choice().waitFor();
+  await choice().getByRole('button', { name: '新建空白题目', exact: true }).click();
+  assert.equal(await field('标题 *').inputValue(), '');
+  assert.equal((await drafts()).total, 1);
+  await edit('new');
+  await choice().waitFor();
+  await choice().getByRole('button', { name: '继续此草稿', exact: true }).click();
+  await choice().waitFor({ state: 'hidden' });
   await panel().getByText('正在继续编辑草稿', { exact: true }).waitFor();
   assert.equal(await field('标题 *').inputValue(), '');
   await field('标题 *').fill('尚未完成的新题');
@@ -101,12 +108,13 @@ try {
   );
   await page.reload();
   await field('标题 *').waitFor();
-  await openDrafts();
-  await button('继续此草稿').click();
+  await choice().waitFor();
+  await choice().getByRole('button', { name: '继续此草稿', exact: true }).click();
+  await choice().waitFor({ state: 'hidden' });
   await panel().getByText('正在继续编辑草稿', { exact: true }).waitFor();
   assert.equal(await field('参考来源').inputValue(), '来源 |');
   assert.equal((await api('/api/questions?status=all')).total, 1);
-  checks.push('空白与不完整新题可保存，刷新后恢复原始来源文本，继续覆盖同一草稿且不发布题目');
+  checks.push('进入新题提示选择草稿或空白新建；新建保留旧草稿，继续覆盖同一草稿且不发布题目');
 
   await edit();
   await answer().fill('草稿中的参考答案');

@@ -1,6 +1,6 @@
 import { LearningReset } from '../settings/learning-reset';
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, ArrowLeft, BookOpen, ClipboardList, Clock3, Download, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Share2, Shuffle, Sparkles, Trash2 } from 'lucide-react';
+import { Archive, ArrowLeft, BookOpen, ClipboardList, Clock3, Edit3, Eye, MoreHorizontal, Play, Plus, RotateCcw, Shuffle, Sparkles, Trash2 } from 'lucide-react';
 import type { Attempt, PaperDetail } from '../../../shared/models/types';
 import { idPath, localDate, navigate, request, send, useDebounced, useResource, qs } from '../../shared/lib/api';
 import type {PaperListItem,PaperListPage} from '../../../shared/practice/paper-list';
@@ -11,7 +11,6 @@ import { paperScoring, pointText, ScoringBreakdown } from '../../shared/lib/scor
 import { ExportButton } from '../../shared/export/export-dialog';
 import { DEFAULT_SETTINGS } from '../../../shared/models/settings';
 import './paper-organization.css';
-import { ShareButton } from '../sharing/sharing';
 import { notifyExamState } from '../practice/exam-guard';
 import {initialPaperListContext,rememberPaperList} from './list-navigation';
 import { normalizePaperContentsContext, paperContentsHref, paperQuestionHref, type PaperContentsContext } from './reader-navigation';
@@ -68,8 +67,7 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
   const [examSetup, setExamSetup] = useState(false); const [durationMinutes, setDurationMinutes] = useState((settings as any).examDurationMinutes || 120);
   const [focusSetup,setFocusSetup]=useState(false);
   const [resetOpen,setResetOpen]=useState(false);
-  const [transfer, setTransfer] = useState<'share' | 'export' | null>(null);
-  useEffect(() => { setTransfer(null); setVocabularyDirection('word_to_meaning'); setDrafts(null); setPracticeSetup(false); setExamSetup(false); }, [id]);
+  useEffect(() => { setVocabularyDirection('word_to_meaning'); setDrafts(null); setPracticeSetup(false); setExamSetup(false); }, [id]);
   const startNew = async (mode: 'practice' | 'exam' = 'practice') => { setBusy(true); try { const attempt = await send<Attempt>(`/api/papers/${idPath(id)}/attempts`, 'POST', { mode, ...(['vocabulary','concept'].includes(paper?.practiceKind || 'standard') ? { vocabularyDirection } : {}), ...(mode === 'exam' ? { durationMinutes } : {}), ...((paper?.answerCount ?? paper?.questions.length ?? 0) > 500 ? { count: questionCount, selection } : {}) }); setDrafts(null); setExamSetup(false); setPracticeSetup(false); notifyExamState(attempt); navigate('attempts', attempt.id); } catch (err) { toast((err as Error).message, true); } finally { setBusy(false); } };
   const openNewPractice = async () => { setDrafts(null); if (['vocabulary','concept'].includes(paper?.practiceKind || 'standard') || (paper?.answerCount ?? paper?.questions.length ?? 0) > 500) { setQuestionCount(Math.min(20, paper?.questionCount || 20)); setSelection('random'); setPracticeSetup(true); } else await startNew(); };
   const start = async () => { setBusy(true); try { const saved = await request<Attempt[]>(`/api/papers/${idPath(id)}/drafts`); const practiceDrafts = saved.filter(a => a.practiceMode !== 'exam'); if (practiceDrafts.length) setDrafts([...practiceDrafts].sort((a, b) => (b.updatedAt || b.startedAt).localeCompare(a.updatedAt || a.startedAt)).slice(0, settings.maxDraftsPerPaper)); else await openNewPractice(); } catch (err) { toast((err as Error).message, true); } finally { setBusy(false); } };
@@ -82,10 +80,7 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
   const validCount = Number.isInteger(questionCount) && questionCount >= 1 && questionCount <= Math.min(500, paper.questionCount);
   const samplingFields = <><p className="muted">本题集有 {paper.questionCount.toLocaleString()} 个选题单位、{(paper.answerCount ?? paper.questions.length).toLocaleString()} 个作答项。请指定本次范围；每次最多 500 个作答项，组合题保留完整材料和小题。</p><Field label="本次选题数量"><input type="number" min={1} max={Math.min(500, paper.questionCount)} step={1} value={questionCount} onChange={event => setQuestionCount(Number(event.target.value))} /></Field><Field label="选题方式"><select value={selection} onChange={event => setSelection(event.target.value as 'ordered' | 'random')}><option value="random">从题集中随机抽题</option><option value="ordered">按题集顺序从头选题</option></select></Field><p className="muted">组合题按一组选题，全部小题一并加入；如超过 500 个作答项，请减少选题数量。本次练习保留选中题目和分值快照。</p></>;
   return <><a className="back-link" href="#/papers"><ArrowLeft size={15} />返回题集</a><PageHeader eyebrow={`QUESTION SET · V${paper.version}`} title={paper.title} description={paper.description || `${paper.questionCount} 道题目，按自己的节奏完成。`} actions={<div className="paper-detail-actions" role="group" aria-label="题集操作">
-    <ActionDropdown label="导出与分享" icon={<Share2 size={16} />} disabled={busy} items={[
-      { id: 'export', label: '导出题集', icon: <Download size={16} />, onSelect: () => setTransfer('export') },
-      { id: 'share', label: '分享题集', icon: <Share2 size={16} />, onSelect: () => setTransfer('share') },
-    ]} />
+    <ExportButton paperId={id} share />
     <ActionDropdown label="题集管理" icon={<MoreHorizontal size={17} />} disabled={busy} items={[
       { id: 'edit', label: paper.archived ? '恢复并调整' : '调整题集', icon: <Edit3 size={16} />, href: `#/papers/${idPath(id)}/edit` },
       paper.archived
@@ -102,8 +97,6 @@ export function PaperDetailPage({ id, initialTab = 'content', initialContents = 
   </div>} />
     <FocusLauncher paperId={id} practiceKind={paper.practiceKind} open={focusSetup} onOpenChange={setFocusSetup} hideTrigger/>
     {resetOpen&&<LearningReset paperId={id} onClose={()=>setResetOpen(false)} onDone={()=>{setResetOpen(false);refresh();}}/>}
-    <ExportButton paperId={id} open={transfer === 'export'} onOpenChange={open => setTransfer(open ? 'export' : null)} hideTrigger />
-    <ShareButton kind="paper" id={id} open={transfer === 'share'} onOpenChange={open => setTransfer(open ? 'share' : null)} hideTrigger />
     {paper.archived && <div className="notice info">这份题集已归档，全部成员审核发布后，可在顶部「题集管理 → 恢复题集」中继续练习。</div>}<div className="paper-organization-label">{vocabularySet && <span className="badge">{paper.practiceKind === 'concept' ? '概念题集 · 双向练习' : '词汇题集 · 双向练习'}</span>}<span className="badge">{paper.organization === 'domain' ? `${bootstrap.domains.find(domain => domain.id === paper.domainId)?.name || '未识别领域'}专项` : '其他题集'}</span></div><section className="card paper-scoring-detail"><ScoringBreakdown scoring={scoring} questionCount={paper.questionCount} />{scoring.enabled && paper.mode === 'random' && <p className="scoring-help">目标客观占比 {pointText(scoring.objectivePercent)}%，实际客观占比 {pointText(scoring.actualObjectivePercent)}%。题量与分值已固定，开始练习时保留本题集快照。</p>}{scoring.scheme === 'legacy' && <p className="scoring-help">这份历史题集采用历史分值：单选 / 判断 1 分、多选 2 分、主观 3 分。修改会生成新版本，不重算已有作答。</p>}<PaperGradingRequirements value={paper.gradingRequirements} /></section>
     {practiceSetup && <Modal title={vocabularySet ? (paper.practiceKind === "concept" ? "开始概念练习" : "开始词汇练习") : "选择本次练习范围"} onClose={() => { if (!busy) setPracticeSetup(false); }}>{vocabularySet && <VocabularyDirectionFields kind={paper.practiceKind} value={vocabularyDirection} onChange={setVocabularyDirection} />}{largeSet && samplingFields}<div className="form-actions"><button className="button" disabled={busy} onClick={() => setPracticeSetup(false)}>取消</button><button className="button primary" disabled={busy || largeSet && !validCount} onClick={() => void startNew()}><Play size={16} />开始本次练习</button></div></Modal>}
     {examSetup && <Modal title="开始限时考试" onClose={() => { if (!busy) setExamSetup(false); }}><p className="muted">开始后不能切换其他功能。计时在刷新、关闭页面或应用进入后台时仍然继续；到时按已保存答案自动交卷。</p>{vocabularySet && <VocabularyDirectionFields kind={paper.practiceKind} value={vocabularyDirection} onChange={setVocabularyDirection} />}{largeSet && samplingFields}<Field label="考试时长（分钟）"><input type="number" min={1} max={1440} step={1} value={durationMinutes} onChange={event => setDurationMinutes(Number(event.target.value))} /></Field><p className="muted">默认 {(settings as any).examDurationMinutes || 120} 分钟，可在系统配置中调整。已保存的题集与考试记录各自独立。</p><div className="form-actions"><button className="button" disabled={busy} onClick={() => setExamSetup(false)}>取消</button><button className="button primary" disabled={busy || largeSet && !validCount || !Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 1440} onClick={() => void startNew('exam')}><Play size={16} />开始考试</button></div></Modal>}

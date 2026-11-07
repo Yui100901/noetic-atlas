@@ -1,3 +1,4 @@
+import { validatePdfRecords } from '../library/pdf-index-validation.js';
 import type { Store } from '../../core/store.js';
 import { parse } from '../../core/validation.js';
 import { aiSettingsSchema } from '../ai/schema.js';
@@ -13,6 +14,7 @@ const invalid = (message: string): never => {
   throw new Error(`SQLite 备份校验失败：${message}`);
 };
 export function validateSQLitePrivateRecords(store: Store) {
+  validatePdfRecords(store);
   const settings = store.database.records<any>('ai_settings');
   if (settings.length > 1) invalid('AI 配置数量无效');
   for (const value of settings) {

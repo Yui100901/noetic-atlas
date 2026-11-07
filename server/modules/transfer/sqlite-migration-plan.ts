@@ -281,6 +281,30 @@ export function sqliteMigrationPlan(
         if (intersects(values(row, ['contextId']), set('ai_import_jobs')))
           add('ai_workspace_drafts', row.id);
     }
+    // Retain text/cache/job checkpoints for exactly the selected immutable PDFs.
+    const pdfAssets = new Set<string>();
+    for (const table of ['documents', 'document_versions'] as const)
+      for (const owner of db.all(
+        db.query
+          .selectFrom(table)
+          .select('data')
+          .where(db.expressions.idInJson('id', [...set(table)])),
+      )) {
+        const doc = JSON.parse(owner.data);
+        if (doc.format === 'pdf' && doc.assetId) pdfAssets.add(doc.assetId);
+      }
+    for (const job of db.records<any>('pdf_jobs'))
+      if (pdfAssets.has(job.assetId)) {
+        keep('pdf_jobs', job.id);
+        keep('pdf_caches', job.cacheId);
+      }
+    for (const row of db.all(
+      db.query
+        .selectFrom('pdf_pages')
+        .select('id')
+        .select(db.expressions.field<string>('data', 'cacheId').as('cacheId')),
+    ))
+      if (set('pdf_caches').has(row.cacheId)) keep('pdf_pages', row.id);
     // Exact managed file references are read only from retained owners. This
     // includes raw AI drafts, which are not part of normal asset projections.
     for (const table of recordTables) {

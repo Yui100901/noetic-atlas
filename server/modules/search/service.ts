@@ -1,3 +1,4 @@
+import { documentContentVersion } from '../library/sources.js';
 import type { SearchItem, SearchResponse, SearchType } from '../../../shared/models/search.js';
 import { SEARCH_TYPES } from '../../../shared/models/search.js';
 import type { Store } from '../../core/store.js';
@@ -5,7 +6,7 @@ import { normalizeSearch } from '../../database/search-projections.js';
 import type { SearchQuery } from './schema.js';
 
 interface Metadata { id: string; title: string; href: string; description: string; status?: string; categoryIds?: string[]; domainIds?: string[]; questionId?: string; partId?: string; updatedAt?: string }
-const scope: SearchResponse['scope'] = { pdf: 'metadata', answers: 'match_only', notes: true, excluded: ['archived', 'draft_edits', 'attempt_answers', 'ai_configuration', 'attachment_bytes'] };
+const scope: SearchResponse['scope'] = { pdf: 'indexed_text', answers: 'match_only', notes: true, excluded: ['archived', 'draft_edits', 'attempt_answers', 'ai_configuration', 'attachment_bytes'] };
 
 /** Match only the compact, disposable index; full source JSON stays out of
  * steady-state search. One materialized match set serves counts and the page. */
@@ -16,12 +17,13 @@ export function unifiedSearch(store: Store, input: SearchQuery): SearchResponse 
   if (!normalized) return response;
   const d = store.database, x = d.expressions, tokens = [...new Set(normalized.split(' '))];
   d.projections.search.ensure();
+  const pdfCaches=d.pdf.cacheIds(query),pdfAssets=pdfCaches.length?d.all(d.query.selectFrom('pdf_jobs').select(x.field<string>('data','assetId').as('assetId')).where(x.idInJson(x.field<string>('data','cacheId'),pdfCaches))).map(row=>row.assetId):[];
   const status = response.includeUnpublished ? ['published', 'pending', 'draft'] : ['published'];
   // Counts need identities only. Carrying metadata and relevance through the
   // whole match set makes broad searches unnecessarily expensive.
   const match = d.query.selectFrom('search_read_model as s').select(['s.key', 's.kind'])
     .where('s.archived', '=', 0).where('s.status', 'in', status)
-    .where(eb => eb.and(tokens.map(token => x.containsLiteral(eb.ref('s.search_text'), token))));
+    .where(eb => eb.or([eb.and(tokens.map(token => x.containsLiteral(eb.ref('s.search_text'), token))),...(pdfAssets.length?[eb.and([eb('s.kind','=','document'),eb('s.entity_id','in',d.query.selectFrom('documents').select('id').where(x.idInJson(x.field<string>('data','assetId'),pdfAssets)))])]:[])]));
   const withMatches = d.query.with(cte => cte('matches').materialized(), () => match);
   const rows = d.all(withMatches
     .with(cte => cte('counts').materialized(), eb => eb.selectFrom('matches').select('kind').select(e => e.fn.countAll<number>().as('count')).groupBy('kind'))
@@ -59,7 +61,7 @@ export function unifiedSearch(store: Store, input: SearchQuery): SearchResponse 
     for (const id of data.categoryIds || []) categoryIds.add(id);
     const matchIn: SearchItem['matchIn'] = row.rank === 0 || row.rank === 2 ? 'id' : row.rank === 1 || row.rank === 3 || row.rank === 4 ? 'title' : row.rank === 6 ? 'reference' : 'content';
     found.set(row.key, { key: row.key, type: row.kind as SearchType, id: row.entity_id!, title: data.title, excerpt: row.excerpt || '', href: data.href,
-      description: data.description, ...(data.status ? { status: data.status } : {}), domainIds: [...data.domainIds || []],
+      description: data.description==='PDF · 仅检索元数据'?'PDF资料 · 支持已索引文本检索':data.description, ...(data.status ? { status: data.status } : {}), domainIds: [...data.domainIds || []],
       ...(data.questionId ? { questionId: data.questionId } : {}), ...(data.partId ? { partId: data.partId } : {}), ...(data.updatedAt ? { updatedAt: data.updatedAt } : {}), matchIn });
   }
   // Resolve small page-local classification metadata against today's taxonomy.
@@ -71,5 +73,15 @@ export function unifiedSearch(store: Store, input: SearchQuery): SearchResponse 
   response.totalAll = Object.values(counts).reduce((total, value) => total + value, 0);
   response.total = input.type === 'all' ? response.totalAll : counts[input.type];
   response.items = [...found.values()];
+  if(pdfAssets.length){
+    const documents=new Map(d.all(d.query.selectFrom('documents').select('id').select(x.field<string>('data','assetId').as('assetId')).where(x.idInJson('id',response.items.filter(item=>item.type==='document').map(item=>item.id)))).map(row=>[row.id,row.assetId]));
+    for(const item of response.items)if(item.type==='document'){
+      const assetId=documents.get(item.id);if(!assetId||!pdfAssets.includes(assetId))continue;
+      const job=d.getRecord<any>('pdf_jobs',`pdf-${assetId}`);if(!job)continue;
+      const result=d.pdf.search(job.cacheId,query,0,3);if(!result.total)continue;
+      item.pdfTotalPages=result.total;item.pdfHits=result.hits.map(hit=>({...hit,href:`#/documents/${encodeURIComponent(item.id)}/source?${new URLSearchParams({version:documentContentVersion({format:'pdf',assetId,bodyMarkdown:''}),page:String(hit.pageNumber),q:query})}`}));item.matchIn='pdf';item.excerpt='';item.description=`PDF全文 · ${result.total}个匹配页面`;
+    }
+  }
+
   return response;
 }

@@ -1,3 +1,4 @@
+import { literalMathMarkdown } from '../../../shared/math/markdown.js';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { SharePackage, SharePreview, ShareSelection } from '../../../shared/models/sharing.js';
@@ -35,6 +36,7 @@ import {
 import { flattenQuestions, validatePaperAnswers } from '../questions/structure.js';
 import { getSettings } from '../settings/service.js';
 import { cleanContentQuestion, contentExportContext } from './export-content.js';
+import { learningShareSource, selectedPaperIds } from './selection.js';
 import { sharePackageSchema, validateShareExport } from './schema.js';
 import type { ImportDedupOptions } from '../../../shared/models/import-dedup.js';
 import { previewQuestionImport, prepareQuestionImport } from '../question-imports/service.js';
@@ -287,34 +289,53 @@ function assertUnique(entries: Array<{ id: string }>, table: string) {
     fail(400, 'DUPLICATE_SHARE_ID', `分享包含重复ID：${table}`);
 }
 
-export function exportShare(store: Store, selection: ShareSelection): SharePackage {
-  let questions: Question[] = [];
-  let papers: StoredPaper[] = [];
-  let title = '分享题目';
-  if (selection.kind === 'paper') {
-    const paper = store.require<StoredPaper>(
-      'papers',
-      selection.id || fail(400, 'SHARE_SELECTION_REQUIRED', '请选择题集'),
+/** Portable leaf snapshots retain their shared material without exposing the
+ * answer, mastery, notes, origin attempt or any other learning evidence. */
+function portableLearningQuestion(value: Question): Question {
+  if (!value)
+    fail(
+      422,
+      'SHARE_HISTORY_UNAVAILABLE',
+      '有题目的历史快照已不可用，请先检查数据健康后重新分享。',
     );
-    const snapshot = paper.snapshot.map((question) =>
-      cleanQuestion(
-        paper.practiceKind === 'vocabulary'
-          ? resolveVocabularyQuestion(store, question)
-          : paper.practiceKind === 'concept'
-            ? resolveConceptQuestion(store, question)
-            : question,
-      ),
-    );
-    papers = [{ ...paper, filters: null, snapshot }];
-    questions = applyQuestionRubrics(snapshot, paper.inheritedGradingRequirements || {});
-    title = paper.title;
-  } else {
-    const selected = selection.id ? [selection.id] : selection.ids;
-    questions = selected?.length
-      ? selected.map((qid) => cleanQuestion(store.require<Question>('questions', qid)))
-      : store.questions(shareFilters(selection.filters)).map(cleanQuestion);
-    title = questions.length === 1 ? questions[0]!.title : `分享题目（${questions.length}道）`;
-  }
+  const leaf = value as import('../questions/structure.js').StoredLeafQuestion;
+  const clean = cleanQuestion(value);
+  if (!leaf.partId) return clean;
+  const id = `share-part-${createHash('sha256')
+    .update(JSON.stringify([leaf.sourceQuestionId, leaf.partId, clean]))
+    .digest('hex')
+    .slice(0, 32)}`;
+  const mathEnabled = !!(leaf.groupMathEnabled || leaf.mathEnabled);
+  const material =
+    mathEnabled && !leaf.groupMathEnabled
+      ? literalMathMarkdown(leaf.groupStemMarkdown || '')
+      : leaf.groupStemMarkdown || '';
+  const prompt =
+    mathEnabled && !leaf.mathEnabled ? literalMathMarkdown(leaf.stemMarkdown) : leaf.stemMarkdown;
+  return {
+    ...clean,
+    id,
+    title: `${leaf.groupTitle || ''} · ${leaf.title}`.slice(0, 300),
+    stemMarkdown: [material, prompt].filter(Boolean).join('\n\n'),
+    mathEnabled,
+    ...(mathEnabled && !leaf.mathEnabled
+      ? {
+          answerMarkdown: literalMathMarkdown(clean.answerMarkdown),
+          explanationMarkdown: literalMathMarkdown(clean.explanationMarkdown),
+          options: clean.options.map((option) => ({
+            ...option,
+            text: literalMathMarkdown(option.text),
+          })),
+        }
+      : {}),
+  };
+}
+function shareResult(
+  store: Store,
+  title: string,
+  questions: Question[],
+  papers: StoredPaper[] = [],
+): SharePackage {
   if (!questions.length && !papers.length) fail(422, 'EMPTY_SHARE', '当前范围没有可分享的题目');
   assertUnique(questions, 'questions');
   const dependencies = contentExportContext(store).dependencies(
@@ -332,6 +353,137 @@ export function exportShare(store: Store, selection: ShareSelection): SharePacka
     papers,
     questionBanks: [],
   });
+}
+function paperShare(store: Store, paperId: string): { paper: StoredPaper; questions: Question[] } {
+  const paper = store.require<StoredPaper>('papers', paperId);
+  const snapshot = paper.snapshot.map((question) =>
+    cleanQuestion(
+      paper.practiceKind === 'vocabulary'
+        ? resolveVocabularyQuestion(store, question)
+        : paper.practiceKind === 'concept'
+          ? resolveConceptQuestion(store, question)
+          : question,
+    ),
+  );
+  return {
+    paper: { ...paper, filters: null, snapshot },
+    questions: applyQuestionRubrics(snapshot, paper.inheritedGradingRequirements || {}),
+  };
+}
+/** Conflicting frozen versions get stable independent IDs. Propagate that
+ * distinction through linked questions, while ordinary shared roots dedupe. */
+function batchPaperShare(store: Store, ids: string[]): SharePackage {
+  const sources = ids.map((paperId) => paperShare(store, paperId));
+  const variants = new Map<string, Set<string>>();
+  for (const source of sources)
+    for (const question of source.questions) {
+      const values = variants.get(question.id) || new Set<string>();
+      values.add(semantic(question, 'questions'));
+      variants.set(question.id, values);
+    }
+  const distinct = new Set([...variants].filter(([, values]) => values.size > 1).map(([id]) => id));
+  const incomingLinks = new Map<string, Set<string>>();
+  for (const source of sources)
+    for (const question of source.questions)
+      for (const target of questionLinks(question)) {
+        const owners = incomingLinks.get(target) || new Set<string>();
+        owners.add(question.id);
+        incomingLinks.set(target, owners);
+      }
+  const queue = [...distinct];
+  for (let offset = 0; offset < queue.length; offset++)
+    for (const owner of incomingLinks.get(queue[offset]!) || [])
+      if (!distinct.has(owner)) {
+        distinct.add(owner);
+        queue.push(owner);
+      }
+  const questions = new Map<string, Question>(),
+    papers: StoredPaper[] = [];
+  for (const source of sources) {
+    const scope = createHash('sha256')
+      .update(
+        canonical(
+          source.questions
+            .map((question) => [question.id, semantic(question, 'questions')])
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+        ),
+      )
+      .digest('hex');
+    const map = new Map(
+      source.questions.map((question) => [
+        question.id,
+        distinct.has(question.id)
+          ? `share-q-${createHash('sha256')
+              .update(scope + question.id)
+              .digest('hex')
+              .slice(0, 32)}`
+          : question.id,
+      ]),
+    );
+    const remap = (id: string) => map.get(id) || id;
+    const leafKeys = new Map(
+      flattenQuestions(source.questions).map((question) => [
+        question.id,
+        remap(question.sourceQuestionId || question.id) +
+          (question.partId ? `::${question.partId}` : ''),
+      ]),
+    );
+    const key = (id: string) => (map.has(id) ? remap(id) : leafKeys.get(id) || id);
+    const rewrite = <T>(value: T): T => mapQuestionLinks(value, (id) => questionRoute(remap(id)));
+    const rename = (question: Question) => ({ ...rewrite(question), id: remap(question.id) });
+    for (const question of source.questions) {
+      const mapped = rename(question),
+        prior = questions.get(mapped.id);
+      if (prior && semantic(prior, 'questions') !== semantic(mapped, 'questions'))
+        fail(409, 'SHARE_SNAPSHOT_CONFLICT', '所选题集的题目关联存在冲突，请分别分享');
+      questions.set(mapped.id, mapped);
+    }
+    const rubric = (values: Record<string, string> = {}) =>
+      Object.fromEntries(Object.entries(values).map(([id, text]) => [key(id), rewrite(text)]));
+    const paper = source.paper;
+    papers.push({
+      ...paper,
+      snapshot: paper.snapshot.map(rename),
+      questionIds: paper.questionIds.map(remap),
+      ...(paper.scoring
+        ? {
+            scoring: {
+              ...paper.scoring,
+              questionPoints: Object.fromEntries(
+                Object.entries(paper.scoring.questionPoints).map(([id, value]) => [key(id), value]),
+              ),
+            },
+          }
+        : {}),
+      ...(paper.gradingRequirements
+        ? { gradingRequirements: rewrite(paper.gradingRequirements) }
+        : {}),
+      questionGradingRequirements: rubric(paper.questionGradingRequirements),
+      inheritedGradingRequirements: rubric(paper.inheritedGradingRequirements),
+    });
+  }
+  return shareResult(
+    store,
+    ids.length === 1 ? papers[0]!.title : `分享题集（${ids.length}份）`,
+    [...questions.values()],
+    papers,
+  );
+}
+export function exportShare(store: Store, selection: ShareSelection): SharePackage {
+  if (selection.kind === 'paper') return batchPaperShare(store, selectedPaperIds(store, selection));
+  if (selection.kind === 'learning') {
+    const source = learningShareSource(store, selection.learning!, selection.filters);
+    return shareResult(store, source.title, source.load().map(portableLearningQuestion));
+  }
+  const selected = selection.id ? [selection.id] : selection.ids;
+  const questions = selected?.length
+    ? selected.map((qid) => cleanQuestion(store.require<Question>('questions', qid)))
+    : store.questions(shareFilters(selection.filters)).map(cleanQuestion);
+  return shareResult(
+    store,
+    questions.length === 1 ? questions[0]!.title : `分享题目（${questions.length}道）`,
+    questions,
+  );
 }
 
 /** Build the whole graph before writing. ID collisions never overwrite local data. */
@@ -860,7 +1012,30 @@ export function planShareImport(
     dedup,
     taxonomy: sourceTaxonomy,
   };
-  return { records, preview, dedup };
+  const decided = new Set((dedupOptions.decisions || []).map(decision => decision.key));
+  const unresolvedSimilar = dedup.items.some(item => item.kind === 'similar' && !decided.has(item.key));
+  return { records, preview, dedup, unresolvedSimilar };
+}
+export type ShareImportPlan = ReturnType<typeof planShareImport>;
+
+/** Internal transaction step: the caller must construct and check this plan
+ * against the current store in the same synchronous transaction. Never reuse
+ * the plan returned by an earlier HTTP preview. */
+export function commitPreparedShareImport(store: Store, plan: ShareImportPlan) {
+  if (plan.unresolvedSimilar)
+    fail(409, 'IMPORT_SIMILAR_REVIEW_REQUIRED', '请先为所有相似题选择处理方式');
+  for (const record of plan.records) {
+    const previous = record.table === 'questions' ? store.get<Question>('questions', record.value.id) : undefined;
+    if (previous) {
+      captureQuestionRevision(store, previous, record.value, 'manual', '导入查重确认内容或补充来源');
+      store.put('questions', record.value.id, record.value);
+    } else store.insert(record.table, record.value.id, record.value);
+  }
+  for (const category of store.all<Category>('categories')) store.validateCategory(category);
+  store.validateTaxonomyReferences();
+  for (const record of plan.records)
+    if (record.table === 'questions' || record.table === 'papers') validateAssetReferences(store, record.value);
+  return { ok: true, ...plan.preview, dedup: plan.dedup };
 }
 export function importShare(
   store: Store,
@@ -876,27 +1051,6 @@ export function importShare(
     const plan = planShareImport(store, raw, dedupOptions, false, context);
     if (expectedFingerprint && expectedFingerprint !== plan.preview.fingerprint)
       fail(409, 'SHARE_PREVIEW_STALE', '本地题库已变化，请重新预览后导入');
-    for (const record of plan.records) {
-      const previous =
-        record.table === 'questions'
-          ? store.get<Question>('questions', record.value.id)
-          : undefined;
-      if (previous) {
-        captureQuestionRevision(
-          store,
-          previous,
-          record.value,
-          'manual',
-          '导入查重确认内容或补充来源',
-        );
-        store.put('questions', record.value.id, record.value);
-      } else store.insert(record.table, record.value.id, record.value);
-    }
-    for (const category of store.all<Category>('categories')) store.validateCategory(category);
-    store.validateTaxonomyReferences();
-    for (const record of plan.records)
-      if (record.table === 'questions' || record.table === 'papers')
-        validateAssetReferences(store, record.value);
-    return { ok: true, ...plan.preview, dedup: plan.dedup };
+    return commitPreparedShareImport(store, plan);
   });
 }

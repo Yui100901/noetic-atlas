@@ -132,8 +132,7 @@ try {
   await snapshot('wordlist-submitted-mobile');
   await page.setViewportSize({ width: 1360, height: 900 });
   await page.goto(`${origin}/#/papers/${fixture.paperId}`);
-  await page.getByRole('button', { name: '导出与分享', exact: true }).click();
-  await page.getByRole('menuitem', { name: /^导出题集/ }).click();
+  await page.getByRole('button', { name: '分享', exact: true }).click();
   await page.getByRole('radio', { name: /附答案卷/ }).check();
   await page.getByRole('radio', { name: /Markdown/ }).check();
   const [markdownDownload] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '下载文件', exact: true }).click()]);

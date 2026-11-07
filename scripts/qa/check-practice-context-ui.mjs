@@ -85,11 +85,20 @@ try {
   checks.push('限时考试不含旧学习提示或笔记编辑器，仍可正常提前交卷');
 
   await navigate('papers');
-  const recommendation = page.getByRole('link', { name: 'AI 推荐题集', exact: true }); await recommendation.waitFor(); assert.match(await recommendation.getAttribute('class'), /\bbutton\b/);
-  const dimensions = await recommendation.evaluate(node => ({ height: node.getBoundingClientRect().height, fontSize: parseFloat(getComputedStyle(node).fontSize) })); assert.ok(dimensions.height >= 44 && dimensions.fontSize >= 13, JSON.stringify(dimensions));
-  await recommendation.click(); await page.getByRole('heading', { name: /先理解/ }).waitFor();
-  await navigate('papers'); await page.setViewportSize({ width: 390, height: 844 }); await noOverflow(); await recommendation.waitFor(); await page.screenshot({ path: resolve(output, 'prominent-entry-mobile.png'), fullPage: true });
-  checks.push('AI推荐题集为显眼可点击按钮，桌面与390px可见、触控高度至少44px且导航有效');
+  const createMenu = page.getByRole('button', { name: '选择创建方式', exact: true });
+  await createMenu.waitFor();
+  assert.match(await createMenu.getAttribute('class'), /\bbutton\b/);
+  await createMenu.click();
+  const recommendation = page.getByRole('menuitem', { name: 'AI推荐题集', exact: true });
+  await recommendation.waitFor();
+  const dimensions = await recommendation.evaluate(node => ({ height: node.getBoundingClientRect().height, fontSize: parseFloat(getComputedStyle(node).fontSize) }));
+  assert.ok(dimensions.height >= 44 && dimensions.fontSize >= 13, JSON.stringify(dimensions));
+  await recommendation.click(); await page.waitForURL(/#\/papers\/new\/ai$/); await page.getByLabel('AI组题要求', { exact: true }).waitFor();
+  await navigate('papers'); await page.setViewportSize({ width: 390, height: 844 }); await noOverflow();
+  await createMenu.click(); await recommendation.waitFor();
+  const mobile = await recommendation.boundingBox(); assert.ok(mobile && mobile.x >= 0 && mobile.x + mobile.width <= 390 && mobile.height >= 44);
+  await page.screenshot({ path: resolve(output, 'prominent-entry-mobile.png'), fullPage: true });
+  checks.push('AI推荐题集收于显眼创建菜单，桌面与390px可见、触控高度至少44px且导航有效');
 
   assert.deepEqual(errors, []); assert.deepEqual(externalRequests, []);
   const report = { passed: checks.length, checks, browserErrors: errors, externalRequests, isolated: true, databasePath: ':memory:' };

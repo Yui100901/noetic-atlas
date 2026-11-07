@@ -110,6 +110,7 @@ export async function exportSQLiteMigration(
           ]),
       );
     });
+    db.pdf.rebuild();
     db.projections.rebuild();
     db.imports.initialize();
     db.imports.ensure();

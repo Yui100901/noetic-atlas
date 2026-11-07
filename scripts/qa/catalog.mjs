@@ -18,6 +18,8 @@ const smoke = new Set([
   'data-package-ui',
 ]);
 const browserIds = [
+  'ai-import-merge-ui',
+  'sharing-sets-ui',
   'export-rehome-ui',
   'import-dedup-ui',
   'import-options-ui',
@@ -49,6 +51,7 @@ const browserIds = [
   'data-package-ui',
   'directional-rubrics-ui',
   'document-citations-ui',
+  'pdf-search-ui',
   'document-drafts-ui',
   'domain-export-ui',
   'focus-entry-safety-ui',
@@ -116,11 +119,57 @@ const check = (id, group, options = {}) => ({
   timeoutMs: 300_000,
   ...options,
 });
+// These source-content audits require optional, separately managed public
+// packs. Missing packs are reported as skipped, never as a passing audit.
+const optionalInputs = {
+  'terminology-ui': {
+    files: [
+      'terms-programming',
+      'terms-systems',
+      'terms-ai',
+      'terms-domains',
+      'terms-chemistry',
+      'terms-medicine',
+      'terms-medicine-clinical',
+      'english',
+    ].map((id) => `data/content-packs/${id}.json`),
+  },
+  'common-ui': { directory: 'data/content-packs', suffix: '-common-202610.json', minimum: 11 },
+  'content-ui': {
+    files: [
+      'english',
+      'japanese',
+      'chinese',
+      'driving',
+      'computer-expansion',
+      'chemistry-inorganic',
+      'chemistry-organic',
+      'pharmacology',
+      'driving-car-official',
+    ].map((id) => `data/content-packs/${id}.json`),
+  },
+  'foundations-ui': {
+    files: [
+      'english-grammar-foundations-202610',
+      'japanese-grammar-foundations-202610',
+      'chinese-basics-foundations-202610',
+      'chemistry-basics-foundations-202610',
+      'medicine-basics-foundations-202610',
+      'driving-safety-foundations-202610',
+      'computer-foundations-202610',
+      'geography-foundations',
+      'physics-foundations',
+      'psychology-foundations',
+      'economics-foundations',
+    ].map((id) => `data/content-packs/${id}.json`),
+  },
+};
 export const catalog = Object.freeze([
   ...browserIds.map((id) =>
     check(id, 'browser', {
       groups: smoke.has(id) ? ['browser', 'smoke'] : ['browser'],
       requirements: ['browser', 'web-build'],
+      ...(optionalInputs[id] ? { optionalInputs: optionalInputs[id] } : {}),
     }),
   ),
   {
@@ -142,9 +191,14 @@ export const catalog = Object.freeze([
     args: ['--mobile'],
     requirements: ['mobile-build'],
   }),
-  ...['startup-scale', 'search-scale', 'paper-scale', 'library-scale', 'learning-plan-scale'].map(
-    (id) => check(id, 'performance', { typescript: true, timeoutMs: 900_000 }),
-  ),
+  ...[
+    'startup-scale',
+    'search-scale',
+    'paper-scale',
+    'library-scale',
+    'learning-plan-scale',
+    'transfer-scale',
+  ].map((id) => check(id, 'performance', { typescript: true, timeoutMs: 900_000 })),
   check('fast-start', 'performance', { requirements: ['web-build'] }),
   ...[
     'ai-grade-live',
@@ -152,6 +206,7 @@ export const catalog = Object.freeze([
     'ai-question-edit-live',
     'ai-batch-live',
     'ai-live-textbook',
+    'ai-paper-plan-live',
     'similar-live',
   ].map((id) =>
     check(id, 'live-ai', {

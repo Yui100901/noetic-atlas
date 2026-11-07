@@ -1,3 +1,4 @@
+import { searchReturnTarget } from '../search/search-navigation';
 import { useCallback, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import type { DocumentSourceView } from '../../../shared/models/document-citations';
@@ -8,6 +9,7 @@ import { PdfSourceReader } from '../../shared/media/pdf-source-reader';
 import { contentReturn } from '../../shared/lib/content-navigation';
 import { sourceLocation } from './source-navigation';
 import { DocumentRelatedQuestions } from './document-related-questions';
+import { PdfIndexPanel, PdfTextSearch } from './pdf-index-panel';
 import './document-sources.css';
 
 export function DocumentSourcePage({ id }: { id: string }) {
@@ -18,7 +20,9 @@ export function DocumentSourcePage({ id }: { id: string }) {
     /^[a-f0-9]{64}$/.test(version) ? `/api/documents/${idPath(id)}/versions/${version}` : null,
   );
   const [page, setPage] = useState(location.page),
-    back = contentReturn(params.get('returnTo'));
+    back = searchReturnTarget(window.location.hash) || contentReturn(params.get('returnTo'));
+  const [query, setQuery] = useState(params.get('q') || ''),
+    [targetPage, setTargetPage] = useState(location.page);
   const changePage = useCallback((value: number) => {
     setPage(value);
     const hash = window.location.hash,
@@ -69,11 +73,31 @@ export function DocumentSourcePage({ id }: { id: string }) {
         )}
       </div>
       <article className="card reading-card">
+        {source.format === 'pdf' && source.assetId && (
+          <>
+            <PdfIndexPanel assetId={source.assetId} />
+            <PdfTextSearch
+              assetId={source.assetId}
+              initialQuery={query}
+              onHit={(number, search) => {
+                setTargetPage(number);
+                setQuery(search);
+                changePage(number);
+                const [path, raw] = window.location.hash.split('?');
+                const params = new URLSearchParams(raw);
+                params.set('q', search);
+                history.replaceState(history.state, '', path + '?' + params);
+              }}
+            />
+          </>
+        )}
         {source.format === 'pdf' && source.assetId ? (
           <PdfSourceReader
             assetId={source.assetId}
             initialPage={location.page}
             onPage={changePage}
+            targetPage={targetPage}
+            searchQuery={query}
           />
         ) : (
           <MarkdownRenderer mathEnabled={source.mathEnabled} sourceRange={location.range}>

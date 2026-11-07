@@ -129,10 +129,12 @@ try {
   await searched(() => tab('题目').click()); await resultList().waitFor();
   assert.equal(await resultList().getByRole('listitem').count(), 4); assert.equal(queryState().get('type'), 'question');
   assert.match(await summary().innerText(), /全部类型\s*13\s*条/);
-  await searched(() => page.getByLabel('包含未发布题目', { exact: true }).check()); await resultList().locator('.search-status-pending').waitFor();
+  await searched(() => page.getByLabel('包含未发布题目', { exact: true }).click()); await resultList().locator('.search-status-pending').waitFor();
+  assert.equal(await page.getByLabel('包含未发布题目', { exact: true }).isChecked(), true);
   assert.equal(await resultList().getByRole('listitem').count(), 6); assert.match(await summary().innerText(), /全部类型\s*16\s*条/);
   assert.equal(queryState().get('includeUnpublished'), 'true');
-  await searched(() => page.getByLabel('包含未发布题目', { exact: true }).uncheck()); await resultList().waitFor();
+  await searched(() => page.getByLabel('包含未发布题目', { exact: true }).click()); await resultList().waitFor();
+  assert.equal(await page.getByLabel('包含未发布题目', { exact: true }).isChecked(), false);
   assert.equal(await resultList().getByText('待审核', { exact: true }).count(), 0);
   checks.push('类型筛选保留全类别计数，未发布开关加入待审核与草稿且不混入归档，筛选状态写入URL');
 
@@ -177,8 +179,8 @@ try {
   await page.route(failedEndpoint, failSearch); await go('search?q=星图检索');
   await page.getByRole('alert').filter({ hasText: '隔离搜索请求暂不可用' }).waitFor();
   await page.unroute(failedEndpoint, failSearch); await page.getByRole('button', { name: '重新加载', exact: true }).click(); await resultList().waitFor();
-  await page.getByText('搜索范围与使用说明', { exact: true }).click(); await page.getByText(/PDF目前检索标题、作者、简介/).waitFor();
-  checks.push('空搜索、无匹配、过多关键词和请求失败均有明确信息，支持重试并说明PDF元数据范围');
+  await page.getByText('搜索范围与使用说明', { exact: true }).click(); await page.getByText(/PDF检索资料信息及已建立索引的文本页面/).waitFor();
+  checks.push('空搜索、无匹配、过多关键词和请求失败均有明确信息，支持重试并说明PDF全文索引与扫描件边界');
 
   await go(''); await page.locator('h1').click(); await page.keyboard.press('Control+k'); assert.equal(await top.evaluate(element => element === document.activeElement), true);
   await top.press('Escape'); assert.equal(await top.evaluate(element => element === document.activeElement), false);

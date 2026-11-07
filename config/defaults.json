@@ -27,12 +27,7 @@
       "essay": 10,
       "group": 6
     },
-    "reviewIntervalsDays": [
-      1,
-      2,
-      7,
-      21
-    ],
+    "reviewIntervalsDays": [1, 2, 7, 21],
     "reviewScheduling": {
       "strategy": "fsrs",
       "desiredRetention": 0.9,
@@ -54,6 +49,15 @@
       "newPoints": 20,
       "scheduleTime": "00:00",
       "timeZone": "Asia/Shanghai"
+    },
+    "aiImport": {
+      "fileMiB": 128,
+      "totalMiB": 256,
+      "files": 20,
+      "pdfPages": 5000,
+      "sourceCharacters": 8000000,
+      "sourceMiB": 24,
+      "blocks": 1200
     }
   },
   "ai": {

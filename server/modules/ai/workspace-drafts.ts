@@ -1,3 +1,4 @@
+import { AI_IMPORT_REQUEST_BYTES } from '../../../shared/ai/import-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AI_WORKSPACE_DRAFT_LIMIT, type AiWorkspaceDraft, type AiWorkspaceDraftKind } from '../../../shared/ai/workspace-drafts.js';
@@ -15,12 +16,12 @@ function trim(store:Store,kind:AiWorkspaceDraftKind,contextId:string|null){for(c
 export function registerAiWorkspaceDraftRoutes(app:FastifyInstance,store:Store){
  app.get('/api/ai/workspace-drafts',async request=>{const {kind,contextId}=parse(aiWorkspaceDraftQuerySchema,request.query);return listAiWorkspaceDrafts(store,kind,contextId);});
  app.get('/api/ai/workspace-drafts/:id',async request=>store.require<AiWorkspaceDraft>('ai_workspace_drafts',parse(z.object({id}).strict(),request.params).id));
- app.post('/api/ai/workspace-drafts',async(request,reply)=>{const input=parse(aiWorkspaceDraftCreateSchema,request.body);return store.transaction(()=>{
+ app.post('/api/ai/workspace-drafts',{bodyLimit:AI_IMPORT_REQUEST_BYTES},async(request,reply)=>{const input=parse(aiWorkspaceDraftCreateSchema,request.body);return store.transaction(()=>{
   if(input.kind==='document-job'&&!store.database.getRecord('ai_import_jobs',input.contextId!))fail(404,'AI_DOCUMENT_JOB_NOT_FOUND','教材任务已不存在，不能为已删除任务重新保存草稿。');
   const latest=store.database.one(scoped(store,input.kind,input.contextId).select(store.database.expressions.field<string>('data','updatedAt').as('stamp')).limit(1));
   const stamp=nextStamp(latest?.stamp),draft:AiWorkspaceDraft={...input,id:makeId('ai-draft'),createdAt:stamp,updatedAt:stamp};store.insert('ai_workspace_drafts',draft.id,draft);trim(store,draft.kind,draft.contextId);reply.code(201);return draft;
  });});
- app.put('/api/ai/workspace-drafts/:id',async request=>{const params=parse(z.object({id}).strict(),request.params),input=parse(aiWorkspaceDraftUpdateSchema,request.body);return store.transaction(()=>{
+ app.put('/api/ai/workspace-drafts/:id',{bodyLimit:AI_IMPORT_REQUEST_BYTES},async request=>{const params=parse(z.object({id}).strict(),request.params),input=parse(aiWorkspaceDraftUpdateSchema,request.body);return store.transaction(()=>{
   const previous=store.require<AiWorkspaceDraft>('ai_workspace_drafts',params.id);version(previous,input.expectedUpdatedAt);
   if(previous.kind==='document-job'&&!store.database.getRecord('ai_import_jobs',previous.contextId!))fail(404,'AI_DOCUMENT_JOB_NOT_FOUND','教材任务已不存在，请保留草稿内容并重新建立任务。');
   const latest=store.database.one(scoped(store,previous.kind,previous.contextId).select(store.database.expressions.field<string>('data','updatedAt').as('stamp')).limit(1));

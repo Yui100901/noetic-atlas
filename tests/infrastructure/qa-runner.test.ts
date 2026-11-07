@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, basename, dirname } from 'node:path';
 import { catalog, groups, aliases } from '../../scripts/qa/catalog.mjs';
@@ -165,6 +165,52 @@ test('QA records real subprocess success, failure and timeout, retains logs and 
   assert.match(await readFile(join(folder, 'fail.log'), 'utf8'), /fixture failed/);
   assert.match(await readFile(join(folder, 'pass.log'), 'utf8'), /fixture passed/);
   assert.deepEqual(JSON.parse(await readFile(join(folder, 'report.json'), 'utf8')), report);
+});
+
+test('optional source audits skip without spawning when input is absent and execute when complete', async (t) => {
+  const folder = await fixture(t),
+    executed: string[] = [];
+  const entries = [
+    { id: 'specific-files', optionalInputs: { files: ['packs/first.json', 'packs/second.json'] } },
+    {
+      id: 'common-packs',
+      optionalInputs: { directory: 'packs', suffix: '-common.json', minimum: 2 },
+    },
+  ];
+  const execute = async (entry: { id: string }) => {
+    executed.push(entry.id);
+    return { id: entry.id, status: 'passed' };
+  };
+  const absent = await runSuite(entries, {
+    root: folder,
+    directory: join(folder, 'absent-report'),
+    execute,
+  });
+  assert.equal(absent.ok, true);
+  assert.equal(absent.summary.skipped, 2);
+  assert.equal(absent.summary.passed, 0);
+  assert.deepEqual(executed, []);
+  assert.ok(
+    absent.results.every((result: any) => /缺少可选公开内容包.*未执行/.test(result.reason)),
+  );
+  await mkdir(join(folder, 'packs'));
+  await Promise.all(
+    ['first.json', 'second.json', 'one-common.json', 'two-common.json'].map((name) =>
+      writeFile(join(folder, 'packs', name), '{}'),
+    ),
+  );
+  const supplied = await runSuite(entries, {
+    root: folder,
+    directory: join(folder, 'present-report'),
+    execute,
+  });
+  assert.equal(supplied.summary.skipped, 0);
+  assert.equal(supplied.summary.passed, 2);
+  assert.deepEqual(executed, ['specific-files', 'common-packs']);
+  assert.deepEqual(
+    supplied.plan.map((item: any) => item.optionalInputs),
+    entries.map((entry) => entry.optionalInputs),
+  );
 });
 
 test('QA cancellation prevents unstarted checks from running and marks the report incomplete', async (t) => {

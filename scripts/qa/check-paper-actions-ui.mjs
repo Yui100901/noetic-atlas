@@ -37,7 +37,7 @@ try {
   let navigation = 0;
   const navigate = async id => { await page.goto(origin + '/?paper-actions-qa=' + ++navigation + '#/papers/' + encodeURIComponent(id)); await page.getByRole('heading', { name: '题集内容', exact: false }).waitFor(); await page.waitForLoadState('networkidle'); };
   const modeTrigger = () => page.getByRole('button', { name: '选择练习模式', exact: true });
-  const outputTrigger = () => page.getByRole('button', { name: '导出与分享', exact: true });
+  const outputTrigger = () => page.getByRole('button', { name: '分享', exact: true });
   const manageTrigger = () => page.getByRole('button', { name: '题集管理', exact: true });
   const item = name => page.getByRole('menuitem', { name });
   const noOverflow = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'document overflow');
@@ -70,15 +70,13 @@ try {
   assert.equal((await api('/api/attempts')).length, prior); assert.equal(await modeTrigger().getAttribute('aria-expanded'), 'false');
   checks.push('考试模式收进模式菜单，原120分钟设置保留，取消不创建考试');
 
-  await outputTrigger().click(); await item(/^导出题集/).click();
-  const exported = page.getByRole('dialog', { name: '导出题集', exact: true }); await exported.waitFor();
-  assert.equal(await outputTrigger().getAttribute('aria-expanded'), 'false');
-  await exported.locator('input[value="answers"]').check(); await exported.getByRole('button', { name: '取消', exact: true }).click();
-  await outputTrigger().click(); await item(/^分享题集/).click();
-  const shared = page.getByRole('dialog', { name: '分享内容', exact: true }); await shared.waitFor();
-  await shared.getByRole('button', { name: '导出完整分享数据包（ZIP）', exact: true }).waitFor(); assert.equal(await outputTrigger().getAttribute('aria-expanded'), 'false');
-  await page.keyboard.press('Escape'); await shared.waitFor({ state: 'hidden' });
-  checks.push('导出与分享合并入口，选择后菜单关闭且独立弹窗正常保留与关闭');
+  await outputTrigger().click();
+  const exported = page.getByRole('dialog', { name: '分享题集', exact: true }); await exported.waitFor();
+  await exported.locator('input[value="answers"]').check();
+  await exported.getByRole('radio',{name:'题集数据包（ZIP）',exact:true}).check();
+  await exported.getByRole('button',{name:'下载文件',exact:true}).waitFor();
+  await page.keyboard.press('Escape'); await exported.waitFor({state:'hidden'});
+  checks.push('单个分享弹窗集中PDF/Markdown/ZIP，关闭后返回原题集');
 
   await manageTrigger().click(); await item(/^调整题集/).click(); await page.getByRole('button', { name: '保存题集', exact: true }).waitFor();
   assert.match(page.url(), /\/edit$/); await navigate(state.paperId);
@@ -95,7 +93,7 @@ try {
 
   const settings = await api('/api/settings'); await api('/api/settings', 'PUT', { settings: { ...settings, theme: 'dark' } });
   await navigate(state.paperId); await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
-  await outputTrigger().click(); await item(/^导出题集/).waitFor(); await screenshot('dark-menu-desktop'); await page.keyboard.press('Escape');
+  await outputTrigger().click(); await page.getByRole('dialog',{name:'分享题集',exact:true}).waitFor(); await screenshot('dark-share-desktop'); await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 390, height: 844 }); await manageTrigger().click(); await item(/^永久删除/).waitFor(); await screenshot('grouped-management-mobile');
   assert.ok(await page.getByRole('menu').evaluate(node => node.getBoundingClientRect().right <= innerWidth + 1)); await page.keyboard.press('Escape');
   await modeTrigger().click(); await item(/^考试模式/).waitFor(); await screenshot('grouped-practice-mobile'); await item(/^考试模式/).click(); await exam.getByLabel('考试时长（分钟）', { exact: true }).fill('10');

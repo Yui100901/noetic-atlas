@@ -1,9 +1,11 @@
+import { paperMetadataForCount } from '../../../shared/ai/paper-metadata.js';
+import { AI_IMPORT_REQUEST_BYTES, needsBatchedImport } from '../../../shared/ai/import-limits.js';
 import type { FastifyInstance } from 'fastify';
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 import { z } from 'zod';
 import type { AiExecutionContext } from '../../../shared/ai/ai-progress.js';
-import { AI_GRADE_VERDICT_LABELS,aiScoreVerdict,normalizeAiGradeItem,type AiExplanation,type AiGradeResult,type AiGradeVerdict,type AiImportResult,type AiReviewResult,type AiRun } from '../../../shared/ai/ai.js';
+import { AI_GRADE_VERDICT_LABELS,aiScoreVerdict,normalizeAiGradeItem,type AiExplanation,type AiGradeResult,type AiGradeVerdict,type AiImportResult,type AiPaperPlanResult,type AiReviewResult,type AiRun } from '../../../shared/ai/ai.js';
 import { assetIdFromUrl,embeddedRasterImage,type AssetRecord } from '../../../shared/assets/assets.js';
 import { literalMathMarkdown } from '../../../shared/math/markdown.js';
 import type { LeafQuestionType,Question } from '../../../shared/models/types.js';
@@ -205,7 +207,8 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const versions = run._context.candidateVersions || run._context.questionVersions;
     if (input.questionIds.some(qid => !Object.hasOwn(versions,qid))) fail(400, 'AI_PAPER_CANDIDATE_MISMATCH', '调整后的题目必须来自本次候选范围，请重新推荐以更换范围');
     requireSameQuestions(store, { questionVersions: versions, sourceByItem: {} }, input.questionIds);
-    const paper = buildPaper(store, { ...input, mode: 'manual' });
+    const metadata = paperMetadataForCount(input,input.questionIds.length,{previousCount:(run.result as AiPaperPlanResult).items.length});
+    const paper = buildPaper(store, { ...input, title:metadata.title,description:metadata.description, mode: 'manual' });
     return reply.code(201).send(store.transaction(() => { store.insert('papers', paper.id, paper); run.createdPaperId = paper.id; run.appliedAt = now(); putRun(store, run); return { paper: paperView(paper, true), run: publicRun(run) }; }));
   });
   app.post('/api/ai/explain', async (request, reply) => runAuditedAiAction(store, 'explain', request, reply, async execution => {
@@ -323,8 +326,9 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     });
     return result;
   });
-  app.post('/api/ai/import', async (request, reply) => runAuditedAiAction(store, 'import', request, reply, async execution => {
+  app.post('/api/ai/import', {bodyLimit:AI_IMPORT_REQUEST_BYTES}, async (request, reply) => runAuditedAiAction(store, 'import', request, reply, async execution => {
     const input = parse(aiImportInputSchema, request.body);
+    if(needsBatchedImport(input.text))fail(413,'AI_IMPORT_USE_BATCH','材料超过单次处理预算，请在AI整理题目中选择教材分批处理。原材料未截断或发送模型。');
     store.validateRefs(input); const settings = readPrivateSettings(store);
     const proposed = await requestAiJson(settings, importTask(input), { questions: [{ title: 'string', type: input.questionTypes.length === 1 ? input.questionTypes[0] : '按要求选择有效题型', stemMarkdown: 'string', answerMarkdown: 'string', explanationMarkdown: '答案依据、推导及必要的章节或页码提示', difficulty: input.difficulty || '1至4的整数', options: [], correctAnswers: [], categoryIds: input.categoryIds, tagIds: input.tagIds }], taxonomySuggestions: { domains: ['领域名称'], categories: ['分类名称'], tags: ['主题名称'] } }, { sourceName: input.sourceName || '用户提交资料', ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}), mode: input.mode, text: input.text, taxonomy: store.taxonomy(), selectedCategoryIds: input.categoryIds, selectedTagIds: input.tagIds }, importResultSchema, [], execution);
     assertAiActive(execution);

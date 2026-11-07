@@ -30,9 +30,11 @@ try {
   const explain = () => panel().getByRole('tabpanel', { name: 'AI解析', exact: false });
   const grade = () => panel().getByRole('tabpanel', { name: 'AI评价回答', exact: false });
   await go(`#/papers/${state.paperId}/questions/${state.qid}`);
-  assert.ok(
-    (await page.locator('.question-viewer-reading').innerText()).includes('题集保存的原子性问题'),
-  );
+  await page
+    .locator('.question-viewer-reading')
+    .getByText('题集保存的原子性问题', { exact: true })
+    .waitFor();
+  assert.match(await page.locator('.question-viewer-reading').innerText(), /题集保存的原子性问题/);
   assert.equal(await panel().getByRole('tab').count(), 2);
   assert.equal(await grade().count(), 0);
   checks.push('set reader uses shared reading and separate accessible AI tabs');

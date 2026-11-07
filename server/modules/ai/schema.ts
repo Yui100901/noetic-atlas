@@ -1,3 +1,4 @@
+import { AI_IMPORT_HARD_LIMITS } from '../../../shared/ai/import-limits.js';
 import { z } from 'zod';
 import { id, leafId, moneySchema, questionSchema, filtersSchema, scoringInputSchema, gradingRequirementsSchema, questionGradingRequirementsSchema, questionVersionsSchema, types } from '../../core/validation.js';
 import { AI_PAPER_MAX_QUESTIONS, normalizeAiGradeItem } from '../../../shared/ai/ai.js';
@@ -8,7 +9,7 @@ export const explanationSchema = z.object({ explanationMarkdown: prose.min(1), f
 export { gradingRequirementsSchema } from '../../core/validation.js';
 const importSourceUrl = z.string().trim().url().max(3000).refine(value => { try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; } catch { return false; } }, '来源链接仅支持无账号密码的 HTTP(S) 地址');
 export const aiImportInputSchema = z.object({
-  text: z.string().trim().min(1).max(400_000), sourceName: z.string().trim().max(300).optional(),
+  text: z.string().trim().min(1).max(AI_IMPORT_HARD_LIMITS.sourceCharacters), sourceName: z.string().trim().max(300).optional(),
   sourceUrl: importSourceUrl.optional(), mode: z.enum(['extract', 'generate']).default('extract'),
   requirements: z.string().trim().max(5000).default(''),
   questionTypes: z.array(types).max(7).refine(values => new Set(values).size === values.length, '题型不能重复').default([]),

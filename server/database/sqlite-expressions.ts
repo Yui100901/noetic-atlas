@@ -143,7 +143,7 @@ export class SqliteExpressions {
   arrayRecordsByIds(ref: string, key: string, ids: readonly string[]): RawBuilder<string> {
     return sql<string>`(select coalesce(json_group_array(json(item.value)),'[]') from json_each(${sql.ref(ref)},${this.path(key)}) as item where json_extract(item.value,'$.id') in (select value from json_each(${JSON.stringify(ids)})))`;
   }
-  idInJson(ref: string, values: readonly string[]): RawBuilder<SqlBool> { return sql<SqlBool>`${sql.ref(ref)} in (select value from json_each(${JSON.stringify(values)}))`; }
+  idInJson(ref: string | RawBuilder<unknown>, values: readonly string[]): RawBuilder<SqlBool> { return sql<SqlBool>`${typeof ref==='string'?sql.ref(ref):ref} in (select value from json_each(${JSON.stringify(values)}))`; }
   valueInJson(value:Expression<any>,values:readonly string[]):RawBuilder<SqlBool> {return sql<SqlBool>`${value} in (select value from json_each(${JSON.stringify(values)}))`;}
   unicodeContains(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`atlas_unicode_contains(${value},${needle})=1`; }
   containsLiteral(value: Expression<any>, needle: string): RawBuilder<SqlBool> { return sql<SqlBool>`instr(${value},${needle})>0`; }

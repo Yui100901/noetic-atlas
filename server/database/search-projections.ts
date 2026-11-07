@@ -104,7 +104,7 @@ export class SearchProjections {
       metadata.href = `#/papers/${encodeURIComponent(record.id)}`; metadata.description = '题集'; metadata.domainIds = record.domainId ? [record.domainId] : [];
       this.put(source, record.id, 'paper', metadata, record.description || '', '', !!record.archived);
     } else if (source === 'documents') {
-      const pdf = record.format === 'pdf'; metadata.href = `#/documents/${encodeURIComponent(record.id)}`; metadata.description = pdf ? 'PDF · 仅检索元数据' : 'Markdown资料';
+      const pdf = record.format === 'pdf'; metadata.href = `#/documents/${encodeURIComponent(record.id)}`; metadata.description = pdf ? 'PDF资料 · 支持已索引文本检索' : 'Markdown资料';
       const attributes = [record.description, record.kind, record.author, record.publisher, record.publishedYear, record.fileName].filter(value => typeof value === 'string').join('\n');
       this.put(source, record.id, 'document', metadata, [attributes, pdf ? '' : record.bodyMarkdown || ''].join('\n'), '', !!record._archived);
     } else {

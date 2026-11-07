@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, FileText, LoaderCircle } from 'lucide-react';
+import { Download, FileText, LoaderCircle, Share2 } from 'lucide-react';
 import {
   exportModeLabels,
   type ExportDocument,
@@ -21,12 +21,14 @@ const descriptions: Record<ExportMode, string> = {
 export function ExportButton({
   paperId,
   attemptId,
+  share = false,
   open: controlledOpen,
   onOpenChange,
   hideTrigger = false,
 }: {
   paperId?: string;
   attemptId?: string;
+  share?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
@@ -41,12 +43,17 @@ export function ExportButton({
     <>
       {!hideTrigger && (
         <button className="button" onClick={() => setOpen(true)}>
-          <Download size={16} />
-          导出题集
+          {share ? <Share2 size={16} /> : <Download size={16} />}
+          {share ? '分享' : '导出题集'}
         </button>
       )}
       {open && (
-        <ExportDialog paperId={paperId} attemptId={attemptId} onClose={() => setOpen(false)} />
+        <ExportDialog
+          paperId={paperId}
+          attemptId={attemptId}
+          share={share}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
   );
@@ -54,13 +61,17 @@ export function ExportButton({
 function ExportDialog({
   paperId,
   attemptId,
+  share = false,
   onClose,
 }: {
   paperId?: string;
   attemptId?: string;
+  share?: boolean;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<ExportMode>(attemptId ? 'completed' : 'blank');
+  const [mode, setMode] = useState<ExportMode>(
+    attemptId ? 'completed' : share ? 'answers' : 'blank',
+  );
   const [format, setFormat] = useState<'md' | 'pdf' | 'zip'>('pdf');
   const preflight = useExportPreflight(
     format === 'zip' && paperId && !attemptId
@@ -95,7 +106,7 @@ function ExportDialog({
   };
   return (
     <Modal
-      title="导出题集"
+      title={share ? '分享题集' : '导出题集'}
       onClose={() => {
         if (!busy) onClose();
       }}

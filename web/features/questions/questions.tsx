@@ -30,7 +30,7 @@ import { QuestionHistory, QuestionStatistics } from './question-history';
 import { MarkdownEditor } from '../../shared/ui/markdown-editor';
 import { DEFAULT_SETTINGS } from '../../../shared/models/settings';
 import { AiQuestionTools, AiReviewButton } from '../ai/ai-components';
-import { ShareButton } from '../sharing/sharing';
+import { ShareButton } from '../sharing/share-button';
 import { ActionDropdown } from '../../shared/ui/action-dropdown';
 import { TagPicker } from '../../shared/ui/tag-picker';
 import '../../shared/ui/review-taxonomy.css';

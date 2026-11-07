@@ -2,7 +2,13 @@
 import { access, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { catalog, groups, aliases, commandFor } from './catalog.mjs';
-import { parseOptions, selectChecks, assertAllowed, runSuite } from './helpers/suite-runner.mjs';
+import {
+  parseOptions,
+  selectChecks,
+  assertAllowed,
+  runSuite,
+  missingOptionalInputs,
+} from './helpers/suite-runner.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const help = `用法：node scripts/qa/run.mjs [--group smoke|browser|static|performance|live-ai|release|content-audit|android] [--only ID,ID] [--list|--dry-run]
@@ -32,6 +38,7 @@ try {
               command: [process.execPath, ...commandFor(entry)],
               timeoutMs: entry.timeoutMs,
               ...(entry.platform ? { platform: entry.platform } : {}),
+              ...(entry.optionalInputs ? { optionalInputs: entry.optionalInputs } : {}),
             })),
             ...(options.dryRun ? { dryRun: true, executed: 0 } : {}),
           },
@@ -44,7 +51,10 @@ try {
       // Check local prerequisites before any partial execution. Browser packages
       // remain optional tooling and are never installed by this runner.
       for (const entry of entries) await access(resolve(root, entry.script));
-      const requirements = new Set(entries.flatMap((entry) => entry.requirements));
+      const runnable = [];
+      for (const entry of entries)
+        if (!(await missingOptionalInputs(entry, root))) runnable.push(entry);
+      const requirements = new Set(runnable.flatMap((entry) => entry.requirements));
       for (const [requirement, file] of [
         ['web-build', 'dist/web/index.html'],
         ['mobile-build', 'dist/mobile/index.html'],

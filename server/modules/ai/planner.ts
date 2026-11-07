@@ -1,3 +1,4 @@
+import { paperMetadataForCount } from '../../../shared/ai/paper-metadata.js';
 import { z } from 'zod';
 import { AI_PAPER_MAX_QUESTIONS, type AiPaperPlanItem, type AiPaperPlanResult } from '../../../shared/ai/ai.js';
 import type { AiExecutionContext } from '../../../shared/ai/ai-progress.js';
@@ -141,9 +142,9 @@ export async function recommendPaper(store:Store,settings:PrivateAiSettings,inpu
       if(candidates.length>=target&&usedBytes+16_000>candidateBudget)break;
     }
     if(candidates.length<target)fail(422,'AI_PAPER_INSUFFICIENT_QUESTIONS','候选题目在生成期间发生变化，可用题量不足，请重新推荐');
-    const task=`从本批候选中选择恰好${target}道已存在题目，结合学习要求覆盖知识、难度和递进。只输出候选id，不重复、不生成新题，不选previouslySelected题号。reason每题用10至40字说明与目标的关系，不重复整段题干；title简短，description不超过500字。组合题整组计数且展开小题合计不能超过remainingAnswerSlots，非组合题消耗1个作答项。若不能满足，应明确不足，禁止用不符合条件的题凑数。未提供图片、选项与答案，不能据此保证正确性。候选可能只提供题干与分类标签摘要，缺失信息不得补造。`;
-    const outputDefinition={title:'题集名称',description:'覆盖与学习目标',items:[{questionId:'候选id',reason:'推荐理由'}]};
-    const material={requirements:input.prompt,requestedCount:target,totalRequestedCount:requestedCount,previouslySelected:[...selectedIds],remainingAnswerSlots:AI_PAPER_MAX_QUESTIONS-answerCount,candidates:candidates.map(publicCandidate),taxonomy:queryView};
+    const task=`从本批候选中选择恰好${target}道已存在题目，结合学习要求覆盖知识、难度和递进。只输出候选id，不重复、不生成新题，不选previouslySelected题号。reason每题用10至40字说明与目标的关系，不重复整段题干。selectionCount（兼容字段requestedCount）只表示本批选题数量；paperQuestionCount才是整份题集的总题量。title和description描述整份题集，不能把本批数量写成总题量，不能使用“本批/首批/当前批”的说明，也不能根据本批候选虚构全卷已覆盖的具体内容。title简短，description不超过500字。组合题整组计数且展开小题合计不能超过remainingAnswerSlots，非组合题消耗1个作答项。若不能满足，应明确不足，禁止用不符合条件的题凑数。未提供图片、选项与答案，不能据此保证正确性。候选可能只提供题干与分类标签摘要，缺失信息不得补造。`;
+    const outputDefinition={title:`整份题集名称（全卷${requestedCount}题；非本批${target}题）`,description:`整份题集的学习目标；全卷${requestedCount}题。仅描述要求支持的范围，不虚构覆盖` ,items:[{questionId:'候选id',reason:'推荐理由'}]};
+    const material={requirements:input.prompt,requestedCount:target,selectionCount:target,paperQuestionCount:requestedCount,totalRequestedCount:requestedCount,previouslySelected:[...selectedIds],remainingAnswerSlots:AI_PAPER_MAX_QUESTIONS-answerCount,candidates:candidates.map(publicCandidate),taxonomy:queryView};
     const inputBytes=()=>bytes({task,outputSchema:outputDefinition,untrustedMaterial:material});
     while(inputBytes()>550_000&&material.candidates.length>target){material.candidates.pop();candidates.pop();}
     // Extreme but valid custom metadata can be larger than a normal stem. Keep
@@ -170,7 +171,8 @@ export async function recommendPaper(store:Store,settings:PrivateAiSettings,inpu
   const reviewedCandidates=[...reviewed].map(id=>seen.get(id)!);
   const candidateVersions=Object.fromEntries(reviewedCandidates.map(candidate=>[candidate.id,candidate.version]));
   const questionVersions=Object.fromEntries(selected.map(item=>[item.questionId,candidateVersions[item.questionId]!]));
-  const output:AiPaperPlanResult={title,description,items:selected,requestedCount,candidateCount:pool.length,candidates:reviewedCandidates.map(({id,title,type})=>({id,title,type})),retrieval:{availableCount,matchedCount:pool.length,reviewedCount:reviewed.size,batches,interpreted,summary:intent.summary||'根据本次提示词与可选手动范围推荐'}};
-  const warnings=['本次仅推荐已有题目，未发送参考答案、学习记录或图片。保存前可调整题目和分值。',...(pool.length>reviewed.size?[`已从${pool.length}道匹配题中检索并比较${reviewed.size}道候选；没有将全库正文一次性发送给模型。`]:[]),...(batches>1?[`本次分${batches}批生成，已校验跨批题号不重复。`]:[])];
+  const metadata = paperMetadataForCount({title,description},selected.length,{providerBatch:true});
+  const output:AiPaperPlanResult={title:metadata.title,description:metadata.description,items:selected,requestedCount,candidateCount:pool.length,candidates:reviewedCandidates.map(({id,title,type})=>({id,title,type})),retrieval:{availableCount,matchedCount:pool.length,reviewedCount:reviewed.size,batches,interpreted,summary:intent.summary||'根据本次提示词与可选手动范围推荐'}};
+  const warnings=[...(metadata.adjusted?['模型说明使用了单批数量或单批语义，已按实际全卷题量生成说明；请核对全卷预览。']:[]),'本次仅推荐已有题目，未发送参考答案、学习记录或图片。保存前可调整题目和分值。',...(pool.length>reviewed.size?[`已从${pool.length}道匹配题中检索并比较${reviewed.size}道候选；没有将全库正文一次性发送给模型。`]:[]),...(batches>1?[`本次分${batches}批生成，已校验跨批题号不重复。`]:[])];
   return {output,context:{questionVersions,candidateVersions,sourceByItem:{}},warnings};
 }

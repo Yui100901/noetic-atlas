@@ -1,4 +1,4 @@
-import { AI_DOCUMENT_LIMITS } from '../../../shared/ai/ai-document';
+import { aiImportLimits, materialLimitMessage } from '../../../shared/ai/import-limits';
 import type { SelectedDocument } from '../library/document-picker';
 import { decodeAsset, fetchAsset } from '../../shared/media/asset-files';
 import {
@@ -43,14 +43,14 @@ export async function extractLibrarySource(
     }));
     return result;
   }
+  const limits = aiImportLimits(options.limits);
   const text = document.bodyMarkdown,
     bytes = new TextEncoder().encode(text).byteLength;
   if (!text.trim()) throw new Error('资料没有可用于出题的正文。');
-  if (
-    text.length > AI_DOCUMENT_LIMITS.maxSourceCharacters ||
-    bytes > AI_DOCUMENT_LIMITS.maxSourceBytes
-  )
-    throw new Error('资料正文超过400万字符或12MB，请先保存所需章节后处理。');
+  if (text.length > limits.sourceCharacters || bytes > limits.sourceMiB * 1024 * 1024)
+    throw new Error(
+      `资料正文超过当前配置的${materialLimitMessage(limits)}，请缩小范围或调整AI材料限额。`,
+    );
   let offset = 0;
   const sections = splitDocumentText(text).map((part, index) => {
     const start = offset;
@@ -71,6 +71,8 @@ export async function extractLibrarySource(
       },
     };
   });
+  if (sections.length > limits.blocks)
+    throw new Error(`资料超过当前配置的${limits.blocks}块，请缩小范围。`);
   return {
     sections,
     sourceName: document.title,

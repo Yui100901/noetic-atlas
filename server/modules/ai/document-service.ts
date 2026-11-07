@@ -1,3 +1,4 @@
+import { materialLimitMessage } from '../../../shared/ai/import-limits.js';
 import { prepareJobSources } from './document-sources.js';
 import { aiDocumentLinkSourcesSchema } from './document-schema.js';
 import { validateDocumentCitations } from '../library/sources.js';
@@ -54,7 +55,8 @@ export function createDocumentJob(store: Store, body: unknown): AiDocumentJob {
   return store.transaction(()=>{
   const input = parse(aiDocumentCreateSchema, body); store.validateRefs(input);
   const text = input.sections.map(section => section.text).join('');
-  if (text.length > AI_DOCUMENT_LIMITS.maxSourceCharacters || byteLength(text) > AI_DOCUMENT_LIMITS.maxSourceBytes) fail(413, 'AI_DOCUMENT_TOO_LARGE', '任务资料超过400万字符或12MB，请拆分为多个任务');
+  const limits = getSettings(store).aiImport;
+  if (text.length > limits.sourceCharacters || byteLength(text) > limits.sourceMiB * 1024 * 1024 || input.sections.length > limits.blocks) fail(413, 'AI_DOCUMENT_TOO_LARGE', `任务资料超过当前配置的${materialLimitMessage(limits)}，请缩小范围或调整AI材料限额`);
   const sections=prepareJobSources(store,input);
   const blocks: StoredAiDocumentJob['blocks'] = sections.flatMap((section, index) => {let consumed=0;return split(section.text).map((part, partIndex) => {
     const label = section.label || (section.pageStart ? `第${section.pageStart}${section.pageEnd && section.pageEnd !== section.pageStart ? `—${section.pageEnd}` : ''}页` : `资料块${index + 1}`);
@@ -63,7 +65,7 @@ export function createDocumentJob(store: Store, body: unknown): AiDocumentJob {
     return { ...(sourceCitation?{sourceCitation}:{}), id: makeId('block'), sourceName: section.sourceName || input.sourceName, label: (partIndex ? `${label} · ${partIndex + 1}` : label).slice(0, 300), ...(section.pageStart ? { pageStart: section.pageStart } : {}), ...(section.pageEnd ? { pageEnd: section.pageEnd } : {}), characters: part.length, text: part, title: '', summary: '', topics: [], planStatus: 'pending' as const, generationStatus: 'pending' as const, planAttempts: 0, generationAttempts: 0, questions: [], importedQuestionIds: [] };
   });});
   if (!blocks.length) fail(400, 'AI_DOCUMENT_EMPTY', '未找到可分析的正文，请先检查本机提取结果');
-  if (blocks.length > AI_DOCUMENT_LIMITS.maxBlocks) fail(413, 'AI_DOCUMENT_TOO_MANY_BLOCKS', `资料拆分后超过${AI_DOCUMENT_LIMITS.maxBlocks}块，请缩小范围`);
+  if (blocks.length > limits.blocks) fail(413, 'AI_DOCUMENT_TOO_MANY_BLOCKS', `资料拆分后超过${limits.blocks}块，请缩小范围`);
   const date = now(), job: StoredAiDocumentJob = { id: makeId('document-job'), sourceName: input.sourceName, ...(input.sourceUrl ? { sourceUrl: input.sourceUrl } : {}), createdAt: date, updatedAt: date, status: 'pending', ...aiDocumentCounts(blocks), mode: input.mode, requirements: input.requirements, questionTypes: input.questionTypes, ...(input.difficulty ? { difficulty: input.difficulty } : {}), categoryIds: input.categoryIds, tagIds: input.tagIds, questionsPerBlock: input.questionsPerBlock, maxQuestions: input.maxQuestions, blocks };
   store.database.putRecord('ai_import_jobs', job.id, job); return documentView(job);
   });

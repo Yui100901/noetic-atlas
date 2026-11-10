@@ -8,6 +8,8 @@ import base64, hashlib, io, json, math, re
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[3]
+from runpy import run_path
+materialize_content_sets = run_path(str(ROOT / "scripts/content/question_sets.py"))["materialize_content_sets"]
 DATE = '2026-10-22T00:00:00Z'
 laws = json.loads((ROOT / 'data/content-sources/driving-laws.json').read_text(encoding='utf-8'))
 standard = 'https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno=15B1FC09EE1AE92F1A9EC97BA3C9E451'
@@ -146,7 +148,8 @@ for code,name in models:
     question(code+'申请年龄与准驾车型',f'拟申请{code}（{name}）时，172号令第十四条规定的一般年龄条件是什么？年龄条件之外还应注意什么？',age+'。年龄合格不代表免除身体条件、既往驾驶经历、增驾限制、培训和考试等要求。','**易错点**：2025年施行的修改调整了部分年龄条件，不应直接使用旧“60周岁以下”版本。这里问的是申请年龄，不是所有已持证驾驶人的换证、延期与身体证明规则。A1/A2职业教育路径及63周岁以上延期应分别核对第十四条、第六十五条。','license',[{'label':'172号令第十四条、第六十五条（2025-01-01施行）','url':laws[2]['url']}],extra=['drv-model-'+code.lower(),'drv-original-simulation'],difficulty=2)
 
 bank={'id':'bank-driving-review','name':'驾驶理论·法规与原创模拟（待审核）','description':'按现行公开法规编制，不宣称官方完整题库。含车型标签、法规阅读与原创示意图。','questionIds':[q['id'] for q in questions]}
-pack=dict(schemaVersion=1,generatedAt=DATE,domains=[domain],categories=categories,tags=tags,questions=questions,questionBanks=[bank],documents=[],papers=[],assets=assets)
+pack=dict(schemaVersion=1,generatedAt=DATE,domains=[domain],categories=categories,tags=tags,questions=questions,questionSets=[bank],documents=[],papers=[],assets=assets)
+materialize_content_sets(pack)
 destination=ROOT/'data/content-packs/driving.json';destination.parent.mkdir(parents=True,exist_ok=True);destination.write_text(json.dumps(pack,ensure_ascii=False,indent=2),encoding='utf-8')
 manifest=dict(id='driving',title='中国大陆驾驶理论学习扩展',generatedAt=DATE,questions=len(questions),assets=len(assets),articleCounts=article_counts,verifiedAt='2026-10-22',status='pending',officialQuestionBank=False,scope='公开法规阅读、按条款自编模拟与原创图形识别；不覆盖官方全部题库、全部地方题或所有车型专项情境。',sources=[{k:v for k,v in x.items() if k!='text'} for x in laws],standard=standard,rights='政府规范性文本用于学习；题目组织与教学示意图由项目原创。未复制商业驾考题库。',sha256=hashlib.sha256(destination.read_bytes()).hexdigest())
 (ROOT/'data/content-sources/driving.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')

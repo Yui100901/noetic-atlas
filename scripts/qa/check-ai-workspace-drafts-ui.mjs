@@ -59,7 +59,7 @@ try{
  const go=async(path)=>{await page.goto(origin+'/#/'+path);await page.waitForLoadState('networkidle');};
  const capture=async(name)=>{await settle(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'layout');await page.screenshot({path:resolve(folder,name+'.png'),fullPage:true});};
 
- await go('ai');await prompt().waitFor();await delay(1200);assert.equal((await drafts('paper')).length,0,'blank paper form should not create a draft');
+ await go('papers/new/ai');await prompt().waitFor();await delay(1200);assert.equal((await drafts('paper')).length,0,'blank paper form should not create a draft');
  await prompt().fill('从已有题库推荐2道事务基础简答题，保留我的分组要求。');await page.getByLabel('推荐题量（组合题整组计）',{exact:true}).fill('2');
  const first=await settle(async()=>{const items=await drafts('paper');return items[0]?.state.prompt.includes('我的分组要求')?items[0]:null;},'paper input auto-save');
  await prompt().fill('从已有题库推荐2道事务基础简答题，最后一次输入。');await save();
@@ -76,7 +76,7 @@ try{
  assert.equal(paperPreview.state.ids.length,2);await page.reload();await recover();await page.getByRole('button',{name:'确认创建题集',exact:true}).waitFor();
  assert.equal(await page.getByLabel('题集名称',{exact:true}).inputValue(),'人工调整后保留的推荐题集');assert.equal(await page.getByLabel('覆盖与学习目标',{exact:true}).inputValue(),'不要覆盖我的预览调整。');
  assert.equal((await state()).calls.filter(call=>call.kind==='paper').length,1,'restoring must not resubmit the model');checks.push('推荐预览与人工名称／目标修改恢复，恢复不会重新调用模型');
- await page.getByRole('button',{name:'确认创建题集',exact:true}).click();await page.waitForURL(/#\/papers\/(?!new(?:\/|$))[^/?]+(?:\?|$)/);await go('ai');await maybeRecover();await prompt().waitFor();
+ await page.getByRole('button',{name:'确认创建题集',exact:true}).click();await page.waitForURL(/#\/papers\/(?!new(?:\/|$))[^/?]+(?:\?|$)/);await go('papers/new/ai');await maybeRecover();await prompt().waitFor();
  assert.equal(await page.getByRole('button',{name:'确认创建题集',exact:true}).count(),0);checks.push('确认创建题集后草稿不复活已应用的推荐预览');
 
  await go('sharing?tab=import');await page.getByLabel('待转换文本',{exact:true}).fill('一组操作整体提交或回滚称为事务原子性。转账的扣款和入账应一起完成。');
@@ -88,7 +88,7 @@ try{
  const inputBeforeBadFile=await page.getByLabel('待转换文本',{exact:true}).inputValue();await page.getByLabel('AI导入原始文件',{exact:true}).setInputFiles({name:'invalid-utf8.txt',mimeType:'text/plain',buffer:Buffer.from([0xff,0xfe,0xff])});await page.locator('.notice.error').waitFor();
  assert.equal(await page.getByLabel('待转换文本',{exact:true}).inputValue(),inputBeforeBadFile);assert.match(await jsonField.inputValue(),/人工核对后的导入预览/);assert.equal(await page.locator('.ai-checkbox-list input:checked').count(),1);checks.push('切换整理方式及读取无效文件失败后仍保留输入、上次预览与人工选择');await save();
  const importDraft=await settle(async()=>{const item=(await drafts('import'))[0];return item?.state.json.includes('人工核对后的导入预览')&&item.state.selected.length===1?item:null;},'import preview saved');
- await go('');await go('ai?tab=import');await recover();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();
+ await go('');await go('sharing?tab=import');await recover();await page.getByRole('button',{name:'查重并准备导入',exact:true}).waitFor();
  assert.equal(await page.getByLabel('来源名称',{exact:true}).inputValue(),'草稿验收教材');assert.match(await page.getByLabel('AI转换题目JSON',{exact:true}).inputValue(),/人工核对后的导入预览/);assert.equal(await page.locator('.ai-checkbox-list input:checked').count(),1);
  assert.equal((await drafts('import'))[0].id,importDraft.id);checks.push('普通导入保留文本、要求、处理方式、手改JSON及勾选，离开重入恢复同一草稿');
  await confirmReviewedImport(page);await settle(async()=>((await state()).questions.total===5),'import selected question');

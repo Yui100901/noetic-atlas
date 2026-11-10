@@ -3,6 +3,16 @@ gradle.beforeProject { project ->
         project.plugins.withId('com.android.application') {
             project.android.buildTypes.debug.applicationIdSuffix = '.qa'
             project.android.buildTypes.debug.versionNameSuffix = '-qa'
+            def qaVersion = gradle.startParameter.projectProperties['noeticQaVersion']
+            def qaVersionCode = gradle.startParameter.projectProperties['noeticQaVersionCode']
+            if (qaVersion != null || qaVersionCode != null) {
+                if (qaVersion == null || qaVersionCode == null || !(qaVersionCode ==~ /[1-9]\d*/))
+                    throw new GradleException('Both QA version properties must be valid')
+                project.androidComponents.finalizeDsl { dsl ->
+                    dsl.defaultConfig.versionName = qaVersion
+                    dsl.defaultConfig.versionCode = qaVersionCode.toInteger()
+                }
+            }
         }
     }
 }

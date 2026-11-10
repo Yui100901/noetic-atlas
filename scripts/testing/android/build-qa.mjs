@@ -10,6 +10,7 @@ import { verifyQaAssets } from './verify-assets.mjs';
 import { resolveAndroidToolchain } from '../../build/android-toolchain.mjs';
 import { findNpmCli } from '../../build/build-command.mjs';
 import { resetGeneratedDirectory } from '../../build/generated-paths.mjs';
+import { normalizeReleaseVersion, androidVersionCode } from '../../release/version.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -19,18 +20,21 @@ const { values } = parseArgs({
     offline: { type: 'boolean' },
     install: { type: 'boolean' },
     serial: { type: 'string' },
+    'qa-version': { type: 'string' },
     help: { type: 'boolean' },
   },
 });
 if (values.help) {
   console.log(
-    'build-qa.mjs [--java-root JDK21] [--sdk-root SDK] [--offline] [--skip-sync] [--install --serial DEVICE]\nOutputs test-results/android-layout/noetic-atlas-qa.apk; production assets are restored even if the build fails.',
+    'build-qa.mjs [--java-root JDK21] [--sdk-root SDK] [--offline] [--skip-sync] [--qa-version VERSION] [--install --serial DEVICE]\nOutputs test-results/android-layout/noetic-atlas-qa.apk; --qa-version changes only the separate QA APK manifest for update tests, not production metadata. Production assets are restored even if the build fails.',
   );
   process.exit(0);
 }
 const root = resolve(import.meta.dirname, '../../..'),
   folder = join(root, 'test-results/android-layout'),
   out = join(folder, 'app-assets');
+const qaVersion = values['qa-version'] && normalizeReleaseVersion(values['qa-version']),
+  qaVersionCode = qaVersion && androidVersionCode(qaVersion);
 const toolchain = resolveAndroidToolchain(
   { javaRoot: values['java-root'], sdkRoot: values['sdk-root'] },
   { root },
@@ -111,6 +115,7 @@ try {
         gradle,
         '-InitScript',
         init,
+        ...(qaVersion ? ['-QaVersion', qaVersion, '-QaVersionCode', String(qaVersionCode)] : []),
         ...(values.offline ? ['-Offline'] : []),
       ],
       join(root, 'android'),
@@ -123,6 +128,9 @@ try {
         '--no-daemon',
         '--init-script',
         init,
+        ...(qaVersion
+          ? [`-PnoeticQaVersion=${qaVersion}`, `-PnoeticQaVersionCode=${qaVersionCode}`]
+          : []),
         ':app:clean',
         ':app:assembleDebug',
       ],
@@ -131,14 +139,20 @@ try {
   const apk = join(folder, 'noetic-atlas-qa.apk');
   await copyFile(join(root, 'android/app/build/outputs/apk/debug/app-debug.apk'), apk);
   const aapt = join(toolchain.sdkRoot, 'build-tools/36.0.0', windows ? 'aapt2.exe' : 'aapt2');
-  assert.match(
-    run(aapt, ['dump', 'badging', apk], root, true),
-    /package: name='cn\.noetic\.atlas\.qa'/,
-  );
+  const badging = run(aapt, ['dump', 'badging', apk], root, true);
+  assert.match(badging, /package: name='cn\.noetic\.atlas\.qa'/);
+  if (qaVersion) {
+    assert.ok(badging.includes(`versionCode='${qaVersionCode}'`), 'QA versionCode mismatch');
+    assert.ok(badging.includes(`versionName='${qaVersion}-qa'`), 'QA versionName mismatch');
+  }
   await verifyQaAssets(new Uint8Array(await readFile(apk)), out);
   await writeFile(
     join(folder, 'build.json'),
-    JSON.stringify({ apk, entry: entry.file, package: 'cn.noetic.atlas.qa' }, null, 2),
+    JSON.stringify(
+      { apk, entry: entry.file, package: 'cn.noetic.atlas.qa', qaVersion, qaVersionCode },
+      null,
+      2,
+    ),
   );
   if (values.install) {
     assert.ok(values.serial || process.env.ANDROID_SERIAL, 'Specify --serial for installation');

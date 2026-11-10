@@ -108,7 +108,10 @@ export const sharePackageSchema = z
     assets: z.array(assetRecordSchema).max(10000),
     questions: z.array(shareQuestion).max(50000),
     papers: z.array(paperSchema).max(100),
-    questionBanks: z.array(questionBankSchema.safeExtend({ id })).max(100).default([]),
+    questionBanks: z
+      .array(questionBankSchema.safeExtend({ id }))
+      .max(0, '题库集合格式已移除，请使用题集格式')
+      .default([]),
   })
   .strict();
 

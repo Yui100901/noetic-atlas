@@ -15,8 +15,16 @@ export async function until(check, label, timeout = 30000) {
   }
   throw Error('Timed out: ' + label);
 }
-export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entry, ime } = {}) {
+export async function connectAndroid({
+  serial = process.env.ANDROID_SERIAL,
+  entry,
+  ime,
+  resetData = true,
+  clearDataOnClose = true,
+} = {}) {
   assert.ok(serial, 'Specify --serial or ANDROID_SERIAL; never select an arbitrary device');
+  assert.equal(typeof resetData, 'boolean', 'resetData must be boolean');
+  assert.equal(typeof clearDataOnClose, 'boolean', 'clearDataOnClose must be boolean');
   if (entry)
     assert.match(
       entry,
@@ -80,10 +88,12 @@ export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entr
     };
     await browser?.close().catch(() => {});
     clean('shell', 'am', 'force-stop', QA_PACKAGE);
-    try {
-      assert.equal(adb('shell', 'pm', 'clear', QA_PACKAGE), 'Success');
-    } catch (error) {
-      cleanupErrors.push('QA data clear failed: ' + error.message);
+    if (clearDataOnClose) {
+      try {
+        assert.equal(adb('shell', 'pm', 'clear', QA_PACKAGE), 'Success');
+      } catch (error) {
+        cleanupErrors.push('QA data clear failed: ' + error.message);
+      }
     }
     // QA profiles change orientation and font size only. In particular, do not
     // write wm size/density even to restore the same value: these are the
@@ -132,7 +142,9 @@ export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entr
     assert.deepEqual(cleanupErrors, []);
   };
   try {
-    assert.equal(adb('shell', 'pm', 'clear', QA_PACKAGE), 'Success');
+    // Update acceptance can retain this fixed QA app's database between APKs.
+    // No caller can select the production application as the mutation target.
+    if (resetData) assert.equal(adb('shell', 'pm', 'clear', QA_PACKAGE), 'Success');
     if (ime) {
       assert.match(ime, /^[A-Za-z0-9_.]+\/[A-Za-z0-9_.]+$/);
       adb(

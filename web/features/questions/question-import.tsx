@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { ArrowLeft, Download } from 'lucide-react';
-import { ErrorNotice, PageHeader, useApp } from '../../shared/ui/components';
+import { Download } from 'lucide-react';
+import { ErrorNotice, useApp } from '../../shared/ui/components';
 import { exportPackage } from '../../shared/lib/data-package';
 import { DataPackageEditor } from '../../shared/ui/data-package-editor';
 import { DataPackageImport } from '../../shared/ui/data-package-import';
 import './question-import.css';
 
-export function QuestionImportPage({ embedded = false }: { embedded?: boolean }) {
+export function QuestionImportPage() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const [preparedFile, setPreparedFile] = useState<File | null>(null);
@@ -26,42 +26,6 @@ export function QuestionImportPage({ embedded = false }: { embedded?: boolean })
   };
   return (
     <>
-      {!embedded && (
-        <>
-          <a className="back-link" href="#/questions">
-            <ArrowLeft size={15} />
-            返回知识题库
-          </a>
-          <PageHeader
-            eyebrow="BULK QUESTION IMPORT"
-            title="批量收集，逐步核对。"
-            description="把整理好的新题按模板导入。每道新题都进入待审核，通过审核后再加入正式题库。"
-            actions={
-              <a className="button" href="#/sharing?tab=import">
-                AI辅助转换 PDF / 文本
-              </a>
-            }
-          />
-        </>
-      )}
-      {!embedded && (
-        <div className="import-purpose-grid">
-          <section className="card">
-            <strong>新增与查重</strong>
-            <p>
-              完全重复复用原题，近似题可查看差异并选择处理方式。新增题仍需审核，覆盖已有题必须明确确认。
-            </p>
-          </section>
-          <a className="card" href="#/questions/review">
-            <strong>修改待审核题 →</strong>
-            <p>在审核页导出、修改再回导，保留题号和版本；用于批量修正已有待审核内容。</p>
-          </a>
-          <a className="card" href="#/data">
-            <strong>备份与题库迁移 →</strong>
-            <p>迁移可信备份，保留发布和审核状态、题集、学习记录及作答历史。</p>
-          </a>
-        </div>
-      )}
       <div className="ui-stack">
         <section className="card form-stack">
           <h2>1. 下载模板并整理题目</h2>

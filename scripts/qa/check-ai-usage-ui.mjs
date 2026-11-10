@@ -30,7 +30,7 @@ const { page, folder, origin } = harness;
 const checks = [],
   geometry = [];
 try {
-  await page.goto(origin + '/#/ai?tab=history');
+  await page.goto(origin + '/#/analytics?tab=ai&mode=all');
   const summary = page.getByRole('region', { name: 'AI用量统计', exact: true });
   const metric = (index) => summary.locator('.ai-usage-metrics').first().locator('dd').nth(index);
   await page.getByRole('heading', { name: '处理记录', exact: true }).waitFor();

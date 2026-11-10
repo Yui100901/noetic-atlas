@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../../server/core/store.js';
 import { buildApp } from '../../server/index.js';
+import { parse, tagSchema } from '../../server/core/validation.js';
 
 function fixture(t: test.TestContext) {
   const store = new Store(':memory:'); t.after(() => store.db.close());
@@ -34,7 +35,7 @@ test('startup taxonomy checks reference metadata without decoding source bodies 
     assert.ok(!['domains', 'categories', 'tags'].includes(table), `unexpected per-reference ${table} read`);
     return get<T>(table, id);
   };
-  store.normalizeLegacyTags(); store.validateTaxonomyReferences();
+  store.validateTaxonomyReferences();
 });
 
 test('bulk taxonomy validation shares write-time errors for missing and incompatible references, including drafts and archived content', t => {
@@ -63,23 +64,17 @@ test('bulk taxonomy validation shares write-time errors for missing and incompat
   assert.throws(() => store.validateTaxonomyReferences(), error => code(error) === 'INVALID_REFERENCE');
 });
 
-test('legacy inference reads only reference arrays and leaves explicitly global scopes stable across later imports', t => {
+test('new tag defaults remain global and explicit domain scopes are not inferred from their references', t => {
   const store = fixture(t);
-  for (const id of ['single', 'cross', 'unclassified']) store.put('tags', id, { id, name: id });
-  store.put('questions', 'one', { id: 'one', categoryIds: ['a'], tagIds: ['single', 'cross', 'unclassified'] });
-  store.put('documents', 'two', { id: 'two', categoryIds: ['b'], tagIds: ['cross'] });
-  store.put('documents', 'three', { id: 'three', categoryIds: [], tagIds: ['unclassified'] });
-  const all = store.all.bind(store);
-  store.all = function <T>(table: Parameters<Store['all']>[0]): T[] {
-    assert.ok(!['questions', 'documents'].includes(table)); return all<T>(table);
-  };
-  store.normalizeLegacyTags();
-  assert.equal(store.get('tags', 'single').domainId, 'a');
-  assert.equal(store.get('tags', 'cross').domainId, null);
-  assert.equal(store.get('tags', 'unclassified').domainId, null);
+  store.put('tags', 'single', parse(tagSchema, { id: 'single', name: '默认主题' }));
+  store.put('questions', 'one', { id: 'one', categoryIds: ['a'], tagIds: ['single', 'topic', 'global'] });
+  store.validateTaxonomyReferences();
+  assert.equal(store.get('tags', 'single').domainId, null);
+  assert.equal(store.get('tags', 'single').kind, 'topic');
+  assert.equal(store.get('tags', 'topic').domainId, 'a');
   assert.equal(store.get('tags', 'global').kind, 'method');
   store.put('documents', 'later', { id: 'later', categoryIds: ['b'], tagIds: ['global'] });
-  store.normalizeLegacyTags(); store.validateTaxonomyReferences();
+  store.validateTaxonomyReferences();
   assert.equal(store.get('tags', 'global').domainId, null);
 });
 

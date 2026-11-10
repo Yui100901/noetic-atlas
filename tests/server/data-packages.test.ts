@@ -153,13 +153,13 @@ test('template creates pending questions and editing their package preserves rev
   await call('/api/packages/preview', { dataBase64: modified }, 409);
 });
 
-test('packaged legacy backups share JSON normalization and preserve history backfill semantics', async (t) => {
+test('current packaged backups preserve filters and distinguish absent from explicitly cleared detail history', async (t) => {
   const source = await fixture(t);
   await source.call('/api/import', { mode: 'merge', data: learningSeed() });
   const paper = await source.call(
     '/api/papers',
     {
-      title: '旧备份恢复',
+      title: '当前备份恢复',
       mode: 'manual',
       questionIds: ['FIXTURE-BOOL'],
     },
@@ -170,17 +170,17 @@ test('packaged legacy backups share JSON normalization and preserve history back
     answers: { 'FIXTURE-BOOL': { value: 'true' } },
   });
   const backup = await source.call('/api/export');
-  backup.papers[0].filters = { bankId: 'retired-bank', priority: 'retired', types: ['true_false'] };
+  backup.papers[0].filters = { types: ['true_false'] };
   for (const result of backup.learningResults) delete result.historyIndexed;
   delete backup.questionHistory;
   for (const explicitHistory of [false, true]) {
     const receiver = await fixture(t);
     const bytes = await buildDataPackage({
       kind: 'migration',
-      title: '旧备份',
+      title: '当前格式备份',
       payloads: [
         {
-          path: 'data/legacy.json',
+          path: 'data/backup.json',
           data: {
             ...backup,
             ...(explicitHistory ? { questionHistory: [] } : {}),
@@ -195,9 +195,31 @@ test('packaged legacy backups share JSON normalization and preserve history back
     assert.deepEqual(restored.papers[0].filters, { types: ['true_false'] });
     assert.equal(restored.questionHistory.length, explicitHistory ? 0 : 1);
   }
+  const refused = await fixture(t);
+  const invalid = structuredClone(backup);
+  invalid.papers[0].filters.bankId = 'retired-bank';
+  const bytes = await buildDataPackage({
+    kind: 'migration',
+    title: '包含退役筛选字段的包',
+    payloads: [{ path: 'data/backup.json', data: invalid }],
+  });
+  const error = await refused.call(
+    '/api/packages/preview',
+    {
+      dataBase64: Buffer.from(bytes).toString('base64'),
+    },
+    400,
+  );
+  assert.equal(error.error.code, 'VALIDATION_ERROR');
+  assert.ok(
+    error.error.details.some((item: { message: string }) => item.message.includes('bankId')),
+  );
+  const untouched = await refused.call('/api/export');
+  assert.equal(untouched.questions.length, 0);
+  assert.equal(untouched.papers.length, 0);
 });
 
-test('exported migration packages preserve an intentionally empty legacy question history', async (t) => {
+test('exported migration packages preserve an intentionally cleared question history', async (t) => {
   const source = await fixture(t),
     reexporter = await fixture(t),
     receiver = await fixture(t);

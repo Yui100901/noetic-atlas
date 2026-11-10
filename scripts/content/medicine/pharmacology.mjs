@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 /** Reproduce original, non-prescriptive pharmacology/chemical-identity cards.
  * Verified public-source identities are pinned in the companion catalogue;
  * no copyrighted clinical monograph text or drug manufacturing process is copied.
@@ -40,7 +41,8 @@ const questions=rows.map((r,index)=>{
     createdAt:stamp,updatedAt:stamp,
   };
 });
-const pack={schemaVersion:1,generatedAt:stamp,domains,categories,tags,questions,documents:[],papers:[],assets:[],questionBanks:[{id:'bank-pharmacology-common-60',name:'常见药物活性成分学习卡（60种）',description:'独立医学与药学领域；同一卡片同时归属化学的药用化学物质分类，避免复制维护。60种活性成分的原创学习概要，来源核验2026-10-22，所有新增卡片为待审核；不是用药指南。',questionIds:questions.map(q=>q.id),createdAt:stamp,updatedAt:stamp}]};
+const pack={schemaVersion:1,generatedAt:stamp,domains,categories,tags,questions,documents:[],papers:[],assets:[],questionSets:[{id:'bank-pharmacology-common-60',name:'常见药物活性成分学习卡（60种）',description:'独立医学与药学领域；同一卡片同时归属化学的药用化学物质分类，避免复制维护。60种活性成分的原创学习概要，来源核验2026-10-22，所有新增卡片为待审核；不是用药指南。',questionIds:questions.map(q=>q.id),createdAt:stamp,updatedAt:stamp}]};
+materializeContentSets(pack);
 const output=JSON.stringify(pack,null,2)+'\n',digest=createHash('sha256').update(output).digest('hex');
 const manifest={
   id:'pharmacology',title:'常见药物活性成分原创学习卡',verifiedAt:'2026-10-22',generatedAt:stamp,

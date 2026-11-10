@@ -29,7 +29,7 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   const boot = await call('/api/bootstrap'); assert.equal(boot.stats.totalQuestions, publishedCount);
   assert.equal(boot.stats.favoriteCount, 0);
   assert.equal(boot.settings.reviewScheduling.strategy, 'fsrs');
-  // This legacy runtime regression keeps explicit fixed-date behavior. The
+  // This runtime regression also covers explicit fixed-date behavior. The
   // adaptive-review runtime suite exercises the default FSRS strategy.
   await call('/api/settings', 'PUT', { settings: { ...boot.settings, reviewScheduling: { ...boot.settings.reviewScheduling, strategy: 'fixed' } } });
   assert.deepEqual((await call('/api/vocabulary?word=dependency')).matches,[],'portable word references resolve gracefully without an English pack in WASM SQLite');
@@ -163,7 +163,7 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   assert.equal(desktop.prepare('SELECT count(*) AS count FROM questions').get()!.count, fullSeed.questions.length);
   assert.equal(desktop.prepare('SELECT count(*) AS count FROM question_banks').get()!.count, 0, 'desktop backups do not retain obsolete bank collections');
   assert.ok(Number(desktop.prepare('SELECT count(*) AS count FROM question_history').get()!.count) > 0, 'the native backup contains single-question reference and archived rows');
-  const desktopTag = { id: 'desktop-roundtrip', name: '桌面SQLite写入', description: '', color: '#334455' };
+  const desktopTag = { id: 'desktop-roundtrip', name: '桌面SQLite写入', description: '', color: '#334455', domainId: null, kind: 'topic' };
   desktop.prepare('INSERT INTO tags(id,data) VALUES (?,?)').run(desktopTag.id, JSON.stringify(desktopTag)); desktop.close();
   await runtime.close(); durable = new Uint8Array(await readFile(backupPath));
   runtime = await createLocalRuntime(sql, fullSeed, storage);
@@ -177,50 +177,37 @@ test('offline Android SQLite runtime: scoring, persistence rollback, imports and
   assert.equal((await call(`/api/questions/${objective.id}`)).id, objective.id, 'deleting a question set leaves the canonical question intact');
   assert.ok((await call('/api/taxonomy')).tags.some((tag: any) => tag.id === desktopTag.id));
   assert.equal((await call('/api/bootstrap')).stats.totalQuestions, publishedCount);
-  // Simulate an installed v1.0 phone database, which predates question_banks.
-  // Opening it with the current runtime must add the table without reseeding or
-  // discarding the existing study state and completed-attempt snapshot.
-  const upgradePath = resolve(folder, 'installed-v1-database.sqlite');
-  await writeFile(upgradePath, new Uint8Array(await (await runtime.fetch('/api/backup.sqlite')).arrayBuffer()));
-  const oldDatabase = new DatabaseSync(upgradePath); oldDatabase.exec('DROP TABLE question_banks'); oldDatabase.close();
-  await runtime.close(); durable = new Uint8Array(await readFile(upgradePath));
+  // Replacing the application must reopen the same current-format SQLite
+  // without reseeding, replaying history or changing the frozen set.
+  const baselineSet = await call('/api/papers', 'POST', {
+    id: 'MOBILE-BASELINE-SET', title: '首发基线题集', description: '更新前保存的题集',
+    mode: 'manual', questionIds: [subjective.id, objective.id], scoring: { enabled: false },
+  }, 201);
+  await runtime.close(); const savesBeforeUpdate = saveCount;
   runtime = await createLocalRuntime(sql, fullSeed, storage);
-  await call('/api/question-banks', 'GET', undefined, 404);
+  assert.equal(saveCount, savesBeforeUpdate, 'a current-format update does not rewrite the database');
+  assert.deepEqual((await call(`/api/papers/${baselineSet.id}`)).questionIds, baselineSet.questionIds);
   assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
   assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
-  assert.equal((await call('/api/bootstrap')).stats.totalQuestions, publishedCount);
-  // An installed legacy collection is converted before the first read and
-  // committed to the same durable file. A failed startup commit must preserve
-  // the old bytes, so retrying the upgrade neither duplicates nor loses it.
-  const legacyPath = resolve(folder, 'legacy-collection-upgrade.sqlite');
-  await writeFile(legacyPath, new Uint8Array(await (await runtime.fetch('/api/backup.sqlite')).arrayBuffer()));
-  const legacyDb = new DatabaseSync(legacyPath);
-  const legacyBank = { id: 'MOBILE-LEGACY-SET', name: '旧版离线集合', description: '升级后成为题集', questionIds: [subjective.id, objective.id], createdAt: '2026-10-20T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z' };
-  legacyDb.prepare('INSERT INTO question_banks(id,data) VALUES (?,?)').run(legacyBank.id, JSON.stringify(legacyBank)); legacyDb.close();
-  await runtime.close(); durable = new Uint8Array(await readFile(legacyPath));
-  const oldBytes = durable.slice(); failSave = true;
-  await assert.rejects(createLocalRuntime(sql, fullSeed, storage), /simulated disk full/);
-  assert.deepEqual(durable, oldBytes, 'failed migration persistence leaves recoverable legacy bytes unchanged');
-  failSave = false; const savesBeforeMigration = saveCount;
-  runtime = await createLocalRuntime(sql, fullSeed, storage);
-  assert.equal(saveCount, savesBeforeMigration + 1, 'startup migration commits without needing an unrelated mutation');
-  const legacySet = await call(`/api/papers/${legacyBank.id}`);
-  assert.equal(legacySet.title, legacyBank.name); assert.equal(legacySet.id, legacyBank.id);
-  assert.deepEqual(legacySet.questionIds, legacyBank.questionIds, 'legacy order is preserved');
-  assert.equal(legacySet.scoring.enabled, false); assert.equal(legacySet.createdAt, legacyBank.createdAt);
-  const durableDb = new sql.Database(durable);
-  assert.equal(durableDb.exec('SELECT count(*) AS count FROM question_banks')[0].values[0][0], 0);
-  assert.equal(durableDb.exec(`SELECT count(*) AS count FROM papers WHERE id = '${legacyBank.id}'`)[0].values[0][0], 1);
-  durableDb.close();
-  await call('/api/question-banks', 'GET', undefined, 404);
-  assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
-  assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
-  assert.ok((await call('/api/taxonomy')).tags.some((entry: any) => entry.id === desktopTag.id));
+  const baselineBytes = durable!.slice(); failSave = true;
+  await call(`/api/papers/${baselineSet.id}`, 'PUT', {
+    title: '不可落盘的修改', mode: 'manual', questionIds: baselineSet.questionIds,
+    scoring: { enabled: false },
+  }, 507);
+  assert.deepEqual(durable, baselineBytes, 'a failed update write preserves the durable baseline');
+  assert.equal((await call(`/api/papers/${baselineSet.id}`)).title, baselineSet.title);
+  failSave = false;
+  const rejected = await call('/api/import', 'POST', { mode: 'merge', data: {
+    ...await call('/api/export'),
+    questionBanks: [{ id: 'RETIRED-COLLECTION', name: '不再使用的集合格式', description: '', questionIds: [objective.id] }],
+  } }, 400);
+  assert.equal(rejected.error.code, 'VALIDATION_ERROR');
+  assert.deepEqual(durable, baselineBytes, 'retired collection input is rejected before any writes');
   await runtime.close(); const savesBeforeReopen = saveCount;
   runtime = await createLocalRuntime(sql, fullSeed, storage);
-  assert.equal(saveCount, savesBeforeReopen, 'a second startup needs no migration rewrite');
-  assert.equal((await call('/api/papers?archived=true')).filter((entry: any) => entry.id === legacyBank.id).length, 1);
-  assert.deepEqual((await call(`/api/papers/${legacyBank.id}`)).questionIds, legacyBank.questionIds);
+  assert.equal(saveCount, savesBeforeReopen, 'repeated updates and restarts do not reseed current data');
+  assert.equal((await call('/api/papers?archived=true')).filter((entry: any) => entry.id === baselineSet.id).length, 1);
+  assert.deepEqual((await call(`/api/papers/${baselineSet.id}`)).questionIds, baselineSet.questionIds);
   assert.equal((await call(`/api/questions/${objective.id}`)).study.notes, '进程重启后仍保留');
   assert.equal((await call(`/api/attempts/${attempt.id}`)).totalScore, 6.5);
   assert.equal((await call('/api/bootstrap')).stats.totalQuestions, publishedCount);

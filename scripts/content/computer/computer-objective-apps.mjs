@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -59,7 +60,8 @@ for(const chapter of chapters){
 if(questions.length!==400)throw new Error('Expected 400 objective questions');
 const categoryMap=new Map(seed.categories.map(c=>[c.id,c]));
 for(const id of [...usedCategories]){let category=categoryMap.get(id);if(!category)throw new Error('Unknown category '+id);while(category.parentId){usedCategories.add(category.parentId);category=categoryMap.get(category.parentId);}}
-const pack={schemaVersion:1,generatedAt:'2026-10-22T00:00:00.000Z',domains:seed.domains.filter(d=>d.id==='computer-science'),categories:seed.categories.filter(c=>usedCategories.has(c.id)),tags:[{id:'com-objective-practice',name:'客观专项',kind:'custom',domainId:null,color:'#5264db',description:'用于系统化巩固计算机知识的客观练习。'}],questions,questionBanks:[{id:'com-objective-apps-bank',name:'计算机 · 应用与工程客观专项400题',description:'160单选、120多选、60判断、60填空；原创边界与工程情境，新增均待审核。',questionIds:questions.map(q=>q.id)}],documents:[],papers:[]};
+const pack={schemaVersion:1,generatedAt:'2026-10-22T00:00:00.000Z',domains:seed.domains.filter(d=>d.id==='computer-science'),categories:seed.categories.filter(c=>usedCategories.has(c.id)),tags:[{id:'com-objective-practice',name:'客观专项',kind:'custom',domainId:null,color:'#5264db',description:'用于系统化巩固计算机知识的客观练习。'}],questions,questionSets:[{id:'com-objective-apps-bank',name:'计算机 · 应用与工程客观专项400题',description:'160单选、120多选、60判断、60填空；原创边界与工程情境，新增均待审核。',questionIds:questions.map(q=>q.id)}],documents:[],papers:[]};
+materializeContentSets(pack);
 await mkdir(join(root,'data/content-packs'),{recursive:true});await mkdir(join(root,'data/content-sources'),{recursive:true});
 const output=JSON.stringify(pack,null,2)+'\n';await writeFile(join(root,'data/content-packs/computer-objective-apps.json'),output);
 const histogram=(values)=>Object.fromEntries([...new Set(values)].sort().map(key=>[key,values.filter(value=>value===key).length]));

@@ -24,6 +24,8 @@ import unicodedata
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
+from runpy import run_path
+materialize_content_sets = run_path(str(ROOT / "scripts/content/question_sets.py"))["materialize_content_sets"]
 CACHE = ROOT / '.localtools' / 'content-sources' / 'japanese'
 REVISION = 'e9eb4ab0ddb50f2f6ef7c7dafca6cf1fd4d8ca60'
 STAMP = '2026-10-22T00:00:00.000Z'
@@ -359,7 +361,8 @@ def main() -> None:
         {'id': 'ja-vocabulary-10000', 'name': '日语10000词学习资料（待审核）', 'description': 'N1～N5第三方参考词与JMdict common未分级补充；中文和例句为上游AI生成，须校订；非官方完整词表。', 'questionIds': [q['id'] for q in questions]},
         {'id': 'ja-grammar-practice-bank', 'name': '日语语法巩固（待审核）', 'description': '助词、活用、授受敬语、时体、条件与高级句型，题目原创；不是真题。', 'questionIds': [q['id'] for q in grammar]},
     ]
-    pack = {'schemaVersion': 1, 'generatedAt': STAMP, 'domains': domains, 'categories': categories, 'tags': tags, 'questions': questions + grammar, 'questionBanks': banks, 'documents': [], 'papers': []}
+    pack = {'schemaVersion': 1, 'generatedAt': STAMP, 'domains': domains, 'categories': categories, 'tags': tags, 'questions': questions + grammar, 'questionSets': banks, 'documents': [], 'papers': []}
+    materialize_content_sets(pack)
     write_json(ROOT / 'data/content-packs/japanese.json', pack)
     grammar_types = Counter(q['type'] for q in grammar)
     manifest = {

@@ -13,7 +13,6 @@ import {
   domainSchema,
   categorySchema,
   tagSchema,
-  questionBankSchema,
   id as idSchema,
 } from '../../server/core/validation.js';
 import { assetRecordSchema } from '../../server/modules/assets/schema.js';
@@ -28,6 +27,8 @@ import {
   type DataPackagePayload,
 } from '../../shared/packages/data-package.js';
 import { detachQuestionLinks } from '../../server/modules/sharing/export-content.js';
+import { sharePackageSchema } from '../../server/modules/sharing/schema.js';
+import type { StoredPaper } from '../../server/modules/practice/service.js';
 
 const root = resolve(import.meta.dirname, '../..');
 const sha = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
@@ -69,8 +70,7 @@ function recordGroups(pack: any): Array<[Table, any[]]> {
     ['tags', pack.tags],
     ['questions', pack.questions],
     ['assets', pack.assets],
-    ['question_banks', pack.questionBanks],
-    ['papers', wordlistPapers(pack)],
+    ['papers', [...pack.papers, ...wordlistPapers(pack)]],
   ];
 }
 export function validatePackSet(packs: any[]) {
@@ -99,6 +99,8 @@ export function assertImportCompatible(store: Store, packs: any[]) {
 export function validatePack(raw: any) {
   if (raw.schemaVersion !== 1 || !Array.isArray(raw.questions) || !raw.questions.length)
     throw new Error('Invalid content pack');
+  if (raw.questionBanks?.length || raw.questionSets)
+    throw new Error('Retired collections are not content packs; emit current papers');
   const categories = new Map<string, any>(),
     tags = new Map<string, any>(),
     domains = new Set<string>();
@@ -117,17 +119,6 @@ export function validatePack(raw: any) {
   }
   for (const source of raw.tags) {
     const t = { ...tagSchema.parse(source), id: idSchema.parse(source.id) };
-    if (t.domainId === undefined) {
-      const uses = raw.questions.filter((q: any) => q.tagIds?.includes(t.id));
-      const related = new Set<string>(
-        uses.flatMap((q: any) => q.categoryIds.map((id: string) => categories.get(id)?.domainId)),
-      );
-      t.domainId =
-        uses.length && uses.every((q: any) => q.categoryIds.length) && related.size === 1
-          ? [...related][0]!
-          : null;
-    }
-    t.kind ??= 'topic';
     if (tags.has(t.id) || (t.domainId && !domains.has(t.domainId))) throw new Error('Invalid tag');
     tags.set(t.id, t);
   }
@@ -169,16 +160,6 @@ export function validatePack(raw: any) {
     ids.add(value.id);
     return value;
   });
-  const banks = (raw.questionBanks || []).map((b: any) => ({
-    ...questionBankSchema.parse(b),
-    id: idSchema.parse(b.id),
-  }));
-  const bankIds = new Set<string>();
-  for (const b of banks) {
-    if (bankIds.has(b.id) || b.questionIds.some((id: string) => !ids.has(id)))
-      throw new Error('Invalid bank');
-    bankIds.add(b.id);
-  }
   for (const q of questions)
     mapStrings(q, (body) => {
       for (const link of body.matchAll(/(?:^|[\s("'<>])#\/questions\/([^/\s?#"'()<>\]]+)/g))
@@ -188,7 +169,6 @@ export function validatePack(raw: any) {
     });
   for (const key of [
     'documents',
-    'papers',
     'study',
     'reviews',
     'attempts',
@@ -203,7 +183,7 @@ export function validatePack(raw: any) {
   ])
     if (raw[key]?.length || (raw[key] && !Array.isArray(raw[key])))
       throw new Error('Private state is forbidden: ' + key);
-  return enrichKnowledgePack({
+  const pack = enrichKnowledgePack({
     schemaVersion: 1,
     generatedAt: raw.generatedAt,
     domains: domainRecords,
@@ -211,10 +191,40 @@ export function validatePack(raw: any) {
     tags: [...tags.values()],
     questions,
     documents: [],
-    papers: [],
+    papers: [] as StoredPaper[],
     assets: (raw.assets || []).map((a: any) => assetRecordSchema.parse(a)),
-    questionBanks: banks,
+    questionBanks: [],
   });
+  const byId = new Map(pack.questions.map((q: Question) => [q.id, q]));
+  const sourceById = new Map(questions.map((q: Question) => [q.id, q]));
+  const paperIds = new Set<string>();
+  pack.papers = (raw.papers || []).map((value: any) => {
+    const paper = sharePackageSchema.shape.papers.element.parse({ description: '', ...value });
+    if (
+      paperIds.has(paper.id) ||
+      paper.questionCount !== paper.questionIds.length ||
+      new Set(paper.questionIds).size !== paper.questionIds.length ||
+      paper.questionIds.some((id, index) => !byId.has(id) || paper.snapshot[index]?.id !== id) ||
+      paper.snapshot.length !== paper.questionIds.length ||
+      !paper.archived ||
+      !paper.scoring ||
+      paper.scoring.enabled ||
+      (paper.domainId && !domains.has(paper.domainId))
+    )
+      throw new Error('Invalid content paper: ' + paper.id);
+    // New catalog sets must freeze the exact source questions. Only shared
+    // deterministic normalization (blank markers and knowledge tags) may alter
+    // that version; never silently replace an author's different answer.
+    if (
+      canonical(paper.snapshot.map(normalizeQuestionBlankStems)) !==
+      canonical(paper.questionIds.map((id) => sourceById.get(id)))
+    )
+      throw new Error('Content paper snapshot differs from source questions: ' + paper.id);
+    paperIds.add(paper.id);
+    const snapshot = paper.questionIds.map((id) => byId.get(id)!);
+    return { ...paper, snapshot, scoring: normalizeScoring(snapshot, paper.scoring) };
+  });
+  return pack;
 }
 export function wordlistPapers(pack: any, size = 100) {
   const lang = pack.domains.some((d: any) => d.id === 'english')
@@ -280,25 +290,37 @@ export function asShare(pack: any, title: string, questions = pack.questions, pa
       );
   const records = questions.map((q: Question) => mapStrings(q, markdown) as Question);
   const byId = new Map(records.map((q: Question) => [q.id, q]));
-  const snapshots = papers.map((p) => ({
-    ...p,
-    snapshot: p.snapshot.map((q: Question) => byId.get(q.id)),
-  }));
-  const banks = (pack.questionBanks || []).flatMap((bank: any) => {
-    const questionIds = bank.questionIds.filter((id: string) => chosen.has(id));
+  const snapshots = [
+    ...new Map([...(pack.papers || []), ...papers].map((p) => [p.id, p])).values(),
+  ].flatMap((paper: any) => {
+    const questionIds = paper.questionIds.filter((id: string) => chosen.has(id));
     if (!questionIds.length) return [];
-    if (questionIds.length === bank.questionIds.length) return [{ ...bank, questionIds }];
-    const suffix = sha(JSON.stringify(questionIds)).slice(0, 16);
+    const snapshot = questionIds.map((id: string) => byId.get(id)!);
+    const partial = questionIds.length !== paper.questionIds.length;
+    const suffix = partial ? sha(JSON.stringify(questionIds)).slice(0, 16) : '';
     return [
       {
-        ...bank,
-        id: bank.id.slice(0, 130) + '-part-' + suffix,
-        name: bank.name.slice(0, 150) + `（分包 ${suffix.slice(0, 6)} · ${questionIds.length}题）`,
-        description: `${bank.description || ''}\n\n独立分享分包，包含原集合 ${bank.questionIds.length} 题中的 ${questionIds.length} 题。`,
+        ...paper,
+        ...(partial
+          ? {
+              id: paper.id.slice(0, 130) + '-part-' + suffix,
+              title:
+                paper.title.slice(0, 150) +
+                `（分包 ${suffix.slice(0, 6)} · ${questionIds.length}题）`,
+              description: `${paper.description || ''}\n\n独立分享分包，包含原题集 ${paper.questionIds.length} 题中的 ${questionIds.length} 题。`,
+            }
+          : {}),
         questionIds,
+        questionCount: questionIds.length,
+        snapshot,
+        scoring: normalizeScoring(snapshot, {
+          enabled: false,
+          pointsByType: paper.scoring?.pointsByType,
+        }),
       },
     ];
   });
+  if (snapshots.length > 100) throw new Error('一个分享分片最多100份题集，请缩小范围');
   return {
     format: 'learning-share',
     schemaVersion: 1,
@@ -310,7 +332,7 @@ export function asShare(pack: any, title: string, questions = pack.questions, pa
     assets: pack.assets || [],
     questions: records,
     papers: snapshots,
-    questionBanks: banks,
+    questionBanks: [],
   };
 }
 /** Build a shareable source-catalog package without touching any working DB.
@@ -548,7 +570,7 @@ sources/*.json记录原始来源、版本、哈希与覆盖；licenses/与source
       const backup = join(backups, `before-content-${Date.now()}.sqlite`);
       store.database.snapshotTo(backup);
       for (const pack of packs) {
-        const data = { ...pack.data, papers: wordlistPapers(pack.data) };
+        const data = { ...pack.data, papers: [...pack.data.papers, ...wordlistPapers(pack.data)] };
         const result = importData(store, data);
         console.log(JSON.stringify({ pack: pack.name, result }));
       }

@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -71,7 +72,8 @@ for(const id of [...needed]){let c=categories.get(id);if(!c)throw new Error('Unk
 const tagIds=new Set(questions.flatMap(q=>q.tagIds));tagIds.delete('com-objective-practice');
 const tags=seed.tags.filter(t=>tagIds.has(t.id));if(tags.length!==tagIds.size)throw new Error('Unknown source tag');
 tags.push({id:'com-objective-practice',name:'客观专项',domainId:null,kind:'custom',color:'#5264db',description:'用于系统化巩固计算机知识的客观练习。'});
-const pack={schemaVersion:1,generatedAt:stamp,domains:seed.domains.filter(d=>d.id==='computer-science'),categories:seed.categories.filter(c=>needed.has(c.id)),tags,questions,questionBanks:[{id:'bank-cs-objective-systems-202610',name:'计算机客观专项·语言与系统400题',description:'Go、Java、Rust、TS/Node、Python、操作系统、网络、安全、逆向、Android；单选160、多选120、判断60、填空60。原创待审核。',questionIds:questions.map(q=>q.id)}],documents:[],papers:[]};
+const pack={schemaVersion:1,generatedAt:stamp,domains:seed.domains.filter(d=>d.id==='computer-science'),categories:seed.categories.filter(c=>needed.has(c.id)),tags,questions,questionSets:[{id:'bank-cs-objective-systems-202610',name:'计算机客观专项·语言与系统400题',description:'Go、Java、Rust、TS/Node、Python、操作系统、网络、安全、逆向、Android；单选160、多选120、判断60、填空60。原创待审核。',questionIds:questions.map(q=>q.id)}],documents:[],papers:[]};
+materializeContentSets(pack);
 const bytes=JSON.stringify(pack,null,2)+'\n';
 const manifest={id:'computer-objective-systems',title:'计算机语言与系统客观专项',generatedAt:stamp,license:'Project-authored',redistribution:'题干、选项与中文解析由认知星图独立编写；不复制商业题库或官方文档长段落。官方及维护者资料仅供事实核验与延伸阅读，其原文许可不被本项目据为己有。',statistics:{total:400,typeCounts,pending:400,published:0,subjective:0,topics:10},quality:{independentStems:400,focusedExplanations:400,focusedFollowups:400,duplicateCheck:'与base seed1543题及computer-expansion340题按NFKC、忽略空白标点符号、大小写进行标题去重；本包内同样去重。覆盖相关概念的不同应用视角不表示逐字重复，最终仍需用户审核。',scope:'每专题40项不同对象或机制，非同题正反翻转或替换数字；每题含具体依据、追问与适用边界。'},frequencyPolicy:'frequency为编辑复习优先建议，非统计频率或面试命中率；所有题目均待用户审核。',sources:[...sources].sort().map(url=>({url,kind:'official-or-maintainer-primary',purpose:'事实核验与延伸阅读，题干和解析原创'})),topics,rebuild:'node scripts/content/computer/computer-objective-systems.mjs',output:'data/content-packs/computer-objective-systems.json',sha256:crypto.createHash('sha256').update(bytes).digest('hex')};
 manifest.levelPolicy='D/Z均由catalog中逐题显式映射标注，不按题型自动决定。D1识别、D2机制应用、D3交错/多边界推演、D4高级约束；Z独立描述解释深度。例：gofmt不自动优化算法为D1，unsafe前提、重定位与复杂信任边界可为D4。';

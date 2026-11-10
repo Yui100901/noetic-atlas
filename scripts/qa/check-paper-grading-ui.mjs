@@ -213,7 +213,7 @@ try {
   );
   checks.push('随机组题使用相同可选判题要求并保存');
 
-  await go('#/ai?tab=paper');
+  await go('#/papers/new/ai');
   await page.getByLabel('AI组题要求', { exact: true }).waitFor();
   await page.getByLabel('AI组题要求', { exact: true }).fill('从已有题库选2道基础题。');
   await page.getByLabel('手动指定题量', { exact: true }).check();

@@ -8,6 +8,7 @@ import {inspectQuestionQuality} from '../../server/modules/content-quality/rules
 test('author packs and portable sharing accept schema-optional prose and taxonomy without weakening answer-key validation',t=>{
  const raw=JSON.parse(readFileSync('tests/fixtures/driving-content.json','utf8'));
  raw.questions=raw.questions.map((q:any)=>({...q,sourceRefs:[],answerMarkdown:'',explanationMarkdown:'',categoryIds:[],tagIds:[]}));
+ for(const paper of raw.papers)paper.snapshot=paper.questionIds.map((id:string)=>raw.questions.find((q:any)=>q.id===id));
  const pack=validatePack(raw),store=new Store(':memory:');t.after(()=>store.db.close());
  // Normalization may infer a built-in method tag, but callers need not supply
  // either classification field for the pack to validate and import.

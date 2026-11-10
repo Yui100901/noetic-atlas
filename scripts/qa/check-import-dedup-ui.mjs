@@ -64,7 +64,7 @@ async function layout(name) {
 }
 try {
   await api('/api/questions', { method: 'POST', data: source });
-  await page.goto(origin + '/#/questions/import');
+  await page.goto(origin + '/#/sharing?tab=template');
   const different = questionSchema.parse({
     id: 'argon',
     title: 'Argon lattice',

@@ -56,7 +56,7 @@ export const documentCitationSchema = z.object({
 });
 export const domainSchema = z.object({ id: id.optional(), name, description: text.default(''), sortOrder: z.number().int().default(0) });
 export const categorySchema = domainSchema.extend({ domainId: id, parentId: id.nullable().default(null) });
-export const tagSchema = z.object({ id: id.optional(), name, color: z.string().max(30).default('#5264db'), description: text.default(''), domainId: id.nullable().optional(), kind: z.enum(['topic', 'method', 'custom']).optional() });
+export const tagSchema = z.object({ id: id.optional(), name, color: z.string().max(30).default('#5264db'), description: text.default(''), domainId: id.nullable().default(null), kind: z.enum(['topic', 'method', 'custom']).default('topic') });
 export const vocabularySchema = z.object({
   language: z.enum(['en','ja']), headword: z.string().trim().min(1).max(300), partOfSpeech: z.string().trim().max(100).optional(), meaningPrompt: z.string().trim().max(8000).default(''),
   reverseEnabled: z.boolean().optional(), caseSensitive: z.boolean().optional(), trim: z.boolean().optional(),

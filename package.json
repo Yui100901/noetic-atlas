@@ -1,6 +1,6 @@
 {
   "name": "noetic-atlas",
-  "version": "2.0",
+  "version": "1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -26,7 +26,6 @@
     "content:validate": "tsx scripts/content/manage.ts validate",
     "content:package": "tsx scripts/content/manage.ts package",
     "content:domains": "tsx scripts/content/export-domains.ts",
-    "data:pack": "node dist/server/commands/pack-legacy-data.js",
     "data:unpack": "node dist/server/commands/extract-database-package.js",
     "content:import": "tsx scripts/content/manage.ts import",
     "content:review": "tsx scripts/content/review.ts",

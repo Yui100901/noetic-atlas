@@ -47,7 +47,7 @@ Windows 可双击 `启动学习站.cmd`：首次或源码变化时构建，未�
 
 接口文档在启动时根据注册路由及共用 Zod 校验器自动生成。开发使用 `npm run dev`，前端位于 `http://127.0.0.1:5173`。数据库首次启动创建于 `data/noetic-atlas.sqlite`，可配置 `DATABASE_PATH`、`SEED_PATH`、`PORT` 和 `HOST`。
 
-旧版独立题库集合会在数据库启动或旧 JSON 导入时转换为题集，保留题目顺序和内容，历史作答不变。大型题集完整保留，每次练习或考试最多500个作答项，开始前明确选择本次题量和顺序／随机方式。
+题集统一组织题目、练习和历史。大型题集完整保留，每次练习或考试最多500个作答项，开始前明确选择本次题量和顺序／随机方式。
 
 软件不携带任何题目、领域、分类或标签，仅附`config/defaults.json`基础配置。AI默认关闭，端点、模型与凭据由使用者填写。独立题库包通过“分享与导入”添加，新题进入待审核。
 
@@ -59,19 +59,19 @@ Windows 可双击 `启动学习站.cmd`：首次或源码变化时构建，未�
 
 | 环境 | 交互选择 | 指定目标与版本 |
 | --- | --- | --- |
-| Windows CMD | 双击 `release.cmd` | `.\release.cmd web --version 1.6` |
-| PowerShell | `.\release.ps1` | `.\release.ps1 all --version 1.6` |
-| Linux / Bash | `sh ./release.sh` | `sh ./release.sh web --version 1.6` |
+| Windows CMD | 双击 `release.cmd` | `.\release.cmd web --version 1.0` |
+| PowerShell | `.\release.ps1` | `.\release.ps1 all --version 1.0` |
+| Linux / Bash | `sh ./release.sh` | `sh ./release.sh web --version 1.0` |
 
 也可运行 `npm run release -- all`，目标支持 `all`、`windows`、`web`、`android`、`docker`、`source`、`clean`；`--dry-run` 查看计划，`--docker-command-only` 仅输出 Docker 命令。`all` 构建当前系统支持的版本，Linux/macOS 不构建 Windows 桌面包。`android` 和 `all` 在构建前检查正式签名、JDK 21 与 Android SDK，缺失时停止。构建输出位于 `artifacts/releases/`，包含版本化签名 APK、签名验证报告、清单与 SHA256。
 
-发布版本支持`x.y`和`x.y.z`，例如`1.6`、`1.5.1`，也可附`-rc.1`等预发布段；保留所选段数用于版本显示及各端包名。未指定`--version`时，交互终端会询问版本，回车沿用当前值；非交互运行沿用当前版本。正式执行会同步`package.json`与`package-lock.json`的版本，成功后持久保留；检查或构建失败时尽力回滚，遇到外部编辑则不覆盖并提示核对。Android缺省修订号按0计算，`1.6`和`1.6.0`对应同一`versionCode`，升级时须提高版本。`--dry-run --version 1.6`只预览，不写版本；`clean`不询问版本，也不接受`--version`。脚本不会自动commit、打Git标签或发布GitHub Release。
+发布版本支持`x.y`和`x.y.z`，例如`1.1`、`1.0.1`，也可附`-rc.1`等预发布段；保留所选段数用于版本显示及各端包名。未指定`--version`时，交互终端会询问版本，回车沿用当前值；非交互运行沿用当前版本。正式执行会同步`package.json`与`package-lock.json`的版本，成功后持久保留；检查或构建失败时尽力回滚，遇到外部编辑则不覆盖并提示核对。Android缺省修订号按0计算，`1.0`和`1.0.0`对应同一`versionCode`，覆盖更新须提高版本。`--dry-run --version 1.0`只预览，不写版本；`clean`不询问版本，也不接受`--version`。脚本不会自动commit、打Git标签或发布GitHub Release。
 
-当前版本为`2.0`，详见[2.0更新记录](./docs/版本说明-2.0.md)；[1.5.0更新记录](./docs/版本说明-1.5.0.md)作为历史说明保留。实际版本以`package.json`为准。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包；升级先备份并停止旧程序，保留原数据库。各目标工具链、Docker部署、Android签名、升级与回滚见[发布与部署](./docs/发布与部署.md)。
+本次作为首个正式`1.0`发布，详见[1.0版本说明](./docs/版本说明-1.0.md)和[发布清单](./docs/1.0发布清单.md)。此前1.x／2.0编号为开发期记录，归入[历史说明](./docs/history/README.md)，不作为正式兼容链。实际版本以`package.json`为准。`npm run check`检查格式、三端类型与文档，`npm test`运行隔离自动化测试，发布入口会先执行这些检查再打包。后续小版本更新先备份、停程序，保留原数据库和数据目录；步骤及各目标工具链、Docker部署、Android签名见[发布与部署](./docs/发布与部署.md)。
 
-题库导出独立于软件构建。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个可直接导入的独立ZIP；默认目录为`artifacts/domain-packs/v版本/`，当前为`artifacts/domain-packs/v2.0/`。目录已存在时拒绝覆盖，可用`-- --output 新目录`另存。软件包保持空题库，领域ZIP作为独立附件发布；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
+题库导出独立于软件构建。在有本地题库的开发环境运行`npm run content:domains`，将现有通用已发布题按领域导出为多个可直接导入的独立ZIP；默认目录为`artifacts/domain-packs/v版本/`，首发为`artifacts/domain-packs/v1.0/`。目录已存在时拒绝覆盖，可用`-- --output 新目录`另存。软件包保持空题库，领域ZIP作为独立附件发布；使用方法见[说明书](./docs/使用说明书.md#扩展内容包)。
 
-Android 首次正式发布运行 `npm run android:signing:init` 创建本地签名，之后正式打包自动使用；请独立备份私钥和密码，详见[Android 构建与签名](./docs/发布与部署.md#android-构建与签名)。
+Android 使用现有本地正式签名，发布前运行 `npm run android:signing:verify`；仅在从未创建签名的新项目运行 `npm run android:signing:init`。请独立备份私钥和密码，后续保数据更新保持应用 ID 与同一证书，详见[Android 构建与签名](./docs/发布与部署.md#android-构建与签名)。
 
 检查与打包成功后，脚本自动生成新的 `artifacts/github/v版本-UTC运行时间-pid/` 待上传目录和发布说明，具体路径见 `artifacts/releases/release-report.json` 的 `uploadDirectory`。通常无需再运行 `release:prepare`；题库 ZIP 作为独立附件另行选择。首次推送、打标签和创建 Release 的步骤见[发布流程](./docs/发布与部署.md#首次发布到github)。
 

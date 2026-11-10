@@ -62,7 +62,7 @@ async function prepare(input, title, id) {
   await page.getByText('数据包已完整导入。', { exact: false }).waitFor();
 }
 try {
-  await page.goto(origin + '/#/questions/import');
+  await page.goto(origin + '/#/sharing?tab=template');
   const template = await download(page.getByRole('button', { name: '下载新增题目模板包（ZIP）' }));
   const packageData = await readDataPackage(template.bytes);
   assert.equal(packageData.manifest.kind, 'question-template');
@@ -174,8 +174,8 @@ try {
   checks.push('可信迁移确认位于折叠说明之外，展开说明不会越过确认门槛，勾选后才允许导入');
 
   for (const [route, summaries] of [
-    ['/#/ai?tab=import', ['文件提取与题目核对说明']],
-    ['/#/ai?tab=documents', ['文件容量与提取说明']],
+    ['/#/sharing?tab=import', ['文件提取与题目核对说明']],
+    ['/#/sharing?tab=documents', ['文件容量与提取说明']],
     ['/#/settings?tab=backup&sub=migration', ['迁移包含什么，如何恢复？']],
   ]) {
     await page.goto(origin + route);

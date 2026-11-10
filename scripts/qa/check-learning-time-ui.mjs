@@ -77,7 +77,7 @@ try {
     await page.screenshot({ path: resolve(folder, label + '.png'), fullPage: true });
   };
 
-  await page.goto(origin + '/#/settings?tab=daily');
+  await page.goto(origin + '/#/settings?tab=review&sub=daily');
   await page.getByRole('heading', { name: '每日推题与学习计划', exact: true }).waitFor();
   assert.equal(
     await page
@@ -129,7 +129,7 @@ try {
 
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto(origin + '/#/settings?tab=daily');
+    await page.goto(origin + '/#/settings?tab=review&sub=daily');
     await page.getByLabel('工作日日预算（分钟）', { exact: true }).waitFor();
     await weekCard().getByRole('button', { name: '本周', exact: true }).waitFor();
     await layout('settings-' + width);

@@ -83,13 +83,11 @@ function SharingContent({ initialTab }: { initialTab: string }) {
               新增内容仍需审核；可信备份合并保留原状态。SQLite整体或领域迁移与完整恢复位于系统配置。内容分享不包含学习记录。
             </p>
             <p>
-              早期领域 ZIP 缺少根目录 manifest.json 时，可先解压出业务 JSON 分片，再按{' '}
-              <a
-                href={`#/help?${new URLSearchParams({ doc: 'docs/数据包格式.md', anchor: '转换旧文件' })}`}
-              >
-                旧题库包转换步骤
+              数据包的清单、文件与校验规则见{' '}
+              <a href={`#/help?${new URLSearchParams({ doc: 'docs/数据包格式.md' })}`}>
+                数据包格式与导入说明
               </a>{' '}
-              生成新版数据包后导入。
+              。
             </p>
             <a className="button" href="#/settings?tab=backup">
               SQLite 迁移与恢复
@@ -103,7 +101,7 @@ function SharingContent({ initialTab }: { initialTab: string }) {
           ) : tab === 'papers' ? (
             <PaperSharing />
           ) : tab === 'template' ? (
-            <QuestionImportPage embedded />
+            <QuestionImportPage />
           ) : (
             <AiImportPanel key={tab} mode={initialTab === 'documents' ? 'documents' : 'import'} />
           )}

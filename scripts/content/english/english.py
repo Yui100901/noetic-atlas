@@ -25,6 +25,8 @@ import urllib.request
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
+from runpy import run_path
+materialize_content_sets = run_path(str(ROOT / "scripts/content/question_sets.py"))["materialize_content_sets"]
 CACHE = ROOT / '.localtools' / 'content-sources'
 PACK = ROOT / 'data' / 'content-packs' / 'english.json'
 MANIFEST = ROOT / 'data' / 'content-sources' / 'english.json'
@@ -473,7 +475,8 @@ def main():
     banks = [{'id':'en-bank-vocabulary','name':'英语 · 开放词汇 10000','description':'10000 个去重词目；全部待用户审核；含源考试标签和词频补充','questionIds':[q['id'] for q in questions if q['type']=='short_answer']},
              {'id':'en-bank-grammar','name':'英语 · 原创语法 144','description':'12 类语法点，每类12题；选择题129，填空题15（以统计结果为准）','questionIds':[q['id'] for q in questions if q['id'].startswith('EN-G-')]}]
     banks[1]['description'] = f"12 类语法点，各12题；{sum(q['type']=='single_choice' for q in questions)}道选择题，{sum(q['type']=='fill_blank' for q in questions)}道填空题；均待用户审核"
-    pack = {'schemaVersion':1,'generatedAt':GENERATED_AT,'domains':domains,'categories':categories,'tags':tags,'questions':questions,'questionBanks':banks,'documents':[],'papers':[]}
+    pack = {'schemaVersion':1,'generatedAt':GENERATED_AT,'domains':domains,'categories':categories,'tags':tags,'questions':questions,'questionSets':banks,'documents':[],'papers':[]}
+    materialize_content_sets(pack)
     PACK.parent.mkdir(parents=True, exist_ok=True)
     PACK.write_text(json.dumps(pack, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     limitations = [

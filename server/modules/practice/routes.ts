@@ -10,8 +10,7 @@ import { getSettings } from '../settings/service.js';
 import { paginationFields } from '../../core/pagination.js';
 import { paperList, attemptList } from '../../core/read-models.js';
 import { getId } from '../../http/request.js';
-import { flattenQuestions, validatePaperAnswers } from '../questions/structure.js';
-import { normalizeScoring } from './scoring.js';
+import { flattenQuestions } from '../questions/structure.js';
 import { practiceTimingInputSchema, updatePracticeTiming } from './practice-timing.js';
 import { paperListPage, paperListPageQuerySchema, paperMetadata } from './paper-list.js';
 
@@ -53,15 +52,7 @@ export function registerPracticeRoutes(app: FastifyInstance, store: Store) {
       const sourceQuestions = paper.questionIds.map(qid => store.get<Question>('questions', qid));
       const unavailable = paper.questionIds.filter((_qid, index) => sourceQuestions[index]?.status !== 'published');
       if (unavailable.length) fail(409, 'QUESTION_SET_NOT_READY', '题集中仍有未审核、已归档或不存在的题目，请先处理这些题目', { unavailableQuestionIds: unavailable });
-      // The first restoration of an untouched legacy collection adopts its
-      // reviewed references, including very large sets. Later versions and
-      // edited/scored sets keep their authored snapshot and score rules.
-      let restored = { ...paper, archived: false, updatedAt: nextStamp(paper.updatedAt) };
-      if (paper.legacyBankId && paper.version === 1 && !paper.scoring?.enabled) {
-        const snapshot = sourceQuestions as Question[];
-        validatePaperAnswers(snapshot, 1_500_000);
-        restored = { ...restored, snapshot, scoring: normalizeScoring(snapshot, { enabled: false }), version: paper.version + 1 };
-      }
+      const restored = { ...paper, archived: false, updatedAt: nextStamp(paper.updatedAt) };
       store.put('papers', paper.id, restored);
       return paperView(restored, 'summary');
     });

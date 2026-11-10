@@ -35,30 +35,6 @@ export class Store {
   remove(table: Table, id: string) { this.require(table, id);this.database.deleteRecord(table,id); }
   transaction<T>(fn: () => T): T { return this.database.transaction(fn); }
   taxonomy() { return { domains: this.all<Domain>('domains').sort((a, b) => a.sortOrder - b.sortOrder), categories: this.all<Category>('categories').sort((a, b) => a.sortOrder - b.sortOrder), tags: this.all<Tag>('tags').sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')) }; }
-  normalizeLegacyTags() {
-    // Run only on absent fields. Explicit global scope must remain global,
-    // including after questions are edited or more domains are imported.
-    const legacyTags = this.all<Tag>('tags').filter(tag => tag.domainId === undefined || tag.kind === undefined);
-    if (!legacyTags.length) return;
-    const legacyIds = new Set(legacyTags.map(tag => tag.id));
-    const categories = new Map(this.all<Category>('categories').map(c => [c.id, c.domainId]));
-    const usedDomains = new Map<string, Set<string>>();
-    const unclassifiedUses = new Set<string>();
-    for (const record of this.taxonomyReferenceMetadata()) {
-      for (const tid of record.tagIds) {
-        if (!legacyIds.has(tid)) continue;
-        if (!record.categoryIds.length) unclassifiedUses.add(tid);
-        const domains = usedDomains.get(tid) || new Set<string>();
-        for (const cid of record.categoryIds) { const did = categories.get(cid); if (did) domains.add(did); }
-        usedDomains.set(tid, domains);
-      }
-    }
-    for (const tag of legacyTags) {
-      const domains = usedDomains.get(tag.id) || new Set<string>();
-      const domainId = tag.domainId === undefined ? domains.size === 1 && !unclassifiedUses.has(tag.id) ? [...domains][0]! : null : tag.domainId;
-      this.put('tags', tag.id, { ...tag, domainId, kind: tag.kind || 'topic' });
-    }
-  }
   validateTag(tag: Tag) {
     this.validateTagReference(tag, domainId => Boolean(this.get('domains', domainId)));
   }

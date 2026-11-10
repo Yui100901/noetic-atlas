@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 /** Rebuild 120 original inorganic substance learning cards from the reviewed catalog. */
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
@@ -56,7 +57,8 @@ const questions=rows.map((r,index)=>{
   frequencyScope:'日常化学与材料知识学习；非面试或考试频率',frequencyBasis:'未统计考频；F0表示未评估，不代表学习价值低',collection:'general',status:'pending',categoryIds:[categoryByName.get(r.category)],tagIds:[...new Set(['无机物','物质知识卡','化学反应','安全边界',...r.tags])].map(name=>tagByName.get(name)),sourceRefs:sources,sourceDocument:null,sourceAnchor:null,
  };
 });
-const pack={schemaVersion:1,generatedAt:'2026-10-22T00:00:00Z',domains:[domain],categories,tags,questions,assets:[],questionBanks:[{id:'chem-inorg-bank',name:'日常与工业无机化学品120卡',description:'原创物质学习卡，区分物态、水合物、配方和等级；不作为食品许可清单或危险实验操作说明。',questionIds:questions.map(q=>q.id)}]};
+const pack={schemaVersion:1,generatedAt:'2026-10-22T00:00:00Z',domains:[domain],categories,tags,questions,assets:[],questionSets:[{id:'chem-inorg-bank',name:'日常与工业无机化学品120卡',description:'原创物质学习卡，区分物态、水合物、配方和等级；不作为食品许可清单或危险实验操作说明。',questionIds:questions.map(q=>q.id)}]};
+materializeContentSets(pack);
 await mkdir(resolve(root,'data/content-packs'),{recursive:true});
 const serialized=JSON.stringify(pack,null,2)+'\n';await writeFile(out,serialized);
 const provenance={schemaVersion:1,pack:'chemistry-inorganic',generatedAt:pack.generatedAt,checkedAt:'2026-10-22',questions:questions.length,status:'pending',domain:'chemistry',counts:{categories:categories.length,tags:tags.length,withPubChemIdentity:questions.length,withSpecificICSC:questions.filter(q=>q.sourceRefs.some(s=>s.label.startsWith('ILO/WHO'))).length,foodRelated:rows.filter(r=>r.tags.includes('食品相关')).length},coverage:categoryNames.map(name=>({category:name,count:rows.filter(r=>r.category===name).length})),sourcePolicy:'中文性质、反应解释、用途和边界均原创整理；只保留身份事实、来源URL与抓取哈希，不转载PubChem贡献者长篇正文或ICSC完整安全卡。',formulaPolicy:'无机物按常用化学计量式表示，水合物单独注明；石英与无定形SiO2同式但相态与粉尘风险分开。氢卤酸、氨水、漂白液等明确区分纯成分和溶液/配方。',limitations:['未提供任何危险制备、强氧化剂混配、制气、点火、药物剂量或食品添加用量配方。','不构成全球或中国现行许可物料清单；食品用途仅是受规范约束的用途举例。','核对来源不等于对每个反应进行实验验证；反应速率、物态和条件限制在正文说明。','含药用交叉用途的无机物以化学性质为主，不复制医学剂量、疗效或处方内容。'],unmatchedIndividualICSC:issues,identityManifest:'data/content-sources/chemistry-inorganic-identities.json',generator:'scripts/content/chemistry/chemistry-inorganic.mjs',catalog:'scripts/content/chemistry/chemistry-inorganic-catalog.mjs',sourceFetcher:'scripts/content/chemistry/chemistry-inorganic-sources.py',packBytes:Buffer.byteLength(serialized),packSha256:createHash('sha256').update(serialized).digest('hex')};

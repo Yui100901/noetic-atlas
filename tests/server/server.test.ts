@@ -515,8 +515,9 @@ test('hard deletion protects current papers but preserves independently usable a
   assert.equal(json(await restored.app.inject(`/api/attempts/${attempt.id}`)).subjectiveScore, 2);
 });
 
-test('tags infer stable legacy domain scopes, preserve global methods and enforce domain references atomically', async t => {
+test('explicit tag scopes remain stable, omitted scopes default global and domain references are enforced atomically', async t => {
   const data = seed();
+  data.tags = data.tags.map(tag => tag.id === 'go' ? { ...tag, domainId: 'computer', kind: 'topic' } : tag);
   data.tags.push({ id: 'cross-domain', name: '跨领域主题', color: '#111', description: '' }, { id: 'uncategorized', name: '原无分类', color: '#111', description: '' });
   data.questions[0]!.tagIds.push('cross-domain', 'uncategorized'); data.questions[4]!.tagIds.push('cross-domain');
   data.documents.push({ ...data.documents[0]!, id: 'NO-CATEGORY', categoryIds: [], tagIds: ['uncategorized'] });
@@ -524,7 +525,10 @@ test('tags infer stable legacy domain scopes, preserve global methods and enforc
   const tags = json(await app.inject('/api/taxonomy')).tags;
   assert.equal(tags.find((x: any) => x.id === 'go').domainId, 'computer');
   assert.equal(tags.find((x: any) => x.id === 'cross-domain').domainId, null);
-  assert.equal(tags.find((x: any) => x.id === 'uncategorized').domainId, null, 'legacy uncategorized references require global scope');
+  assert.equal(tags.find((x: any) => x.id === 'uncategorized').domainId, null, 'omitted scopes stay global regardless of their current references');
+  assert.equal(tags.find((x: any) => x.id === 'cross-domain').kind, 'topic');
+  const defaultTag = json(await app.inject({ method: 'POST', url: '/api/tags', payload: { id: 'default-topic', name: '未指定作用域' } }), 201);
+  assert.equal(defaultTag.domainId, null); assert.equal(defaultTag.kind, 'topic');
   json(await app.inject({ method: 'POST', url: '/api/tags', payload: { id: 'concept', name: '概念', kind: 'method', domainId: null } }), 201);
   assert.equal((await app.inject({ method: 'POST', url: '/api/tags', payload: { id: 'bad-method', name: '非法方法标签', kind: 'method', domainId: 'computer' } })).statusCode, 400);
   assert.equal((await app.inject({ method: 'POST', url: '/api/questions', payload: { ...question('BAD-DOMAIN', 'short_answer', ['medical-base'], ['go']) } })).statusCode, 400);

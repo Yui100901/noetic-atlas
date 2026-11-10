@@ -16,7 +16,7 @@ import { useResource } from '../shared/lib/api';
 import { AppContext, Empty, ErrorNotice, Loading, PageHeader, useApp } from '../shared/ui/components';
 import { readPaperContentsContext } from '../features/papers/reader-navigation';
 import { isSettingsNavigation } from '../features/settings/settings-navigation';
-import { allowHashNavigation, markNavigationEntry, replaceHashRoute } from '../shared/lib/navigation-guard';
+import { allowHashNavigation, markNavigationEntry } from '../shared/lib/navigation-guard';
 import { DailyPushProvider, DailyPushQuickLink } from '../features/daily-push/daily-push';
 import { SearchReturnLink, UnifiedSearchBar } from '../features/search/search-bar';
 import {lazyPage} from '../shared/lib/lazy-page';
@@ -24,7 +24,7 @@ import './styles.css';
 import './dashboard.css';
 import '../shared/ui/layout.css';
 import './navigation.css';
-import { relocatedAiHref, upgradeGuideHref } from '../shared/lib/feature-destinations';
+import { upgradeGuideHref } from '../shared/lib/feature-destinations';
 import '../shared/ui/feature-entry.css';
 import { applyTheme, initializeTheme } from '../shared/theme/theme';
 import '../shared/theme/themes.css';
@@ -52,7 +52,6 @@ const LearningQuestionPage = lazyPage(() => import('../features/practice/learnin
 const GlobalLearningPage = lazyPage(() => import('../features/practice/global-learning').then(module => ({default:module.GlobalLearningPage})));
 const SettingsPage = lazyPage(() => import('../features/settings/settings').then(module => ({default:module.SettingsPage})));
 const VocabularyReferencePage = lazyPage(() => import('../features/questions/vocabulary').then(module => ({default:module.VocabularyReferencePage})));
-const QuestionFeedbackPage = lazyPage(() => import('../features/quality-feedback/question-feedback').then(module => ({default:module.QuestionFeedbackPage})));
 const ContentQualityPage = lazyPage(() => import('../features/content-quality/content-quality').then(module => ({default:module.ContentQualityPage})));
 const SharingPage = lazyPage(() => import('../features/sharing/sharing').then(module => ({default:module.SharingPage})));
 const AnalyticsPage = lazyPage(() => import('../features/analytics/analytics').then(module => ({default:module.AnalyticsPage})));
@@ -99,30 +98,16 @@ function Dashboard() {
 
 const nav = [{ key: 'overview', label: '知识总览', icon: LayoutDashboard, path: '#/' }, { key: 'questions', label: '知识题库', icon: LibraryBig, path: '#/questions' }, { key: 'papers', label: '题集与练习', icon: ClipboardList, path: '#/papers' }, { key: 'analytics', label: '综合统计', icon: BarChart3, path: '#/analytics' }, { key: 'documents', label: '资料库', icon: Files, path: '#/documents' }, { key: 'taxonomy', label: '分类与标签', icon: FolderTree, path: '#/taxonomy' }, { key: 'sharing', label: '分享与导入', icon: ArrowRight, path: '#/sharing' }];
 function useHash() { const [hash, setHash] = useState(window.location.hash || '#/'); const index = useRef(0); useEffect(() => { index.current = markNavigationEntry(0); const listener = (event: HashChangeEvent) => { if (!allowHashNavigation(event)) return; index.current = markNavigationEntry(index.current + 1); setHash(window.location.hash || '#/'); window.scrollTo({ top: 0 }); }; window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []); return hash; }
-function FeatureRedirect({ destination }: { destination: string }) {
-  useEffect(() => { replaceHashRoute(destination); }, [destination]);
-  return <Loading text="正在打开对应功能…" />;
-}
-function LegacyBankRedirect() {
-  useEffect(() => { replaceHashRoute('#/papers'); }, []);
-  return <Loading text="正在打开题集…" />;
-}
-function LegacyStudyRedirect({ tab }: { tab: string }) {
-  useEffect(() => { replaceHashRoute(['due','favorite','wrong'].includes(tab) ? `#/questions?${tab}=true` : '#/papers'); }, [tab]);
-  return <Loading text="正在打开学习内容…" />;
-}
 function Router({ hash }: { hash: string }) {
   const [pathname, query] = hash.replace(/^#\/?/, '').split('?'); const [section, rawId, action] = pathname.split('/'); let id = ''; try { id = decodeURIComponent(rawId || ''); } catch { return <Empty title="链接格式不正确" actions={<a href="#/">返回总览</a>} />; }
   const params = new URLSearchParams(query); const key = hash;
   if (!section) return <Dashboard />;
   if(section==='tasks')return <TaskCenterPage/>;
   if (section === 'help') return <HandbookPage key={key}/>;
-  if (section === 'question-feedback') return <QuestionFeedbackPage key={key} questionId={params.get('questionId') || ''} feedbackId={params.get('feedbackId') || ''} />;
   if (section === 'content-quality') return <ContentQualityPage key={key} questionId={params.get('questionId')||''} feedbackId={params.get('feedbackId')||''} issueId={params.get('issueId')||''} />;
   if (section === 'search') return <UnifiedSearchPage key={key} hash={hash} />;
   if(section==='vocabulary'&&id)return <VocabularyReferencePage key={key} word={id}/>;
-  if (section === 'questions') { if (id === 'import') return <FeatureRedirect destination="#/sharing?tab=template" />; if (id === 'review') return <QuestionReviewPage key={key} />; if (id === 'new') return <QuestionEditor key={key} />; if (id && action === 'edit') return <QuestionEditor key={key} id={id} />; if (id) return <QuestionDetail key={key} id={id} showAnswer={params.get('answer') === '1'} />; return <QuestionsPage key={key} initial={{...Object.fromEntries(['search', 'domainId', 'categoryId', 'frequency', 'collection', 'status'].map(name => [name, params.get(name) || ''])),...Object.fromEntries(['due','favorite','wrong'].map(name=>[name,['true','1'].includes(params.get(name)||'')])),tagIds:(params.get('tagIds')||'').split(',').filter(Boolean),tagMode:params.get('tagMode')==='any'?'any':'all'}} />; }
-  if (section === 'banks') return <LegacyBankRedirect />;
+  if (section === 'questions') { if (id === 'review') return <QuestionReviewPage key={key} />; if (id === 'new') return <QuestionEditor key={key} />; if (id && action === 'edit') return <QuestionEditor key={key} id={id} />; if (id) return <QuestionDetail key={key} id={id} showAnswer={params.get('answer') === '1'} />; return <QuestionsPage key={key} initial={{...Object.fromEntries(['search', 'domainId', 'categoryId', 'frequency', 'collection', 'status'].map(name => [name, params.get(name) || ''])),...Object.fromEntries(['due','favorite','wrong'].map(name=>[name,['true','1'].includes(params.get(name)||'')])),tagIds:(params.get('tagIds')||'').split(',').filter(Boolean),tagMode:params.get('tagMode')==='any'?'any':'all'}} />; }
   if (section === 'analytics') return <AnalyticsPage key={key} initialTab={params.get('tab') || 'learning'} />;
   if (section === 'papers') { if (id === 'new') return <PaperEditor key={key} mode={action === 'ai' ? 'ai' : action === 'random' ? 'random' : 'manual'} />; if (id && action === 'questions') { let questionId = ''; try { questionId = decodeURIComponent(pathname.split('/')[3] || ''); } catch { return <Empty title="题目链接格式不正确" actions={<a href={`#/papers/${encodeURIComponent(id)}`}>返回题集</a>} />; } return questionId && pathname.split('/').length === 4 ? <PaperQuestionPage key={key} paperId={id} questionId={questionId} context={readPaperContentsContext(params)} /> : <Empty title="请从题集中选择题目" actions={<a href={`#/papers/${encodeURIComponent(id)}`}>返回题集</a>} />; } if (id && action === 'activity') return <DeletedSetActivityPage key={key} paperId={id} initialTab={params.get('tab') || 'history'} />; if (id && action === 'edit') return <PaperEditor key={key} id={id} />; if (id) return <PaperDetailPage key={key} id={id} initialTab={params.get('tab') || 'content'} initialContents={readPaperContentsContext(params)} />; return <PapersPage />; }
   if(section==='daily-plan'&&id)return <LearningPlanPage key={key} id={id}/>;
@@ -132,12 +117,9 @@ function Router({ hash }: { hash: string }) {
   if (section === 'quick') return <QuickPracticePage key={key} initialTab={params.get('tab') || undefined} />;
   if (section === 'attempts' && id) return <AttemptPage key={key} id={id} />;
   if (section === 'documents') { if(id&&action==='source')return <DocumentSourcePage key={key} id={id}/>; if (id === 'new') return <DocumentEditor key={key} />; if (id && action === 'edit') return <DocumentEditor key={key} id={id} />; if (id) return <DocumentDetailPage key={key} id={id} />; return <DocumentsPage />; }
-  if (section === 'study') return <LegacyStudyRedirect tab={params.get('tab') || 'due'} />;
   if (section === 'taxonomy') return <TaxonomyPage />;
-  if (section === 'daily-push') return <LegacyBankRedirect />;
-  if (section === 'settings' || section === 'data') return <SettingsPage hash={hash} />;
+  if (section === 'settings') return <SettingsPage hash={hash} />;
   if (section === 'sharing') return <SharingPage key={key} initialTab={params.get('tab') || 'package'} />;
-  if (section === 'ai') return <FeatureRedirect destination={relocatedAiHref(params)} />;
   return <Empty title="还没有这个页面" description="从知识总览继续探索。" actions={<a className="button primary" href="#/">返回总览</a>} />;
 }
 class ErrorBoundary extends React.Component<{ children: ReactNode }, { error: Error|null }> {

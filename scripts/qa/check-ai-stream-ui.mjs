@@ -15,7 +15,7 @@ try{
   const page=await browser.newPage({viewport:{width:1360,height:940}});page.on('pageerror',error=>pageErrors.push(error.message));page.setDefaultTimeout(15000);
   const state=async()=>(await page.request.get(origin+'/qa/state')).json();const release=async()=>{await page.request.post(origin+'/qa/release');};
   const generate=page.getByRole('button',{name:'生成推荐组题预览',exact:true});
-  await page.goto(origin+'/#/ai',{waitUntil:'domcontentloaded',timeout:60000});await page.getByLabel('AI组题要求').fill('计算机数据库基础题，推荐2题');
+  await page.goto(origin+'/#/papers/new/ai',{waitUntil:'domcontentloaded',timeout:60000});await page.getByLabel('AI组题要求').fill('计算机数据库基础题，推荐2题');
   assert.equal(await page.getByLabel('推荐题量（组合题整组计）',{exact:true}).inputValue(),'');
   await generate.click();await page.getByLabel('AI生成中预览',{exact:true}).getByText('流式生成事务练习',{exact:true}).waitFor();
   const first=await state();assert.equal(first.requests.length,1);assert.equal(first.requests[0].accept,'text/event-stream');assert.equal(Object.hasOwn(first.requests[0].body,'count'),false);assert.deepEqual(first.requests[0].body.filters,{});

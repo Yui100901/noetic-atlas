@@ -73,7 +73,7 @@ export function dataHealth(store: Store, integrity = false): DataHealth {
     issues.push({
       level: 'info',
       message: `有${activeAiJobs}个教材任务尚未完成，清理会保留这些任务及关联记录。`,
-      href: '#/ai',
+      href: '#/sharing?tab=import&process=batch',
     });
   return {
     checkedAt: new Date().toISOString(),

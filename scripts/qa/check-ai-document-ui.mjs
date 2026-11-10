@@ -31,7 +31,7 @@ try {
     if(await choices.isVisible()){await choices.getByRole('button',{name:'继续此草稿',exact:true}).first().click();await choices.waitFor({state:'hidden'});}
     await page.waitForFunction(value=>Array.from(document.querySelector(`[data-draft-kind="${value}"]`)?.querySelectorAll('button')||[]).some(button=>button.textContent.trim()==='保存草稿'&&!button.disabled),kind);
   };
-  await page.goto(origin + '/#/ai?tab=documents'); await page.getByLabel('AI分批原始文件', { exact: true }).waitFor({ state: 'attached' });
+  await page.goto(origin + '/#/sharing?tab=documents'); await page.getByLabel('AI分批原始文件', { exact: true }).waitFor({ state: 'attached' });
   let book, bookPages;
   try { book = await readFile('test-results/ai-live-textbook/thinkpython2-source.pdf'); bookPages = (await PDFDocument.load(book)).getPageCount(); }
   catch { const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.Helvetica); for (let index = 0; index < 151; index++) pdf.addPage([612, 792]).drawText('Variables bind names to values. Page ' + (index + 1), { x: 35, y: 730, size: 12, font }); book = Buffer.from(await pdf.save()); bookPages = 151; }
@@ -62,7 +62,7 @@ try {
   await page.locator(`[data-document-block="${failedBlock.id}"]`).getByRole('link', { name: '查看具体失败记录', exact: true }).click();
   await page.getByRole('dialog', { name: 'AI处理失败详情', exact: true }).waitFor(); const failureText = await page.getByRole('dialog').innerText(); assert.match(failureText, /AI_PROVIDER_ERROR/); assert.match(failureText, /503/); assert.doesNotMatch(failureText, /PRIVATE_PROVIDER_BODY_SHOULD_NOT_APPEAR|qa-placeholder/); checks.push('失败历史展示具体HTTP/阶段/建议且不泄露提供商正文或密钥'); await page.screenshot({ path: resolve(folder, 'history-failure.png'), fullPage: true });
   await page.getByRole('button', { name: '关闭', exact: true }).click(); await page.getByLabel('AI记录状态', { exact: true }).selectOption('failed'); await settle(async()=>await page.locator('.ai-history-item').count()===2,'failed history filter'); assert.equal(await page.locator('.ai-history-item').count(), 2); checks.push('AI历史支持失败筛选，任务和分块可追溯');
-  await page.goto(origin + '/#/ai?tab=documents&job=' + id);await restoreDraft('documents');await restoreDraft('document-job'); await page.getByRole('region', { name: '教材分批任务' }).waitFor(); await page.getByRole('button', { name: /^重试失败出题/ }).click(); await settle(async () => (await job(id)).questionCount === 3 && (await job(id)).failedBlocks === 0, 'retry generation');
+  await page.goto(origin + '/#/sharing?tab=documents&job=' + id);await restoreDraft('documents');await restoreDraft('document-job'); await page.getByRole('region', { name: '教材分批任务' }).waitFor(); await page.getByRole('button', { name: /^重试失败出题/ }).click(); await settle(async () => (await job(id)).questionCount === 3 && (await job(id)).failedBlocks === 0, 'retry generation');
   assert.equal((await state()).requests.filter(item => item.kind === 'generate').length, 4); checks.push('重新打开任务继续，仅重试失败出题并沿用每块预算');
   const beforeImport = await job(id), first = beforeImport.blocks[0]; await page.locator(`[data-document-block="${first.id}"]`).getByRole('button', { name: /^展开知识块/ }).click();
   await page.getByText('编辑本块完整题目 JSON', { exact: true }).click(); const editor = page.getByLabel(`知识块 ${first.label} 题目JSON`, { exact: true }); const preview = JSON.parse(await editor.inputValue());

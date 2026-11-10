@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 /** Original bilingual terminology cards, with optional portable lexical references. */
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
@@ -54,7 +55,8 @@ export function createTermPack({packId,title,domainIds,idPrefix,categoryPrefix,g
       questions.push(question);entries.push({id,key:row.key,term:row.term,english:row.english,aliases,domainId,group:group.id,lexicalReferences:related});
     }
   }
-  const pack={schemaVersion:1,generatedAt:stamp,domains,categories,tags,questions,documents:[],papers:[],assets:[],questionBanks:[{id:'bank-'+packId,name:title,description:'按中文术语、英文全称及常用缩写复习概念，英语单词采用可迁移引用，不复制词卡。',questionIds:questions.map(q=>q.id),createdAt:stamp,updatedAt:stamp}]};
+  const pack={schemaVersion:1,generatedAt:stamp,domains,categories,tags,questions,documents:[],papers:[],assets:[],questionSets:[{id:'bank-'+packId,name:title,description:'按中文术语、英文全称及常用缩写复习概念，英语单词采用可迁移引用，不复制词卡。',questionIds:questions.map(q=>q.id),createdAt:stamp,updatedAt:stamp}]};
+materializeContentSets(pack);
   return {pack,entries};
 }
 export async function buildTermPack(options){

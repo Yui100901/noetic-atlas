@@ -5,12 +5,13 @@ import { validatePack, validatePackSet, assertImportCompatible, wordlistPapers, 
 import { Store } from '../../server/core/store.js';
 import { importData } from '../../server/modules/transfer/migration.js';
 import { planShareImport, importShare } from '../../server/modules/sharing/service.js';
+import { materializeContentSets } from '../../scripts/content/question-sets.mjs';
 
 const driving=()=>validatePack(JSON.parse(readFileSync('tests/fixtures/driving-content.json','utf8')));
 function vocabulary(count:number) {
   const base=driving();
   const questions=Array.from({length:count},(_,i)=>({...base.questions[0],id:`EN-V-${String(i+1).padStart(6,'0')}`,title:`word-${i+1}`,stemMarkdown:`Recall word-${i+1}.`,answerMarkdown:`Definition ${i+1}`,explanationMarkdown:`Usage ${i+1}`,categoryIds:['en-vocabulary'],tagIds:['en-word'],type:'short_answer',options:[],correctAnswers:[]}));
-  return validatePack({...base,domains:[{id:'english',name:'英语',description:'Fixture domain',sortOrder:1}],categories:[{id:'en-vocabulary',domainId:'english',parentId:null,name:'单词',description:'Fixture category',sortOrder:0}],tags:[{id:'en-word',domainId:'english',name:'词汇',color:'#123456',description:'Fixture tag',kind:'topic'}],questions,assets:[],questionBanks:[{id:'en-fixture-bank',name:'词汇全集',description:'Fixture bank',questionIds:questions.map(q=>q.id)}]});
+  return validatePack(materializeContentSets({...base,papers:[],questionBanks:[],domains:[{id:'english',name:'英语',description:'Fixture domain',sortOrder:1}],categories:[{id:'en-vocabulary',domainId:'english',parentId:null,name:'单词',description:'Fixture category',sortOrder:0}],tags:[{id:'en-word',domainId:'english',name:'词汇',color:'#123456',description:'Fixture tag',kind:'topic'}],questions,assets:[],questionSets:[{id:'en-fixture-bank',name:'词汇全集',description:'Fixture bank',questionIds:questions.map(q=>q.id)}]}));
 }
 
 test('content packs remain pending and image-based driving questions are independently importable',()=>{
@@ -35,7 +36,7 @@ test('content packs remain pending and image-based driving questions are indepen
 test('vocabulary wordlists are unscored, archived pending review, and keep their own frozen content',()=>{
   const base=driving();
   const words=Array.from({length:205},(_,i)=>({...base.questions[0],id:`EN-V-${String(i).padStart(6,'0')}`,title:`word-${i}`,categoryIds:['en-vocabulary'],tagIds:['en-word'],type:'short_answer',options:[],correctAnswers:[]}));
-  const pack=validatePack({...base,domains:[{id:'english',name:'英语',description:'',sortOrder:1}],categories:[{id:'en-vocabulary',domainId:'english',parentId:null,name:'单词',description:'',sortOrder:0}],tags:[{id:'en-word',domainId:'english',name:'词汇',color:'#123456',description:'',kind:'topic'}],questions:words,assets:[],questionBanks:[]});
+  const pack=validatePack({...base,domains:[{id:'english',name:'英语',description:'',sortOrder:1}],categories:[{id:'en-vocabulary',domainId:'english',parentId:null,name:'单词',description:'',sortOrder:0}],tags:[{id:'en-word',domainId:'english',name:'词汇',color:'#123456',description:'',kind:'topic'}],questions:words,assets:[],questionBanks:[],papers:[]});
   const papers=wordlistPapers(pack);
   assert.deepEqual(papers.map(p=>p.questionCount),[100,100,5]);
   assert.ok(papers.every(p=>p.archived&&!p.scoring.enabled&&p.scoring.totalPoints===0&&p.domainId==='english'));
@@ -56,7 +57,7 @@ test('large vocabulary sharing indexes existing questions once and coalesces ide
     const base=pack.questions[0];
     pack.questions=Array.from({length:2000},(_,i)=>({...base,id:'VOCAB-'+i,title:'term-'+i}));
     pack.questions.push({...pack.questions[0],id:'VOCAB-duplicate'});
-    pack.questionBanks=[];pack.assets=[];
+    pack.questionBanks=[];pack.papers=[];pack.assets=[];
     let questionScans=0;const all=store.all.bind(store);
     store.all=((table:any)=>{if(table==='questions')questionScans++;return all(table);}) as typeof store.all;
     const plan=planShareImport(store,asShare(pack,'large vocabulary'));
@@ -66,7 +67,7 @@ test('large vocabulary sharing indexes existing questions once and coalesces ide
   }finally{store.db.close();}
 });
 
-test('500-question share parts keep distinct deterministic banks, complete wordlists, and all references',()=>{
+test('500-question share parts keep distinct deterministic sets, complete wordlists, and all references',()=>{
   const pack=vocabulary(600);
   pack.questions[0].explanationMarkdown='See [word-600](#/questions/EN-V-000600) for a related meaning.';
   pack.questions[500].explanationMarkdown='See [word-502](#/questions/EN-V-000502) for a related meaning.';
@@ -74,19 +75,21 @@ test('500-question share parts keep distinct deterministic banks, complete wordl
     const selected=new Set(questions.map(q=>q.id));return asShare(pack,`Part ${index+1}`,questions,papers.filter(p=>p.questionIds.every(id=>selected.has(id))));
   });
   const full=asShare(pack,'All words');
-  assert.equal(full.questionBanks[0].id,'en-fixture-bank');
-  assert.notEqual(parts[0].questionBanks[0].id,parts[1].questionBanks[0].id);
-  assert.notEqual(parts[0].questionBanks[0].id,full.questionBanks[0].id);
-  assert.match(parts[0].questionBanks[0].name,/分包/);
-  assert.equal(asShare(pack,'Repeat',pack.questions.slice(0,500)).questionBanks[0].id,parts[0].questionBanks[0].id);
-  assert.deepEqual(parts.map(part=>part.papers.length),[5,1]);
+  const sourceSet=(part:any)=>part.papers.find((paper:any)=>paper.id.startsWith('en-fixture-bank'));
+  assert.deepEqual(full.questionBanks,[]);
+  assert.equal(sourceSet(full).id,'en-fixture-bank');
+  assert.notEqual(sourceSet(parts[0]).id,sourceSet(parts[1]).id);
+  assert.notEqual(sourceSet(parts[0]).id,sourceSet(full).id);
+  assert.match(sourceSet(parts[0]).title,/分包/);
+  assert.equal(sourceSet(asShare(pack,'Repeat',pack.questions.slice(0,500))).id,sourceSet(parts[0]).id);
+  assert.deepEqual(parts.map(part=>part.papers.length),[6,2]);
   assert.doesNotMatch(parts[0].questions[0].explanationMarkdown,/#\/questions\/EN-V-000600/);
   assert.match(parts[1].questions[0].explanationMarkdown,/#\/questions\/EN-V-000502/);
   const store=new Store(':memory:');
   try {
     for(const part of parts){const plan=planShareImport(store,part);importShare(store,part,plan.preview.fingerprint);}
     assert.equal(store.all('questions').length,600);assert.equal(store.all('papers').length,8);assert.equal(store.all('question_banks').length,0);
-    for(const paper of store.all<any>('papers').filter(p=>!p.legacyBankId)){
+    for(const paper of store.all<any>('papers').filter(p=>p.id.startsWith('wordlist-'))){
       assert.equal(paper.snapshot.length,100);assert.equal(paper.archived,true);assert.equal(paper.scoring.enabled,false);
       assert.deepEqual(paper.snapshot.map((q:any)=>q.id),paper.questionIds);
       assert.ok(paper.questionIds.every((id:string)=>Boolean(store.get('questions',id))));
@@ -101,14 +104,14 @@ test('omitted taxonomy defaults are normalized before import compatibility check
   delete raw.domains[0].description;delete raw.domains[0].sortOrder;
   delete raw.categories[0].description;delete raw.categories[0].sortOrder;delete raw.categories[0].parentId;
   delete raw.tags[0].description;delete raw.tags[0].color;delete raw.tags[0].kind;delete raw.tags[0].domainId;
-  delete raw.questionBanks[0].description;
+  delete raw.papers[0].description;
   const pack=validatePack(raw),store=new Store(':memory:');
   try {
-    assert.equal(pack.domains[0].sortOrder,0);assert.equal(pack.categories[0].parentId,null);assert.equal(pack.tags[0].domainId,'english');assert.equal(pack.tags[0].kind,'topic');
-    assertImportCompatible(store,[pack]);const first=importData(store,{...pack,papers:wordlistPapers(pack)});
+    assert.equal(pack.domains[0].sortOrder,0);assert.equal(pack.categories[0].parentId,null);assert.equal(pack.tags[0].domainId,null);assert.equal(pack.tags[0].kind,'topic');
+    assertImportCompatible(store,[pack]);const first=importData(store,{...pack,papers:[...pack.papers,...wordlistPapers(pack)]});
     assert.equal(first.counts.questions.added,2);
     assert.doesNotThrow(()=>assertImportCompatible(store,[validatePack(raw)]));
-    const second=importData(store,{...pack,papers:wordlistPapers(pack)});
+    const second=importData(store,{...pack,papers:[...pack.papers,...wordlistPapers(pack)]});
     assert.equal(second.counts.questions.added,0);assert.equal(second.counts.questions.skipped,2);assert.equal(store.all('papers').length,2);
   }finally{store.db.close();}
 });
@@ -142,20 +145,24 @@ test('multiple packs allow identical shared IDs but reject different incoming me
   const pack=vocabulary(1),copy=structuredClone(pack);
   copy.questions[0]=Object.fromEntries(Object.entries(copy.questions[0]).reverse());
   assert.doesNotThrow(()=>validatePackSet([pack,copy]));
-  for(const mutate of [(p:any)=>{p.questions[0].answerMarkdown='Conflicting answer';},(p:any)=>{p.domains[0].name='Conflicting domain';},(p:any)=>{p.questionBanks[0].description='Conflicting bank';}]){
+  for(const mutate of [(p:any)=>{p.questions[0].answerMarkdown='Conflicting answer';},(p:any)=>{p.domains[0].name='Conflicting domain';},(p:any)=>{p.papers[0].description='Conflicting set';}]){
     const altered=structuredClone(pack),store=new Store(':memory:');mutate(altered);
     try{assert.throws(()=>assertImportCompatible(store,[pack,altered]),/内容包之间存在不同内容的相同ID/);assert.equal(store.all('questions').length,0);assert.equal(store.all('domains').length,0);}
     finally{store.db.close();}
   }
 });
 
-test('raw question study state and duplicate bank IDs cannot enter generic content packs',()=>{
+test('raw question study state and duplicate set IDs cannot enter generic content packs',()=>{
   const withNotes=vocabulary(1);withNotes.questions[0].study={notes:'Personal notes'};assert.throws(()=>validatePack(withNotes),/generic and pending/);
-  const duplicateBank=vocabulary(1);duplicateBank.questionBanks.push(structuredClone(duplicateBank.questionBanks[0]));assert.throws(()=>validatePack(duplicateBank),/Invalid bank/);
+  const duplicateSet=vocabulary(1);duplicateSet.papers.push(structuredClone(duplicateSet.papers[0]));assert.throws(()=>validatePack(duplicateSet),/Invalid content paper/);
+  const retired=vocabulary(1);retired.questionBanks=[{id:'old',name:'Old',questionIds:[retired.questions[0].id]}];assert.throws(()=>validatePack(retired),/Retired collections/);
+  const wrongSnapshot=vocabulary(1);wrongSnapshot.papers[0].snapshot=structuredClone(wrongSnapshot.papers[0].snapshot);wrongSnapshot.papers[0].snapshot[0].answerMarkdown='A different frozen answer';assert.throws(()=>validatePack(wrongSnapshot),/snapshot differs/);
+  const missingMember=vocabulary(1);missingMember.papers[0].questionIds=['MISSING'];assert.throws(()=>validatePack(missingMember),/Invalid content paper/);
 });
 
 test('standalone parts rewrite queried links throughout group questions but preserve local and external destinations',()=>{
   const raw=vocabulary(3),external='https://example.org/#/questions/EXTERNAL-ONLY?answer=1';
+  raw.papers=[];
   raw.questions[0]={...raw.questions[0],type:'group',stemMarkdown:'Read [inside](#/questions/EN-V-000002?answer=1) and [outside](#/questions/EN-V-000003?answer=1).',parts:[
     {id:'p1',title:'Choose a related word',type:'single_choice',stemMarkdown:'Use the linked meanings.',answerMarkdown:'B',explanationMarkdown:`The external reference ${external} is unrelated to local IDs.`,options:[{key:'A',text:'[Other pack](#/questions/EN-V-000003?answer=1)'},{key:'B',text:'[This pack](#/questions/EN-V-000002?answer=1)'}],correctAnswers:['B']},
     {id:'p2',title:'Explain the relation',type:'short_answer',stemMarkdown:'Bare reference: #/questions/EN-V-000003?answer=1',answerMarkdown:'A short explanation.',explanationMarkdown:`See [external](${external}) for an external example.`,options:[],correctAnswers:[]},

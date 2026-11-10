@@ -203,7 +203,7 @@ try {
   await closePreview();
   checks.push('主动更改随机题量或筛选会废弃旧批次及逐题覆盖，草稿恢复不触发该行为');
 
-  await go('#/ai');
+  await go('#/papers/new/ai');
   await page.getByLabel('AI组题要求', { exact: true }).fill('选择两道事务简答题');
   await page.getByRole('checkbox', { name: '手动指定题量', exact: true }).check();
   await page.getByLabel('推荐题量（组合题整组计）', { exact: true }).fill('2');

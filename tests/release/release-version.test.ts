@@ -70,6 +70,10 @@ test('versions normalize an optional v prefix and reject unsafe or unsupported i
 });
 
 test('Android mapping validates minor/patch, positivity and Google Play versionCode ceiling', () => {
+  assert.equal(androidVersionCode('1.0'), 10000);
+  assert.equal(androidVersionCode('1.0.0'), 10000);
+  assert.equal(androidVersionCode('1.0.1'), 10001);
+  assert.equal(androidVersionCode('1.1'), 10100);
   assert.equal(androidVersionCode('1.5'), 10500);
   assert.equal(androidVersionCode('v1.5-rc.1'), 10500);
   assert.equal(androidVersionCode('1.5.0'), 10500);

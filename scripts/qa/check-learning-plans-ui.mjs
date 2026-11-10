@@ -39,7 +39,7 @@ const wait = async (predicate) => {
   throw new Error('condition timed out');
 };
 try {
-  await page.goto(`${origin}/#/settings?tab=daily`);
+  await page.goto(`${origin}/#/settings?tab=review&sub=daily`);
   await page.getByLabel('计划范围', { exact: true }).waitFor();
   assert.equal(await page.getByLabel('计划范围', { exact: true }).inputValue(), 'multi');
   await page.getByRole('button', { name: '添加学习目标', exact: true }).click();

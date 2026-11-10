@@ -116,7 +116,7 @@ export function LearningWeekCard({ compact = false }: { compact?: boolean }) {
             </details>
           )}
           {!week.targetMinutes && (
-            <a className="button" href="#/settings?tab=daily">
+            <a className="button" href="#/settings?tab=review&sub=daily">
               设置学习时间目标
             </a>
           )}

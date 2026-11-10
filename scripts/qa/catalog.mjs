@@ -8,7 +8,7 @@ export const groups = Object.freeze({
   release: '已构建发布产物的隔离验收，不自动构建',
   'content-audit': '既有内容维护操作的只读核对，读取工作数据库，必须显式允许',
   android: '已有设备和专用QA APK的显式原生检查，不进入--all',
-  'local-source': '需要手动指定本地书籍或 PDF，直接运行对应命令',
+  'local-source': '需要手动指定本地书籍、PDF或QA安装包，直接运行对应命令',
 });
 const smoke = new Set([
   'form-save-bar-focus-ui',
@@ -228,6 +228,7 @@ export const catalog = Object.freeze([
     timeoutMs: 900_000,
   }),
   check('release', 'release', { timeoutMs: 900_000 }),
+  check('data-update', 'release', { requirements: ['web-build'], timeoutMs: 900_000 }),
   check('windows', 'release', { platform: 'win32', timeoutMs: 900_000 }),
   ...['common-applied', 'wordlist-kinds'].map((id) =>
     check(id, 'content-audit', { typescript: true, access: 'operator-data' }),
@@ -235,6 +236,18 @@ export const catalog = Object.freeze([
   check('android-functional', 'android', {
     timeoutMs: 1200000,
     requirements: ['android-device', 'android-qa-apk'],
+  }),
+  check('android-update', 'local-source', {
+    timeoutMs: 900_000,
+    requirements: ['android-device'],
+    directArgs: [
+      '--serial',
+      '<设备序列号>',
+      '--baseline-apk',
+      '<基线QA.apk>',
+      '--update-apk',
+      '<新版QA.apk>',
+    ],
   }),
   check('android-layout', 'android', {
     timeoutMs: 900_000,

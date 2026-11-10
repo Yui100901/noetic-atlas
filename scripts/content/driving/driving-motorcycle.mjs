@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 /** Historical official training fragment. Never treats publication date as currency. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -104,7 +105,8 @@ for (let index = 0; index < markers.length; index++) {
   const section = originalId.split('.').slice(0, 2).join('.'); sections[section] = (sections[section] || 0) + 1;
 }
 assert.ok(questions.length >= 150, 'Unexpected parsing loss in pinned official fragment');
-const pack = { schemaVersion: 1, generatedAt: stamp, domains: [domain], categories: [category], tags, questions, assets: [], questionBanks: [{ id: 'bank-driving-official-motorcycle-2022', name: '摩托车·官方历史公开训练片段', description: '实际176题候选，不是完整683题；含过时内容，全部待审核，不直接用于当前备考。', questionIds: questions.map(question => question.id) }], documents: [], papers: [] };
+const pack = { schemaVersion: 1, generatedAt: stamp, domains: [domain], categories: [category], tags, questions, assets: [], questionSets: [{ id: 'bank-driving-official-motorcycle-2022', name: '摩托车·官方历史公开训练片段', description: '实际176题候选，不是完整683题；含过时内容，全部待审核，不直接用于当前备考。', questionIds: questions.map(question => question.id) }], documents: [], papers: [] };
+materializeContentSets(pack);
 const manifest = {
   id: 'driving-motorcycle-official', title: '承德市公安局摩托车公开历史训练片段', generatedAt: stamp,
   source: { url: sourceUrl, publisher: '承德市公安局', publishedAt: '2022-11-11 09:31', retrievedAt: '2026-10-22', bytes: bytes.length, sha256: expectedHash },

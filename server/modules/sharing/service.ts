@@ -17,7 +17,6 @@ import { Store, makeId, now, type Table } from '../../core/store.js';
 import { fail, filtersSchema, parse, types } from '../../core/validation.js';
 import { validateAssetRecord } from '../assets/schema.js';
 import { validateAssetReferences } from '../assets/service.js';
-import { legacyBankPaper } from '../banks/legacy-banks.js';
 import {
   resolveConceptQuestion,
   validateConceptPaperSnapshot,
@@ -523,30 +522,6 @@ export function planShareImport(
   }))
     assertUnique(entries, key);
   const sourceQuestions = new Map(data.questions.map((question) => [question.id, question]));
-  // Older share files may contain reference collections. Fold them into the
-  // same paper graph before ID remapping; never emit or stage a second kind.
-  const occupiedPaperIds = new Set(data.papers.map((paper) => paper.id));
-  for (const bank of data.questionBanks) {
-    let paperId = bank.id;
-    if (occupiedPaperIds.has(paperId) || ['new', 'preview', QUICK_PAPER_ID].includes(paperId)) {
-      const base = `legacy-bank-${createHash('sha256').update(bank.id).digest('hex').slice(0, 24)}`;
-      paperId = base;
-      let suffix = 1;
-      while (occupiedPaperIds.has(paperId)) paperId = `${base}-${suffix++}`;
-    }
-    occupiedPaperIds.add(paperId);
-    data.papers.push(
-      legacyBankPaper(
-        bank,
-        bank.questionIds.map(
-          (qid) =>
-            sourceQuestions.get(qid) || fail(400, 'INCOMPLETE_SHARE', `分享包缺少题目：${qid}`),
-        ),
-        paperId,
-      ),
-    );
-  }
-  data.questionBanks = [];
   const counts: SharePreview['counts'] = {};
   const records: Array<{ table: Table; value: any }> = [];
   const maps = new Map<Table, Map<string, string>>();

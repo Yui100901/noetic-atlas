@@ -65,11 +65,11 @@ try{
 
   const dashboardDaily=()=>page.locator('.learning-next .daily-push-quick-link');
   await go('');await dashboardDaily().getByText('开启每日推荐',{exact:true}).waitFor();
-  assert.equal(await dashboardDaily().getAttribute('href'),'#/settings?tab=daily');
-  await dashboardDaily().click();await page.waitForURL(/#\/settings\?tab=daily/);
+  assert.equal(await dashboardDaily().getAttribute('href'),'#/settings?tab=review&sub=daily');
+  await dashboardDaily().click();await page.waitForURL(/#\/settings\?tab=review&sub=daily/);
   checks.push('知识总览今日学习建议在未开启时提供每日推荐配置入口');
 
-  await go('settings?tab=daily');await page.getByRole('heading',{name:'每日推题与学习计划',exact:true}).waitFor();
+  await go('settings?tab=review&sub=daily');await page.getByRole('heading',{name:'每日推题与学习计划',exact:true}).waitFor();
   assert.equal(await page.getByLabel('复习题目标分值',{exact:true}).inputValue(),'30');assert.equal(await page.getByLabel('新题目标分值',{exact:true}).inputValue(),'20');
   await page.getByLabel('开启每日推题',{exact:true}).check();await page.getByRole('button',{name:'保存系统配置',exact:true}).click();
   assert.equal((await api('/api/settings')).dailyPush.enabled,false,'missing scope must not save');
@@ -126,7 +126,7 @@ try{
   const quickBounds=await dashboardDaily().boundingBox();assert.ok(quickBounds&&quickBounds.width>=120&&quickBounds.height>=40);
   await capture('dashboard-daily-mobile');checks.push('390px总览快捷入口正常换行，按钮尺寸可点击且页面无溢出');
   await go('papers');await recommendation().waitFor();await compactMobileCard();await capture('recommendation-card-mobile');
-  await go('settings?tab=daily');await capture('configuration-mobile');
+  await go('settings?tab=review&sub=daily');await capture('configuration-mobile');
   await page.getByLabel('开启每日推题',{exact:true}).uncheck();await page.getByRole('button',{name:'保存系统配置',exact:true}).click();await page.getByRole('region',{name:'系统配置保存操作',exact:true}).getByText('系统配置已保存',{exact:true}).waitFor();
   overview=await api('/api/daily-push');assert.equal(overview.config.enabled,false);assert.equal(overview.today.paperId,today.paperId);
   await go('papers');await recommendation().getByRole('link',{name:'打开今日题集',exact:true}).waitFor();await compactMobileCard();await capture('disabled-existing-mobile');

@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -81,7 +82,8 @@ const tagIds = new Set(questions.flatMap(q => q.tagIds));
 const tags = seed.tags.filter(t => tagIds.has(t.id));
 if (tags.length !== tagIds.size) throw new Error('Unknown tag in computer extension');
 const typeCounts = Object.fromEntries([...new Set(questions.map(q => q.type))].map(type => [type, questions.filter(q => q.type === type).length]));
-const pack = { schemaVersion: 1, generatedAt, domains: seed.domains.filter(d => d.id === 'computer-science'), categories: seed.categories.filter(c => categoryIds.has(c.id)), tags, questions, questionBanks: [{ id: 'bank-cs-extension-202610', name: '计算机·机制与边界扩展', description: '20 个专题，含简答场景、单选、多选、判断、填空；独立编写，待用户审核。', questionIds: questions.map(q => q.id) }], documents: [], papers: [] };
+const pack = { schemaVersion: 1, generatedAt, domains: seed.domains.filter(d => d.id === 'computer-science'), categories: seed.categories.filter(c => categoryIds.has(c.id)), tags, questions, questionSets: [{ id: 'bank-cs-extension-202610', name: '计算机·机制与边界扩展', description: '20 个专题，含简答场景、单选、多选、判断、填空；独立编写，待用户审核。', questionIds: questions.map(q => q.id) }], documents: [], papers: [] };
+materializeContentSets(pack);
 const manifest = { id: 'computer-extension-202610', name: '计算机机制与边界题库扩展', generatedAt, license: 'Project-authored', redistribution: '题干、备选项和中文答案解析由本项目独立编写；不导入第三方商业题库，不将官方文档本身的许可证据为己有。后续发布可随项目自编内容使用条款分发。', sourceUse: '引用官方规范与维护者文档核对事实并供读者深入阅读；无整页或长段复制。', totalQuestions: questions.length, typeCounts, reviewStatus: 'pending', quality: { subjectiveQuestions: 120, individuallyAuthoredFollowups: focusedFollowupCount, distinctFollowupQuestions: focusedFollowupQuestions.size, specificValidationExamples: focusedFollowupCount, scope: '120道简答全部按该题机制配置独立追问、回答与具体输入/预期观察；不使用专题通用并发排错话术替代。示例为学习验证方案，未宣称全部已在本机执行。' }, duplicatePolicy: '与现有 seed 及本包进行 NFKC+忽略常见标点的标题去重；同领域概念仍可能存在不同题型和视角的重合，需用户审核。', difficultyPolicy: '1=术语/直接识别，2=机制辨析，3=场景及失败边界；depth 独立表示要求的说明深度。', frequencyPolicy: '1-3 是专题内编辑建议优先级，非网络统计或实际招聘发生概率。', topics: summaries, sources: [...sources.values()], rebuild: 'node scripts/content/computer/computer.mjs', output: 'data/content-packs/computer-expansion.json' };
 await fs.mkdir(path.join(root, 'data/content-packs'), { recursive: true });
 await fs.mkdir(path.join(root, 'data/content-sources'), { recursive: true });

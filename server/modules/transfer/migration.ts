@@ -18,7 +18,6 @@ import { questionDraftSchema, questionRevisionSchema, validateQuestionDraft, val
 import { paperDraftSchema, validatePaperDraft } from '../practice/paper-drafts.js';
 import type { PaperDraftState } from '../../../shared/practice/paper-drafts.js';
 import { cleanLearningEnvelope } from '../../../shared/questions/learning-records.js';
-import { cleanLegacyBankFilters, legacyBankPaper, legacyBankPaperId, migrateLegacyBanks } from '../banks/legacy-banks.js';
 import { studyPartKey } from '../../../shared/questions/study-state.js';
 import { learningResultSchema, validateLearningResult, migrateLearningResults } from '../practice/learning-results.js';
 import { validateConceptPaperSnapshot } from '../practice/concept-practice.js';
@@ -63,7 +62,7 @@ const envelopeSchema = z.object({
   focusSessions: z.array(focusSessionSchema).default([]),
   documentVersions: z.array(documentVersionSchema).default([]),
   learningDays:z.array(learningDaySchema).default([]),learningTaskResults:z.array(learningTaskResultSchema).default([]),
-  questionBanks: z.array(questionBankSchema.safeExtend({ id })).default([]),
+  questionBanks: z.array(questionBankSchema.safeExtend({ id })).max(0, '题库集合格式已移除，请使用题集格式').default([]),
   settings: z.array(settingsSchema).max(1).default([]), assets: z.array(assetRecordSchema).default([]),
   paperDrafts: z.array(paperDraftSchema).default([]),
   documentDrafts: z.array(documentDraftSchema).default([]),
@@ -80,19 +79,14 @@ export const migrationDataKey = (table: Table) => table === 'document_versions' 
 const dataKey = migrationDataKey;
 const recordKey = (table: Table, record: any) => table === 'study' ? record.questionId : table === 'study_parts' ? studyPartKey(record.questionId, record.partId) : record.id;
 
-/** Keep legacy normalization identical for JSON and manifest package imports. */
+/** Apply the same content normalization to internal and manifest imports. */
 export const migrationEnvelopeSchema = z.preprocess(
-  raw => cleanLegacyBankFilters(cleanLearningEnvelope(raw)),
+  cleanLearningEnvelope,
   envelopeSchema,
 );
 
 export function exportData(store: Store) {
-  const papers = store.all<StoredPaper>('papers');
-  for (const bank of store.all<any>('question_banks')) {
-    const target = legacyBankPaperId(store, bank.id);
-    if (!target.existing) papers.push(legacyBankPaper(bank, bank.questionIds.map((qid: string) => store.require<Question>('questions', qid)), target.id));
-  }
-  return { schemaVersion: 1, exportedAt: now(), ...Object.fromEntries(tables.map(table => [dataKey(table), table === 'question_banks' ? [] : table === 'papers' ? papers : store.all(table)])) };
+  return { schemaVersion: 1, exportedAt: now(), ...Object.fromEntries(tables.map(table => [dataKey(table), store.all(table)])) };
 }
 export function importData(store: Store, raw: unknown) {
   if (raw && typeof raw === 'object' && Object.hasOwn(raw, 'format')) fail(400, 'CONTENT_IMPORT_PURPOSE_MISMATCH', '此入口只接受可信迁移备份。分享包或新增题目包请使用对应导入入口，新增题目仍须审核');
@@ -145,7 +139,7 @@ export function importData(store: Store, raw: unknown) {
     for(const question of data.questions) if(newQuestionIds.has(question.id)) validateDocumentCitations(store,question,true,sourceCache);
     for(const paper of data.papers)for(const question of paper.snapshot||[])validateDocumentCitations(store,question,true,sourceCache);
     for(const attempt of data.attempts)for(const question of attempt.questions)validateDocumentCitations(store,question,true,sourceCache);
-    store.normalizeLegacyTags(); store.validateTaxonomyReferences();
+    store.validateTaxonomyReferences();
     validateDailyPushConfiguration(store, getSettings(store).dailyPush);
     const papers: StoredPaper[] = [];
     for (const p of data.papers) {
@@ -174,13 +168,6 @@ export function importData(store: Store, raw: unknown) {
     }
     insert('papers', papers);
     insert('daily_pushes', data.dailyPushes);
-    for (const bank of data.questionBanks) {
-      for (const qid of bank.questionIds) store.require('questions', qid);
-      if (!store.get('question_banks', bank.id)) store.insert('question_banks', bank.id, bank);
-    }
-    const paperCountBefore = store.all('papers').length;
-    migrateLegacyBanks(store);
-    result.papers!.added += store.all('papers').length - paperCountBefore;
     for (const draft of data.paperDrafts) validatePaperDraft(store, draft.state as PaperDraftState, { allowUnpublished: true });
     insert('paper_drafts', data.paperDrafts);
     for (const draft of data.documentDrafts) if (!store.get('document_drafts', draft.id)) validateDocumentDraftState(store, draft.state, true);

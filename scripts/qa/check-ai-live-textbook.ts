@@ -163,7 +163,7 @@ try {
 
   let generatedRun: any, imported: any;
   await step('pdf_local_extract_and_textbook_generation_preview', async () => {
-    await page.goto(origin + '/#/ai?tab=import'); await page.waitForLoadState('networkidle');
+    await page.goto(origin + '/#/sharing?tab=import'); await page.waitForLoadState('networkidle');
     const input = page.getByLabel('AI导入原始文件', { exact: true });
     await input.setInputFiles(fullPath);
     await page.getByRole('alert').filter({ hasText: /最多150页/ }).waitFor();

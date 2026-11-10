@@ -42,19 +42,14 @@ export function settingsSubsections(tab: SettingsTab): readonly { id: string; la
 }
 
 export function readSettingsRoute(hash: string): SettingsRoute {
-  const [path, query] = hash.replace(/^#\/?/, '').split('?');
+  const [, query] = hash.replace(/^#\/?/, '').split('?');
   const params = new URLSearchParams(query);
-  const requested = path === 'data' ? 'backup' : params.get('tab');
-  if (requested === 'daily') return { tab: 'review', sub: 'daily' };
+  const requested = params.get('tab');
   const tab = SETTINGS_SECTIONS.some((item) => item.id === requested)
     ? (requested as SettingsTab)
     : 'general';
   const subsections = settingsSubsections(tab),
-    rawSub = params.get('sub'),
-    sub =
-      tab === 'backup' && ['content', 'backup', 'configuration'].includes(rawSub || '')
-        ? 'migration'
-        : rawSub;
+    sub = params.get('sub');
   return {
     tab,
     sub:
@@ -73,19 +68,14 @@ export function settingsHref(tab: SettingsTab, sub?: string): string {
 /** Only real settings destinations may bypass unsaved-change confirmation. */
 export function isSettingsNavigation(hash: string): boolean {
   const [path, query] = hash.replace(/^#\/?/, '').split('?');
-  if (path !== 'settings' && path !== 'data') return false;
+  if (path !== 'settings') return false;
   const params = new URLSearchParams(query),
     tab = params.get('tab');
   if ([...params.keys()].some((key) => !['tab', 'sub'].includes(key))) return false;
-  if (path === 'data' && tab && tab !== 'backup') return false;
-  if (tab && tab !== 'daily' && !SETTINGS_SECTIONS.some((item) => item.id === tab)) return false;
+  if (tab && !SETTINGS_SECTIONS.some((item) => item.id === tab)) return false;
   const route = readSettingsRoute(hash),
     sub = params.get('sub');
-  return (
-    !sub ||
-    (route.tab === 'backup' && ['content', 'backup', 'configuration'].includes(sub)) ||
-    settingsSubsections(route.tab).some((item) => item.id === sub)
-  );
+  return !sub || settingsSubsections(route.tab).some((item) => item.id === sub);
 }
 
 export function isSystemSettingsRoute({ tab, sub }: SettingsRoute): boolean {

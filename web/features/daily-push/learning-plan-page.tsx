@@ -76,7 +76,7 @@ export function LearningPlanPage({ id }: { id: string }) {
               <RefreshCw size={15} />
               刷新进度
             </button>
-            <a className="button" href="#/settings?tab=daily">
+            <a className="button" href="#/settings?tab=review&sub=daily">
               <Settings2 size={15} />
               调整计划
             </a>

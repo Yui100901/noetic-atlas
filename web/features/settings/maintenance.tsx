@@ -73,7 +73,7 @@ export function DataMaintenance({ view = 'all' }: { view?: MaintenanceView }) {
               <p className="muted">先检查与预览，再决定维护范围。</p>
             </div>
             <div className="action-row">
-              <a className="button" href="#/settings?tab=backup&sub=backup">
+              <a className="button" href="#/settings?tab=backup&sub=migration">
                 导出或恢复备份
               </a>
               <button className="button" disabled={busy || health.loading} onClick={refresh}>

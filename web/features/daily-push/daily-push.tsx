@@ -117,7 +117,7 @@ export function DailyPushQuickLink() {
   const action = today ? progressAction(today) : null;
   if(overview?.plan)return <a className="button feature-entry daily-push-quick-link" href={planHref(overview.plan.id)}><CalendarDays size={16}/>今日学习计划 · {overview.plan.progress.completed}/{overview.plan.progress.total}项<ArrowRight size={15}/></a>;
   const disabled = !!overview && !overview.config.enabled;
-  const target = action?.target || (disabled ? '#/settings?tab=daily' : '#/papers');
+  const target = action?.target || (disabled ? '#/settings?tab=review&sub=daily' : '#/papers');
   const label = action?.label || (disabled ? '开启每日推荐' : '查看每日推荐');
   return <a className="button feature-entry daily-push-quick-link" href={target} aria-label={label} onClick={() => { if (action && today) void markRead(today).catch(() => {}); }}><CalendarDays size={16} /><span className="daily-push-quick-copy"><span>{label}</span>{today?.progress && <span className="daily-push-quick-progress" aria-label="每日推荐作答进度"><span>{progressText(today.progress)}</span>{today.progress.status !== 'unavailable' && (today.progress.detailsAvailable ? <span title="已覆盖分值是已填写题目的满分合计，并非实际得分。">{coverageText(today.progress)}{today.progress.pendingGradingCount > 0 ? ` · 待判 ${today.progress.pendingGradingCount} 题` : ''}</span> : <span>作答明细已清理或重置</span>)}</span>}</span></a>;
 }
@@ -147,9 +147,9 @@ export function DailyPushCard() {
     <div className="daily-push-card-copy"><div><strong>每日推荐</strong>{today && <span className="daily-push-card-date">{today.dateKey}</span>}{today && !today.readAt && <span className="badge">新推送</span>}</div><p>{description}</p>{today?.progress && <DailyProgressDisplay progress={today.progress} />}{overview?.config.goals?.length&&today?<p className="daily-push-card-hint">今天沿用已生成的推荐，多目标安排从后续日期生效。</p>:null}{unavailable && <p className="daily-push-card-hint">{unavailable}</p>}{error && <p className="daily-push-card-error" role="alert">{error}</p>}</div>
     <div className="daily-push-card-actions">{action && attemptAction && <a className="button primary" href={action.target} onClick={read}>{action.label}<ArrowRight size={15} /></a>}{today?.progress?.resumeAttemptId && action?.target !== href('attempts', today.progress.resumeAttemptId) && <a className="button" href={href('attempts', today.progress.resumeAttemptId)} onClick={read}>继续今日推荐</a>}{today?.paperId && today.paperAvailable
       ? <a className={`button ${!attemptAction ? 'primary' : ''}`} href={href('papers', today.paperId)} onClick={read}>打开今日题集<ArrowRight size={15} /></a>
-      : !action && overview && !overview.config.enabled && <a className="button primary" href="#/settings?tab=daily">开启每日推荐<ArrowRight size={15} /></a>}
+      : !action && overview && !overview.config.enabled && <a className="button primary" href="#/settings?tab=review&sub=daily">开启每日推荐<ArrowRight size={15} /></a>}
       <button className="icon-button" type="button" disabled={checking || loading && !overview} aria-label="检查今日推荐" title="检查今日推荐" onClick={() => { void check(); }}><RefreshCw size={17} className={checking ? 'daily-push-checking' : ''} /></button>
-      <a className="icon-button" href="#/settings?tab=daily" aria-label="设置每日推荐" title="设置每日推荐"><Settings2 size={17} /></a>
+      <a className="icon-button" href="#/settings?tab=review&sub=daily" aria-label="设置每日推荐" title="设置每日推荐"><Settings2 size={17} /></a>
     </div>
   </section>;
 }

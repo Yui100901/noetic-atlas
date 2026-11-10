@@ -10,6 +10,7 @@ import { ApiError, parse, questionSchema } from '../../server/core/validation.js
 import { registerAiRoutes } from '../../server/modules/ai/routes.js';
 import { registerApiDocs } from '../../server/http/openapi.js';
 import { buildApp } from '../../server/index.js';
+import { listenOnLoopback } from '../../server/http/loopback.js';
 import { buildPaper, createAttempt, submitAttempt } from '../../server/modules/practice/service.js';
 import {
   subscribeNativeAiProgress,
@@ -145,7 +146,17 @@ async function fixture(
       );
     }
   });
-  await new Promise<void>((resolve) => provider.listen(0, '127.0.0.1', resolve));
+  await listenOnLoopback(
+    (port) =>
+      new Promise<void>((resolve, reject) => {
+        const failed = (error: Error) => reject(error);
+        provider.once('error', failed);
+        provider.listen(port, '127.0.0.1', () => {
+          provider.off('error', failed);
+          resolve();
+        });
+      }),
+  );
   t.after(async () => {
     // Own the clients as well as the servers: an assertion can fail while its
     // SSE reader is still open. Teardown must cancel that request immediately
@@ -175,7 +186,7 @@ async function fixture(
     },
   });
   assert.equal(enabled.statusCode, 200, enabled.body);
-  await app.listen({ port: 0, host: '127.0.0.1' });
+  await listenOnLoopback((port) => app.listen({ port, host: '127.0.0.1' }));
   const origin = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   const post = (path: string, body: unknown, extra: RequestInit = {}) => {
     const client = new AbortController();

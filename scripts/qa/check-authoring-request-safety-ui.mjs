@@ -46,7 +46,7 @@ try {
   });
   await page.route('**/api/ai/runs/B', (route) => route.fulfill({ json: runs[1] }));
   const openHistory = async () => {
-    await page.goto(`${origin}/#/ai?tab=history`);
+    await page.goto(`${origin}/#/analytics?tab=ai&mode=all`);
     await page.locator('.ai-history-item').nth(1).waitFor();
   };
   const startA = async (failure = false) => {

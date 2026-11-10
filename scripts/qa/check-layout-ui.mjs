@@ -145,17 +145,17 @@ try {
     await page.screenshot({ path: resolve(output, name + '.png'), fullPage: !name.startsWith('handbook-') });
   };
   const routes = [
-    ['overview', ''], ['settings', 'settings'], ['settings-daily', 'settings?tab=daily'],
+    ['overview', ''], ['settings', 'settings'], ['settings-daily', 'settings?tab=review&sub=daily'],
     ['settings-ai', 'settings?tab=ai'], ['settings-backup', 'settings?tab=backup'], ['settings-assets', 'settings?tab=assets'],
     ['questions', 'questions'], ['question-detail', 'questions/LAYOUT-0'], ['question-editor', 'questions/LAYOUT-1/edit'],
-    ['question-import', 'questions/import'], ['question-review', 'questions/review'],
+    ['question-import', 'sharing?tab=template'], ['question-review', 'questions/review'],
     ['papers', 'papers'], ['paper-detail', 'papers/' + state.paperId],
     ['paper-editor', 'papers/' + state.paperId + '/edit'], ['paper-random', 'papers/new/random'],
     ['attempt', 'attempts/' + state.draftId], ['attempt-review', 'attempts/' + state.submittedId],
     ['quick', 'quick'], ['review-queue', 'learning/due'],
     ['documents', 'documents'], ['document-detail', 'documents/' + state.documentId], ['document-editor', 'documents/' + state.documentId + '/edit'],
     ['taxonomy', 'taxonomy'], ['search', 'search?q=事务'], ['analytics', 'analytics'], ['weekly', 'analytics?tab=weekly'],
-    ['sharing', 'sharing'], ['ai', 'ai?tab=paper'],
+    ['sharing', 'sharing'], ['ai', 'papers/new/ai'],
   ];
   // Derive the full settings inventory from product navigation so newly split
   // settings panels cannot silently disappear from responsive regression QA.
@@ -181,7 +181,7 @@ try {
     ['document-source','documents/'+state.documentId+'/source?version='+state.docVersion+'&start=0&end=20'],
     ['pdf-source','documents/'+state.pdfDocumentId+'/source?version='+state.pdfVersion+'&page=1'],
     ['focus-review','focus-review/'+state.focusId],['daily-plan','daily-plan/'+state.planId],
-    ['ai-import','ai?tab=import'],['ai-documents','ai?tab=documents'],['ai-history','ai?tab=history'],
+    ['ai-import','sharing?tab=import'],['ai-documents','sharing?tab=documents'],['ai-history','analytics?tab=ai&mode=all'],
     ['analytics-day','analytics?mode=day'],['analytics-month','analytics?mode=month'],['analytics-custom','analytics?mode=custom'],['analytics-year','analytics?mode=year'],['handbook','help']
   );
   if(full)for(const id of ['CHOICE','MULTI','FILL','GROUP','CONCEPT','WORD'])routes.push(['question-'+id.toLowerCase(),'questions/LAYOUT-'+id],['editor-'+id.toLowerCase(),'questions/LAYOUT-'+id+'/edit']);
@@ -206,7 +206,7 @@ try {
     }
   }
   checks.push(routes.length+'个页面/状态在1440、1024、390、320宽度检查横向溢出、卡片/操作间距与重复头部动作');
-  if(full){for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const route of ['','questions','questions/review','content-quality','papers','documents','taxonomy','sharing','ai','ai?tab=import','ai?tab=documents','ai?tab=history','analytics','settings','help']){await go(route,state.emptyOrigin);await geometry('empty-'+(route||'overview')+'-'+width);}}checks.push('15个空库页面在桌面和手机验证首次使用布局及唯一操作入口');}
+  if(full){for(const width of [1440,390]){await page.setViewportSize({width,height:1000});for(const route of ['','questions','questions/review','content-quality','papers','documents','taxonomy','sharing','papers/new/ai','sharing?tab=import','sharing?tab=documents','analytics?tab=ai&mode=all','analytics','settings','help']){await go(route,state.emptyOrigin);await geometry('empty-'+(route||'overview')+'-'+width);}}checks.push('15个空库页面在桌面和手机验证首次使用布局及唯一操作入口');}
   for (const theme of ['green', 'dark', 'pink', 'sky', 'mint']) {
     const settings = await api('/api/settings');
     await api('/api/settings', 'PUT', { settings: { ...settings, theme } });

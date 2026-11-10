@@ -1,3 +1,4 @@
+import { materializeContentSets } from '../question-sets.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -194,9 +195,10 @@ const pack = {
   schemaVersion: 1, generatedAt,
   domains: [{ id: 'chemistry', name: '化学', description: '日常、工业、食品与材料中的化学物质、性质、反应和用途。', sortOrder: 5 }],
   categories, tags, questions,
-  questionBanks: [{ id: 'bank-chemistry-organic-202610', name: '有机、食品与材料化学120卡', description: '常见烃、溶剂、羧酸酯、糖与食品组分、聚合物及生活配方；生成时待审核。', questionIds: questions.map(question => question.id) }],
+  questionSets: [{ id: 'bank-chemistry-organic-202610', name: '有机、食品与材料化学120卡', description: '常见烃、溶剂、羧酸酯、糖与食品组分、聚合物及生活配方；生成时待审核。', questionIds: questions.map(question => question.id) }],
   documents: [], papers: []
 };
+materializeContentSets(pack);
 const output = `${JSON.stringify(pack, null, 2)}\n`;
 const manifest = {
   id: 'chemistry-organic-202610', name: '有机、食品与材料化学通识卡', generatedAt, totalQuestions: questions.length, typeCounts: { short_answer: questions.length }, reviewStatus: 'pending', collection: 'general',

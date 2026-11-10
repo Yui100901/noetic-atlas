@@ -128,7 +128,7 @@ export function LearningPlanCard({
           查看计划
           <ArrowRight size={15} />
         </a>
-        <a className="button" href="#/settings?tab=daily">
+        <a className="button" href="#/settings?tab=review&sub=daily">
           <Settings2 size={15} />
           调整计划
         </a>

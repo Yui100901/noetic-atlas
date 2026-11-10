@@ -12,29 +12,25 @@ import {
   resetSettingsSection,
 } from '../../web/features/settings/settings-state.js';
 
-test('settings deep links resolve established entry points and new nested categories', () => {
+test('settings deep links use the published section and subsection paths', () => {
   assert.deepEqual(readSettingsRoute('#/settings'), { tab: 'general', sub: '' });
   assert.deepEqual(readSettingsRoute('#/settings?tab=practice'), { tab: 'practice', sub: '' });
-  assert.deepEqual(readSettingsRoute('#/settings?tab=daily'), { tab: 'review', sub: 'daily' });
+  assert.deepEqual(readSettingsRoute('#/settings?tab=review&sub=daily'), {
+    tab: 'review',
+    sub: 'daily',
+  });
   assert.deepEqual(readSettingsRoute('#/settings?tab=backup'), { tab: 'backup', sub: 'migration' });
-  assert.deepEqual(readSettingsRoute('#/data'), { tab: 'backup', sub: 'migration' });
   for (const sub of ['migration', 'health', 'cleanup', 'reset']) {
     assert.deepEqual(readSettingsRoute(settingsHref('backup', sub)), { tab: 'backup', sub });
   }
-  for (const sub of ['content', 'backup', 'configuration'])
-    assert.deepEqual(readSettingsRoute(settingsHref('backup', sub)), {
-      tab: 'backup',
-      sub: 'migration',
-    });
 });
 
 test('only recognized internal settings destinations bypass the unsaved guard', () => {
   for (const path of [
     '#/settings',
-    '#/data',
     '#/settings?tab=ai',
     '#/settings?tab=assets&sub=files',
-    '#/settings?tab=daily',
+    '#/settings?tab=review&sub=daily',
     '#/settings?tab=review&sub=scheduler',
   ])
     assert.equal(isSettingsNavigation(path), true, path);
@@ -46,6 +42,11 @@ test('only recognized internal settings destinations bypass the unsaved guard', 
     '#/settings?redirect=home',
     '#/questions',
     '#/data?tab=ai',
+    '#/data',
+    '#/settings?tab=daily',
+    '#/settings?tab=backup&sub=configuration',
+    '#/settings?tab=backup&sub=content',
+    '#/settings?tab=backup&sub=backup',
   ])
     assert.equal(isSettingsNavigation(path), false, path);
 });

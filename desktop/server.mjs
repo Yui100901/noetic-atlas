@@ -22,13 +22,14 @@ process.on('message', async message => {
     mkdirSync(dataDirectory, { recursive: true });
     const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
     const { buildApp } = await import(pathToFileURL(join(serverRoot, 'dist', 'server', 'index.js')).href);
+    const { listenOnLoopback } = await import(pathToFileURL(join(serverRoot, 'dist', 'server', 'http', 'loopback.js')).href);
     const { createNodeTaskManager } = await import(pathToFileURL(join(serverRoot, 'dist', 'server', 'modules', 'tasks', 'node-manager.js')).href);
     if (closing) return;
     delete process.env.SEED_PATH;
     const databasePath = join(dataDirectory, 'noetic-atlas.sqlite');
     app = await buildApp({ databasePath, staticRoot: join(serverRoot, 'dist', 'web'), logger: false, taskFactory: store => createNodeTaskManager(store, databasePath) });
     if (closing) { await app.close(); return; }
-    await app.listen({ port: 0, host: '127.0.0.1' });
+    await listenOnLoopback(port => app.listen({ port, host: '127.0.0.1' }));
     const address = app.server.address();
     if (!address || typeof address === 'string') throw new Error('Invalid local address');
     if (process.connected) process.send({ type: 'ready', port: address.port });

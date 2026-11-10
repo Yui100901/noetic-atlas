@@ -37,15 +37,15 @@ try{
  await page.reload();await page.getByRole('navigation',{name:'手册目录'}).waitFor();assert.deepEqual(external,[]);checks.push('相关规则文档在应用内切换并返回，顶部帮助入口有效；390px布局、刷新和内置阅读无外网请求');
  await page.setViewportSize({width:1440,height:1000});
  const aiLinks=()=>page.locator('a[href="#/settings?tab=ai"]');
- const routes=['questions/EDIT-S/edit','questions/EDIT-S','ai','ai?tab=import','ai?tab=documents','ai?tab=history'];
+ const routes=['questions/EDIT-S/edit','questions/EDIT-S','papers/new/ai','sharing?tab=import','sharing?tab=documents','analytics?tab=ai&mode=all'];
  for(const route of routes){await go(route);assert.equal(await aiLinks().count(),0,'enabled AI configuration link on '+route);}
  assert.equal((await api('/api/ai/settings')).maxTokens,4096);checks.push('AI启用后编辑、单题解析、推荐、普通导入、教材分批和处理记录均隐藏配置入口，已保存4096配置不被新默认覆盖');
  const {hasKey,...current}=await api('/api/ai/settings');await api('/api/ai/settings','PUT',{...current,enabled:false});
  await go('questions/EDIT-S/edit');await page.getByRole('link',{name:'配置 AI 辅助',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'分析当前题目',exact:true}).isDisabled(),true);
  for(const route of ['papers/new/ai','sharing?tab=import','sharing?tab=import&process=batch']){await go(route);await page.getByRole('link',{name:'配置 AI 辅助',exact:true}).waitFor();assert.equal(await aiLinks().count(),1,'disabled AI configuration entry on '+route);}
- await go('ai?tab=history');assert.match(page.url(),/#\/analytics\?/);await page.getByRole('tab',{name:/AI\s*用量与处理记录/}).waitFor();assert.equal(await aiLinks().count(),0,'read-only history does not duplicate configuration actions');
+ await go('analytics?tab=ai&mode=all');assert.match(page.url(),/#\/analytics\?/);await page.getByRole('tab',{name:/AI\s*用量与处理记录/}).waitFor();assert.equal(await aiLinks().count(),0,'read-only history does not duplicate configuration actions');
  await go('papers/new/ai');await page.getByRole('link',{name:'配置 AI 辅助',exact:true}).click();await page.getByLabel('最大输出 Token',{exact:true}).waitFor();assert.equal(await page.getByLabel('最大输出 Token',{exact:true}).inputValue(),'4096');await capture('ai-disabled-settings');
- const {hasKey:unused,...off}=await api('/api/ai/settings');await api('/api/ai/settings','PUT',{...off,enabled:true});await go('ai');assert.equal(await aiLinks().count(),0);checks.push('AI关闭时编辑/推荐/单次/分批保留唯一配置提示且编辑分析禁用；历史转至只读综合统计，配置链接可达且重开后隐藏');
+ const {hasKey:unused,...off}=await api('/api/ai/settings');await api('/api/ai/settings','PUT',{...off,enabled:true});await go('papers/new/ai');assert.equal(await aiLinks().count(),0);checks.push('AI关闭时编辑/推荐/单次/分批保留唯一配置提示且编辑分析禁用；历史转至只读综合统计，配置链接可达且重开后隐藏');
  const state=await api('/qa/ai-question-edit');assert.equal(state.requests.length,0);assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  const report={passed:checks.length,checks,errors,external,database:':memory:',provider:'loopback-only',aiCalls:state.requests.length};await writeFile(resolve(folder,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){await page?.screenshot({path:resolve(folder,'failure.png'),fullPage:true}).catch(()=>{});await writeFile(resolve(folder,'failure.json'),JSON.stringify({error:String(error.stack||error),checks,errors,external,stderr,url:page?.url()},null,2));throw error;}

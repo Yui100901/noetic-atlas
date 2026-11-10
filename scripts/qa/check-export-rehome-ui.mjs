@@ -33,12 +33,12 @@ try {
     await page.locator('.sidebar nav').getByRole('link', { name: '综合统计', exact: true }).count(),
     1,
   );
-  await goto('ai?tab=import');
+  await goto('sharing?tab=import');
   await page.waitForURL(/#\/sharing\?/);
   await page.getByLabel('待转换文本', { exact: true }).waitFor();
   await page.getByRole('button', { name: '教材分批出题', exact: true }).click();
   await page.getByLabel('AI分批原始文件', { exact: true }).waitFor({ state: 'attached' });
-  await goto('questions/import');
+  await goto('sharing?tab=template');
   await page.waitForURL(/#\/sharing\?tab=template/);
   await page.getByRole('button', { name: '下载新增题目模板包（ZIP）', exact: true }).waitFor();
   checks.push('侧栏移除AI工作台，原始资料与模板在导入中心，旧书签跳转到实际功能');
@@ -124,7 +124,7 @@ try {
   );
   await page.getByRole('link', { name: '前往 SQLite 迁移', exact: true }).click();
   await page.waitForURL(/sub=migration/);
-  await goto('settings?tab=backup&sub=backup');
+  await goto('settings?tab=backup&sub=migration');
   await page.getByRole('heading', { name: '数据迁移', exact: true }).waitFor();
   assert.equal(await page.getByLabel('选择 ZIP 数据包', { exact: true }).count(), 0);
   checks.push('设置合并为SQLite迁移，内容分享转至导入中心，旧配置包提示重新使用SQLite迁移');

@@ -80,7 +80,7 @@
 - `POST /api/papers`、`PUT /api/papers/:id`：手动卷使用 questionIds；随机卷使用 filters、count 或 scoring。领域专项需 `organization:'domain',domainId`，其他卷使用 other。可选 `gradingRequirements` 为经trim的0—10000字符全卷补充要求；创建时省略或空白均无附加要求，编辑时省略保留，显式空字符串／空白清除。`questionGradingRequirements`以作答项ID为key：省略key沿用原题标准，显式字符串仅覆盖本集，空字符串本集清空。组合主观小题使用`原题ID::小题ID`，客观题或非成员ID不接受覆盖。修改创建新版本，不修改已开始作答的快照。
 - `POST /api/papers/preview`：同一组题结构，返回`PaperPreview`而不保存；含题集摘要、`previewQuestions`当前页完整题目与答案解析、逐题标准、`inheritedGradingRequirements`、全部所选原题`questionVersions`及`previewPage/previewPageSize/previewTotal`。默认每页10个整题单位，`previewPageSize`支持5／10／20；公共材料与小题同页。随机首次预览返回具体选题，后续翻页或保存传`previewQuestionIds`锁定同一批ID和顺序，配合`expectedQuestionVersions`校验原题版本；服务器仍核对筛选范围和计分约束，失效返回冲突，不悄悄重新抽题。候选不足、无精确分值组合或展开后超限时拒绝，不静默放宽条件。
 - `DELETE /api/papers/:id`：归档；加 `?permanent=true` 永久删除源卷，保留作答快照。
-- `POST /api/papers/:id/restore`：显式 `{confirmed:true}` 恢复非空且全部成员已发布的归档题集。首次恢复未经编辑的旧集合无分题集时刷新已审核快照并产生新版本；其他恢复保留原快照、版本和分值。已有作答不受影响。
+- `POST /api/papers/:id/restore`：显式 `{confirmed:true}` 恢复非空且全部成员已发布的归档题集，保留原快照、版本和分值。已有作答不受影响，不因历史来源元数据而自动刷新内容。
 - `GET /api/paper-drafts?context=...`：最近组题草稿数组，按 updatedAt 排序。
 - `POST /api/paper-drafts`：`{context,state:PaperDraftState}`，保存新的组题草稿并按 context 裁剪最近 maxPaperDrafts 份。
 - `PUT /api/paper-drafts/:id`：`{expectedUpdatedAt,state}`，继续原草稿时覆盖同一 ID，版本不符返回 `PAPER_DRAFT_VERSION_CONFLICT`。

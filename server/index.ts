@@ -14,7 +14,6 @@ import { resolve, join } from 'node:path';
 import { Store, now } from './core/store.js';
 import { importData } from './modules/transfer/migration.js';
 import { registerExportRoutes } from './modules/transfer/exports.js';
-import { migrateLegacyBanks } from './modules/banks/legacy-banks.js';
 import { registerQuestionImportRoutes } from './modules/questions/import-routes.js';
 import { registerSettingsRoutes } from './modules/settings/routes.js';
 import { ensureSettings, getSettings } from './modules/settings/service.js';
@@ -79,7 +78,7 @@ export async function buildApp(options: AppOptions = {}) {
       importData(store, JSON.parse(readFileSync(seedPath, 'utf8')));
       store.database.run(store.database.query.insertInto('metadata').values({key:'seed_initialized',value:now()}).onConflict(c=>c.column('key').doUpdateSet({value:now()})));
     }
-    const migrated = store.transaction(() => { store.normalizeLegacyTags(); if(store.database.startupValidation.pending())store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const migrated = migrateLegacyBanks(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); const retired=retireMissingSourceIssues(store)+retireMissingExplanationIssues(store),quality=migrateFeedbackQualityIssues(store);validateStartupAssetReferences(store);store.database.startupValidation.complete(); return store.database.schemaChanged || migrated || learning > 0 || history>0 || retired>0 || quality>0; });
+    const migrated = store.transaction(() => { if(store.database.startupValidation.pending())store.validateTaxonomyReferences(); ensureSettings(store); ensureAiStorage(store); const learning = migrateLearningResults(store),history=migrateQuestionHistory(store); const retired=retireMissingSourceIssues(store)+retireMissingExplanationIssues(store),quality=migrateFeedbackQualityIssues(store);validateStartupAssetReferences(store);store.database.startupValidation.complete(); return store.database.schemaChanged || learning > 0 || history>0 || retired>0 || quality>0; });
     if (migrated) options.onDataMigrated?.();
     store.database.projections.refreshAll();
   } catch (error) { store.db.close(); throw error; }

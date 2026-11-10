@@ -99,6 +99,7 @@ test('Android CLI help and argument errors finish before any device or toolchain
     'scripts/qa/check-android-layout.mjs',
     'scripts/qa/check-android-functional.mjs',
     'scripts/qa/check-android-real-pdf.mjs',
+    'scripts/qa/check-android-update.mjs',
     'scripts/testing/android/build-qa.mjs',
   ]) {
     const run = (argument: string) =>
@@ -133,4 +134,12 @@ test('Android CLI help and argument errors finish before any device or toolchain
 
 test('device helper refuses an unspecified serial before filesystem or ADB work', async () => {
   await assert.rejects(connectAndroid({ serial: '' }), /Specify --serial or ANDROID_SERIAL/);
+  await assert.rejects(
+    connectAndroid({ serial: 'qa-only', resetData: 'false' as any }),
+    /resetData must be boolean/,
+  );
+  await assert.rejects(
+    connectAndroid({ serial: 'qa-only', clearDataOnClose: 'false' as any }),
+    /clearDataOnClose must be boolean/,
+  );
 });

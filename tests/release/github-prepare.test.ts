@@ -48,7 +48,7 @@ async function fixture(t: test.TestContext, version = '1.0.0') {
   return { root, report, save };
 }
 
-for (const version of ['1.0.0', '1.5']) {
+for (const version of ['1.0', '1.0.0', '1.5']) {
   test(`GitHub upload staging preserves ${version} and includes only verified software`, async (t) => {
     const { root } = await fixture(t, version);
     await writeFile(join(root, 'data/private-configuration.json'), 'private');
@@ -79,6 +79,11 @@ for (const version of ['1.0.0', '1.5']) {
     assert.match(notes, /迁移副本会清除 AI 密钥/);
     assert.match(notes, /data\/noetic-atlas\.sqlite/);
     assert.doesNotMatch(notes, /配置迁移/);
+    assert.doesNotMatch(notes, /使用 2\.0|完整备份与恢复/);
+    assert.match(notes, /相同应用 ID、相同签名且更高版本号/);
+    assert.match(notes, /不要先卸载应用/);
+    if (version === '1.0') assert.match(notes, /本次为首个正式版本/);
+    else assert.doesNotMatch(notes, /本次为首个正式版本/);
     await assert.rejects(() => prepareGithubRelease({ root }), /已存在/);
   });
 }

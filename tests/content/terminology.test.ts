@@ -31,7 +31,7 @@ test('lexical lookup resolves remapped IDs by exact English head, preserves stat
     assert.deepEqual((await app.inject('/api/vocabulary?word=missing')).json().matches,[]);
     assert.equal((await app.inject('/api/vocabulary?word=learn')).json().matches[0].id,'remapped-learn');
     for(const [head,lookup]of [['CAFÉ','cafe\u0301'],['Ｄｅｐｅｎｄｅｎｃｙ','dependency']]){
-      const single={...pack,questions:[word('unicode-head',head)],questionBanks:[]};const unicodeApp=await buildApp({databasePath:':memory:',seedPath:'test-results/no-terminology-seed.json'});
+      const single={...pack,questions:[word('unicode-head',head)],questionBanks:[],papers:[]};const unicodeApp=await buildApp({databasePath:':memory:',seedPath:'test-results/no-terminology-seed.json'});
       try{assert.equal((await unicodeApp.inject({method:'POST',url:'/api/import',payload:{mode:'merge',data:single}})).statusCode,200);assert.equal((await unicodeApp.inject('/api/vocabulary?word='+encodeURIComponent(lookup))).json().matches[0].id,'unicode-head');}finally{await unicodeApp.close();}
     }
     assert.deepEqual((await app.inject('/api/vocabulary?word='+encodeURIComponent("' OR 1=1--"))).json().matches,[]);

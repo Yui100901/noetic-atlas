@@ -91,12 +91,18 @@ test('health reads metadata, checks integrity and counts protected/unused attach
     title: '引用',
     contentMarkdown: '![](/api/assets/used/content) ![](/api/assets/missing/content)',
   });
+  store.database.putRecord('ai_import_jobs', 'pending-textbook', {
+    id: 'pending-textbook',
+    status: 'pending',
+  });
   const health = dataHealth(store, true);
   assert.deepEqual(health.storage.integrity, ['ok']);
   assert.equal(health.unusedAssets, 1);
   assert.equal(health.unusedAssetBytes, 3);
   assert.ok(health.issues.some((i) => i.level === 'warning'));
   assert.equal(health.counts.questions, 6);
+  assert.equal(health.activeAiJobs, 1);
+  assert.ok(health.issues.some((issue) => issue.href === '#/sharing?tab=import&process=batch'));
   assert.ok(!JSON.stringify(health).includes('YWJj'));
   const selection: CleanupSelection = { kinds: ['unused_assets'], olderThanDays: 30 };
   const plan = cleanupPlan(store, selection, oldNow);

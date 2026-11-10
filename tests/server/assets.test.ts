@@ -5,8 +5,26 @@ import { bytesToBase64, assetUrl, assetIdFromUrl } from '../../shared/assets/ass
 import { decodeAssetBase64, sanitizeAssetFilename, validateAssetBytes, validateAssetRecord } from '../../server/modules/assets/schema.js';
 import { collectAssetReferences, validateAssetReferences } from '../../server/modules/assets/service.js';
 import { Store } from '../../server/core/store.js';
+import { id, leafId } from '../../server/core/validation.js';
 
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9WQAAAAASUVORK5CYII=';
+test('asset references scan long text and complete URL tokens without treating remote queries as local', () => {
+  const longText = 'A'.repeat(11 * 1024 * 1024);
+  assert.deepEqual([...collectAssetReferences(`${longText}== ![图片](/api/assets/local/content)`)], ['local']);
+  assert.deepEqual([...collectAssetReferences(`${longText}==/api/assets/after/content`)], ['after']);
+  for (const remote of ['https://host/?u=', '//host/?u=', 'custom:value=', `${longText}:`]) {
+    assert.deepEqual([...collectAssetReferences(remote + '/api/assets/remote/content')], []);
+  }
+  assert.deepEqual([...collectAssetReferences('x=/api/assets/local/content /api/assets/bad/content-invalid')], ['local']);
+  assert.deepEqual([...collectAssetReferences({ dataBase64: '/api/assets/ignored/content' })], []);
+  const longUnicodeId = '中' + longText;
+  assert.equal(assetIdFromUrl(`/api/assets/${longUnicodeId}/content`), longUnicodeId);
+  assert.equal(id.safeParse(longUnicodeId).success, false);
+  assert.equal(leafId.safeParse(longUnicodeId).success, false);
+  assert.equal(id.safeParse('中'.repeat(160)).success, true);
+  assert.equal(leafId.safeParse('中'.repeat(160) + '::' + '文'.repeat(160)).success, true);
+});
+
 function minimalPdf(): Uint8Array {
   let text = '%PDF-1.4\n'; const offsets = [0];
   const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 4 0 R >>', '<< /Length 0 >>\nstream\n\nendstream'];

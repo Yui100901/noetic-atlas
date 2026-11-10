@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { importTaxonomyMappingSchema } from './import-taxonomy.js';
 import { domainSchema, categorySchema, tagSchema } from '../../core/validation.js';
 import { dataPackageKinds } from '../../../shared/models/data-packages.js';
+import { isBase64Text } from '../../../shared/assets/assets.js';
 import { DATA_PACKAGE_LIMITS } from '../../../shared/packages/schema.js';
 import { id } from '../../core/validation.js';
 import { configurationPreviewSchema } from '../settings/configuration.js';
@@ -27,10 +28,7 @@ const base64Schema = z
   .string()
   .min(4)
   .max(Math.ceil(DATA_PACKAGE_LIMITS.maxBytes / 3) * 4)
-  .refine(
-    (value) => value.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(value),
-    '数据包编码无效',
-  );
+  .refine((value) => value.length % 4 === 0 && isBase64Text(value), '数据包编码无效');
 export const packagePreviewInputSchema = z
   .object({
     dataBase64: base64Schema,

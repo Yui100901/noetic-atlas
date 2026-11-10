@@ -17,7 +17,8 @@ export function searchPlain(value: unknown): string {
     .replace(/^\s*\[[^\]]+\]:\s*\S+.*$/gm, ' ')
     .replace(/(?:https?:\/\/|\/api\/assets\/)[^\s<>"')\]]+/gi, ' ')
     .replace(/<[^<>]*>/g, ' ')
-    .replace(/(?:[A-Za-z0-9+/]{160,}={0,2})/g, ' ')
+    // Check the fixed minimum separately so V8 can scan long payloads without exhausting its regexp stack.
+    .replace(/(?=[A-Za-z0-9+/]{160})[A-Za-z0-9+/]+={0,2}/g, ' ')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
     .replace(/`+/g, '').replace(/^#{1,6}\s+/gm, '').replace(/\s+/gu, ' ').trim();
 }

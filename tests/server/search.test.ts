@@ -5,9 +5,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../../server/core/store.js';
 import { questionSchema } from '../../server/core/validation.js';
+import { searchPlain } from '../../server/database/search-projections.js';
 import { searchQuerySchema } from '../../server/modules/search/schema.js';
 import { unifiedSearch } from '../../server/modules/search/service.js';
 import { studyPartKey } from '../../shared/questions/study-state.js';
+
+test('search indexing omits long encoded payloads without dropping adjacent text', () => {
+  const payload = 'A'.repeat(11 * 1024 * 1024) + '==';
+  assert.equal(searchPlain(`开头 ${payload} 末尾`), '开头 末尾');
+  const belowThreshold = 'A'.repeat(159) + '==';
+  assert.equal(searchPlain(belowThreshold), belowThreshold);
+  assert.equal(searchPlain('A'.repeat(160) + '==='), '=');
+});
 
 function fixture(t: test.TestContext, path = ':memory:') {
   const store = new Store(path); t.after(() => store.db.close());

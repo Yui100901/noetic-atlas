@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Upload } from 'lucide-react';
 import type { AssetMetadata } from '../../../shared/assets/assets';
-import { assetIdFromUrl, assetUrl } from '../../../shared/assets/assets';
+import { assetIdFromUrl, assetUrl, embeddedRasterImage } from '../../../shared/assets/assets';
 import { decodeAsset, fetchAsset, uploadFile } from './asset-files';
 import { isNativeApp, saveGeneratedFile } from '@platform';
 import { DEFAULT_SETTINGS } from '../../../shared/models/settings';
@@ -16,7 +16,7 @@ export function useAssetObjectUrl(id?: string | null) {
   }, [id]);
   return { url, error, asset, loading: !!id && !url && !error };
 }
-export const safeEmbeddedImage = (url: string) => /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(url);
+export const safeEmbeddedImage = (url: string) => embeddedRasterImage(url) !== null;
 export function AssetImage({ src = '', alt = '' }: { src?: string; alt?: string }) {
   const id = assetIdFromUrl(src); const file = useAssetObjectUrl(id); const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);

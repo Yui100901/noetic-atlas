@@ -1,5 +1,5 @@
 import { saveGeneratedFile } from '@platform';
-import { bytesToBase64 } from '../../../shared/assets/assets';
+import { bytesToBase64, isBase64Text } from '../../../shared/assets/assets';
 import { DATA_PACKAGE_LIMITS } from '../../../shared/packages/data-package';
 import { request } from './api';
 import type { DataPackageExportInput } from '../../../shared/models/export-preflight';
@@ -40,7 +40,7 @@ export async function readPackageFile(file: File): Promise<string> {
 export async function savePackageDownload(file: DataPackageDownload): Promise<void> {
   if (file.mimeType !== 'application/zip' || !Number.isSafeInteger(file.byteLength) || file.byteLength <= 0 || file.byteLength > DATA_PACKAGE_LIMITS.maxBytes)
     throw new Error('服务器返回的数据包大小或格式无效，请重新生成。');
-  if (file.dataBase64.length !== Math.ceil(file.byteLength / 3) * 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.dataBase64))
+  if (file.dataBase64.length !== Math.ceil(file.byteLength / 3) * 4 || !isBase64Text(file.dataBase64))
     throw new Error('数据包下载不完整，请重新生成。');
   const bytes = new Uint8Array(file.byteLength);
   let offset = 0;

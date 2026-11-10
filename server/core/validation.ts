@@ -7,7 +7,7 @@ export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: unknown) { super(message); }
 }
 export const fail = (status: number, code: string, message: string, details?: unknown): never => { throw new ApiError(status, code, message, details); };
-const identifier = (maximum: number) => z.string().trim().min(1).max(maximum).regex(/^[\p{L}\p{N}_.:-]+$/u, 'ID 只能含字母、数字和 _ . : -').refine(v => !['__proto__', 'prototype', 'constructor'].includes(v), 'ID 为保留名称');
+const identifier = (maximum: number) => z.string().trim().min(1).max(maximum).regex(new RegExp(`^[\\p{L}\\p{N}_.:-]{1,${maximum}}$`, 'u'), 'ID 只能含字母、数字和 _ . : -').refine(v => !['__proto__', 'prototype', 'constructor'].includes(v), 'ID 为保留名称');
 export const id = identifier(160);
 /** A flattened identity contains a 160-character parent, ::, and a 160-character part. */
 export const leafId = identifier(322);

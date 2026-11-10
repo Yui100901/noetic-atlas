@@ -3,6 +3,7 @@ import type {
   ContentExportPurpose,
   ContentExportScope,
 } from '../../../shared/models/domain-exports';
+import { isBase64Text } from '../../../shared/assets/assets';
 
 export function contentExportDefaults(
   purpose: ContentExportPurpose,
@@ -25,7 +26,7 @@ export function exportFileBytes(file: ContentExportFile, maximum: number): Uint8
   if (
     typeof encoded !== 'string' ||
     encoded.length !== Math.ceil(length / 3) * 4 ||
-    !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)
+    !isBase64Text(encoded)
   )
     throw new Error('导出文件不完整，请重新生成。');
   const bytes = new Uint8Array(length);

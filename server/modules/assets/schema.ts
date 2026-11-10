@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { assetMimeTypes, base64ToBytes, bytesToBase64, type AssetRecord, type AssetMimeType } from '../../../shared/assets/assets.js';
+import { assetMimeTypes, base64ToBytes, bytesToBase64, isBase64Text, type AssetRecord, type AssetMimeType } from '../../../shared/assets/assets.js';
 import { paginationFields } from '../../core/pagination.js';
 import { fail, id, parse } from '../../core/validation.js';
 
@@ -15,7 +15,7 @@ export function sanitizeAssetFilename(input: string): string {
   return (base || 'attachment').slice(0, 180);
 }
 export function decodeAssetBase64(value: string): Uint8Array {
-  if (value.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) fail(400, 'INVALID_ASSET_BASE64', '文件必须使用完整、规范的 Base64 编码，不含 data: 前缀或空白');
+  if (value.length % 4 || !isBase64Text(value)) fail(400, 'INVALID_ASSET_BASE64', '文件必须使用完整、规范的 Base64 编码，不含 data: 前缀或空白');
   let bytes: Uint8Array;
   try { bytes = base64ToBytes(value); } catch { fail(400, 'INVALID_ASSET_BASE64', '文件 Base64 编码无效'); }
   if (bytesToBase64(bytes!) !== value) fail(400, 'INVALID_ASSET_BASE64', '文件 Base64 编码含无效填充位');

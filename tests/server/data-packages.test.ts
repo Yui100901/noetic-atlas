@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildApp } from '../../server/index.js';
+import {
+  packageImportInputSchema,
+  packagePreviewInputSchema,
+} from '../../server/modules/transfer/package-schema.js';
 import { buildDataPackage, readDataPackage } from '../../shared/packages/data-package.js';
 import { fixtureQuestion, learningSeed } from '../fixtures/learning-seed.js';
 
@@ -28,6 +32,20 @@ async function fixture(t: test.TestContext) {
     );
   return { call, preview, commit };
 }
+
+test('package validation handles large Base64 inputs and rejects malformed padding', () => {
+  const prefix = 'A'.repeat(11 * 1024 * 1024 - 4);
+  const dataBase64 = prefix + 'AA==';
+  assert.equal(packagePreviewInputSchema.safeParse({ dataBase64 }).success, true);
+  assert.equal(packageImportInputSchema.safeParse({
+    dataBase64,
+    confirmed: true,
+    expectedFingerprint: 'a'.repeat(64),
+  }).success, true);
+  for (const invalid of [prefix + 'AA=!', 'A===', 'A=AA', 'AAA\n', 'AAA', '====']) {
+    assert.equal(packagePreviewInputSchema.safeParse({ dataBase64: invalid }).success, false);
+  }
+});
 
 test('exported single-question and paper packages import as pending, while trusted backup retains status', async (t) => {
   const source = await fixture(t),

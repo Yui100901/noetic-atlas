@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { buildApp } from '../../server/index.js';
 import { searchResponseOutputSchema } from '../../server/http/search-schemas.js';
 
+test('large Markdown saves and indexes text after an encoded payload through HTTP', async t => {
+  const app = await buildApp({ databasePath: ':memory:', dailyPushScheduler: false, staticRoot: 'test-results/no-search-static' });
+  t.after(() => app.close());
+  const payload = 'A'.repeat(11 * 1024 * 1024) + '==';
+  const saved = await app.inject({ method: 'POST', url: '/api/documents', payload: {
+    title: '长资料', bodyMarkdown: `开头 ${payload} release-search-suffix`,
+  } });
+  assert.equal(saved.statusCode, 201);
+  const response = await app.inject('/api/search?q=release-search-suffix&type=document');
+  assert.equal(response.statusCode, 200);
+  const result = searchResponseOutputSchema.parse(response.json());
+  assert.equal(result.items[0]?.id, saved.json().id);
+  assert.equal(result.items[0]?.matchIn, 'content');
+});
+
 test('unified search HTTP publishes schemas, validates literal inputs and respects the exam lock', async t => {
   const app = await buildApp({ databasePath: ':memory:', dailyPushScheduler: false, staticRoot: 'test-results/no-search-static' }); t.after(() => app.close());
   const api = async (url: string, method: 'GET' | 'POST' = 'GET', payload?: unknown, expected = 200) => {

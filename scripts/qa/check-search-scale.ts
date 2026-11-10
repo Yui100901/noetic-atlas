@@ -48,7 +48,14 @@ try{
  const original=store.database.all.bind(store.database),results=[];
  for(const scenario of scenarios){
   const input=searchQuerySchema.parse(scenario.input),before=baselineUnifiedSearch(store,input),after=unifiedSearch(store,input);
-  assert.deepEqual(after,before,scenario.name+' contract changed');assert.doesNotMatch(JSON.stringify(after.items),/REFERENCE_ONLY_CANARY/);
+  // This corpus has no PDF text. Compare search results while checking the
+  // intentional change in the advertised PDF scope independently.
+  const { pdf: baselinePdfScope, ...baselineScope } = before.scope;
+  const { pdf: currentPdfScope, ...currentScope } = after.scope;
+  assert.equal(baselinePdfScope, 'metadata');
+  assert.equal(currentPdfScope, 'indexed_text');
+  assert.deepEqual({ ...after, scope: currentScope }, { ...before, scope: baselineScope }, scenario.name+' contract changed');
+  assert.doesNotMatch(JSON.stringify(after.items),/REFERENCE_ONLY_CANARY/);
   const sample=(fn:typeof unifiedSearch)=>{
    let returnedRows=0,metadataRows=0;
    store.database.all=((builder:any)=>{const rows=original(builder);returnedRows+=rows.length;metadataRows+=rows.filter(row=>typeof (row as any)?.data==='string').length;return rows;}) as typeof store.database.all;

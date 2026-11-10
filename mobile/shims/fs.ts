@@ -11,3 +11,6 @@ export function readFileSync(path: string, _encoding?: string): any {
 export function mkdirSync(_path: string, _options?: unknown) { /* SQLite lives in memory until the durable transaction commit. */ }
 export function mkdtempSync(prefix: string) { return `${prefix}${crypto.randomUUID()}`; }
 export function rmSync(path: string, _options?: unknown) { for (const key of temporary.keys()) if (key === path || key.startsWith(path + '/')) temporary.delete(key); }
+export const promises = {
+  async rm(path: string) { rmSync(path); },
+};

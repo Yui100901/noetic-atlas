@@ -265,8 +265,7 @@ export const catalog = Object.freeze([
   }),
 ]);
 
-// A compatibility shim executes exactly the maintenance suite; do not run it twice.
-export const aliases = Object.freeze({ 'learning-reset-ui': 'maintenance-ui' });
+export const aliases = Object.freeze({});
 export function commandFor(entry) {
   return ['--import', 'tsx', entry.script, ...(entry.directArgs ?? entry.args ?? [])];
 }

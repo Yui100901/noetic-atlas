@@ -1,5 +1,8 @@
 node_modules
 dist
+# Generated resource copies are rebuilt from dependencies and source assets.
+public/fonts
+public/pdfjs
 **/*.sqlite*
 **/*.db
 **/*.db-*
@@ -33,6 +36,11 @@ artifacts
 .idea
 .vscode
 .cache
+.vite
+.tasks
+.tmp
+tmp
+temp
 .venv
 venv
 **/__pycache__

@@ -22,13 +22,13 @@ const select = (args: string[]) => {
   return { options, entries: selectChecks(catalog, groups, aliases, options) };
 };
 
-test('QA defaults match the six explicit CI smoke checks and deduplicate groups, selections and the legacy alias', () => {
+test('QA defaults match the six explicit CI smoke checks and deduplicate groups and repeated selections', () => {
   const first = select([]).entries;
   assert.equal(first.length, 6);
   assert.ok(first.every((entry: any) => entry.groups.includes('smoke')));
   assert.deepEqual(select(['--group', 'smoke', '--only', first[0].id]).entries, first);
   assert.deepEqual(
-    select(['--only', 'learning-reset-ui,maintenance-ui']).entries.map((entry: any) => entry.id),
+    select(['--only', 'maintenance-ui,maintenance-ui']).entries.map((entry: any) => entry.id),
     ['maintenance-ui'],
   );
 });

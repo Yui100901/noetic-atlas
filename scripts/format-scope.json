@@ -52,7 +52,6 @@
   "scripts/qa/check-learning-plan-scale.ts",
   "scripts/qa/check-learning-plans-ui.mjs",
   "scripts/qa/check-learning-reader-layout-ui.mjs",
-  "scripts/qa/check-learning-reset-ui.mjs",
   "scripts/qa/check-learning-time-ui.mjs",
   "scripts/qa/check-maintenance-ui.mjs",
   "scripts/qa/check-math-ui.mjs",

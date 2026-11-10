@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, promises as fsPromises, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { z } from 'zod';
@@ -151,6 +151,7 @@ export async function exportSQLiteMigration(
       target = resolve(dir);
     if (dirname(target) !== root || !basename(target).startsWith('atlas-migration-'))
       throw new Error('迁移临时目录未通过路径检查');
-    rmSync(target, { recursive: true, force: true });
+    // Windows Node 24.13 can report success from rmSync without removing files.
+    await fsPromises.rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }

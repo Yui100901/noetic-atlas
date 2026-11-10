@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readdir, rmdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname, basename } from 'node:path';
 import Fastify from 'fastify';
@@ -23,6 +24,38 @@ import { archiveAttemptQuestionHistory } from '../../server/modules/questions/hi
 import { captureDocumentVersion } from '../../server/modules/library/sources.js';
 import { createAsset } from '../../server/modules/assets/service.js';
 import { taskCommitKey } from '../../server/modules/tasks/commit-marker.js';
+
+test('SQLite migration removes both temporary databases after success or a failed copy', async () => {
+  const parent = mkdtempSync(join(tmpdir(), 'atlas-migration-cleanup-test-'));
+  const names = ['TEMP', 'TMP', 'TMPDIR'] as const;
+  const environment = names.map((name) => process.env[name]);
+  const store = new Store(':memory:');
+  const scope = { domainIds: [] };
+  const fingerprint = sqliteMigrationPlan(store, scope).preview.fingerprint;
+  try {
+    for (const name of names) process.env[name] = parent;
+    const result = await exportSQLiteMigration(store, scope, fingerprint);
+    assert.equal(Buffer.from(result.bytes.subarray(0, 16)).toString(), 'SQLite format 3\0');
+    assert.deepEqual(await readdir(parent), []);
+
+    store.database.backupTo = async (path) => {
+      writeFileSync(path, 'incomplete test copy');
+      throw new Error('simulated backup failure');
+    };
+    await assert.rejects(
+      exportSQLiteMigration(store, scope, fingerprint),
+      /simulated backup failure/,
+    );
+    assert.deepEqual(await readdir(parent), []);
+  } finally {
+    for (const [index, name] of names.entries()) {
+      if (environment[index] === undefined) delete process.env[name];
+      else process.env[name] = environment[index];
+    }
+    store.database.close();
+    if ((await readdir(parent)).length === 0) await rmdir(parent);
+  }
+});
 
 function fixture(t: test.TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'atlas-migration-test-')),

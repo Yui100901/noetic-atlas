@@ -726,3 +726,42 @@ test('four selection batches keep a 200-question set consistent when first-batch
   assert.equal(saved.paper.title, '日语常用词175题（N5→N1）');
   assert.match(saved.paper.description, /175道题目/);
 });
+
+
+test('optional coverage reserves rare categories across batches and persists an objective report', async t => {
+  const questions = Array.from({length:90},(_,i)=>q('COV-'+i,{categoryIds:[i<3?'en-cat':'cs-cat'],tagIds:i<3?[]:['base'],type:i%2?'short_answer':'true_false',difficulty:i<3?4:1}));
+  const f = await fixture(t, questions);
+  const run = await f.api('/api/ai/paper-plan',{prompt:'整理60题，兼顾基础和进阶',count:60,coverage:{enforcement:'required',rules:[{kind:'category',value:'en-cat',minimum:3},{kind:'type',value:'true_false',minimum:20},{kind:'difficulty',value:'4',minimum:3}]}});
+  assert.equal(run.result.items.length,60);
+  assert.equal(run.result.coverage.satisfied,true);
+  assert.deepEqual(run.result.coverage.rows.map((row:any)=>row.actual>=row.minimum),[true,true,true]);
+  assert.ok(f.requests.every(request=>Array.isArray(request.material.requiredQuestionIds)));
+  assert.ok(f.requests.some(request=>request.material.requiredQuestionIds.length>0));
+  assert.ok(run.result.candidates.every((candidate:any)=>candidate.categoryIds&&candidate.tagIds&&candidate.difficulty));
+  const stored=f.store.database.records<any>('ai_runs').find(item=>item.id===run.id);
+  assert.equal(stored.result.coverage.requirements.rules.length,3);
+});
+
+test('hard coverage shortage stays within filters and fails before provider selection', async t => {
+  const f=await fixture(t,[q('CS-1'),q('CS-2'),q('EN-1',{categoryIds:['en-cat'],tagIds:[]})]);
+  const failure=await f.api('/api/ai/paper-plan',{prompt:'两题',count:2,filters:{domainId:'cs'},coverage:{rules:[{kind:'category',value:'en-cat',minimum:1}]}},422);
+  assert.equal(failure.error.code,'AI_PAPER_COVERAGE_UNAVAILABLE');
+  assert.equal(f.requests.length,0);
+});
+
+test('a model cannot omit reserved coverage IDs and pass by claiming coverage in its description', async t => {
+  const f=await fixture(t,[q('A'),q('B'),q('RARE',{categoryIds:['en-cat'],tagIds:[]})]);
+  f.select(({material})=>({title:'已覆盖全部分类',description:'模型声称已覆盖英语',items:material.candidates.filter((candidate:any)=>candidate.id!=='RARE').slice(0,2).map((candidate:any)=>({questionId:candidate.id,reason:'普通候选'}))}));
+  const response=await f.api('/api/ai/paper-plan',{prompt:'两题',count:2,coverage:{rules:[{kind:'category',value:'en-cat',minimum:1}]}},502);
+  assert.equal(response.error.code,'AI_PAPER_COVERAGE_NOT_MET');
+  assert.equal(f.store.all('papers').length,0);
+});
+
+test('advisory coverage returns visible shortfalls without expanding hard scope or failing recommendation', async t => {
+  const f=await fixture(t,[q('A'),q('B'),q('RARE',{categoryIds:['en-cat'],tagIds:[]})]);
+  const run=await f.api('/api/ai/paper-plan',{prompt:'两题',count:2,filters:{domainId:'cs'},coverage:{enforcement:'advisory',rules:[{kind:'category',value:'en-cat',minimum:1}]}});
+  assert.equal(run.result.coverage.satisfied,false);
+  assert.equal(run.result.coverage.rows[0].actual,0);
+  assert.equal(run.result.coverage.rows[0].available,0);
+  assert.ok(run.warnings.some((warning:string)=>warning.includes('覆盖目标未达到')));
+});

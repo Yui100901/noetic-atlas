@@ -1,3 +1,4 @@
+import { paperCandidateSchema, paperCoverageReportSchema } from './paper-coverage-schema.js';
 import { readingSourceSchema } from './reading-source.js';
 import { z } from 'zod';
 import type { AiRunKind } from '../../../shared/ai/ai.js';
@@ -45,7 +46,8 @@ export const storedAiPaperPlanResultSchema = aiPaperPlanOutputSchema
   .extend({
     requestedCount: z.number().int().positive(),
     candidateCount: z.number().int().nonnegative(),
-    candidates: z.array(z.object({ id, title: z.string(), type: types }).strict()),
+    candidates: z.array(paperCandidateSchema),
+    coverage: paperCoverageReportSchema.optional(),
     retrieval: z
       .object({
         availableCount: z.number().int().nonnegative(),

@@ -1,11 +1,12 @@
 import { PdfIndexPanel, PdfTextSearch } from './pdf-index-panel';
+import { replaceCurrentHashLocation } from '../../shared/lib/route-location';
 import {DocumentRelatedQuestions} from './document-related-questions';
 import { FormSaveBar } from '../../shared/ui/form-save-bar';
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { ArrowLeft, BookOpen, Download, Edit3, FileText, FolderTree, Plus, Save, Trash2, Upload } from 'lucide-react';
 import type { DocumentRecord } from '../../../shared/models/types';
 import type { DocumentListItem } from '../../../shared/models/library';
-import { DEFAULT_SETTINGS } from '../../../shared/models/settings';
+import { DEFAULT_SETTINGS, MAX_DOCUMENT_UPLOAD_MIB } from '../../../shared/models/settings';
 import { TagPicker } from '../../shared/ui/tag-picker';
 import { idPath, localDate, qs, send, useDebounced, useResource } from '../../shared/lib/api';
 import { Empty, ErrorNotice, Field, Loading, Markdown, MultiSelect, PageHeader, Pagination, Tags, useApp } from '../../shared/ui/components';
@@ -28,7 +29,7 @@ export function DocumentsPage() {
   const [search, setSearch] = useState(initial.search); const [collection, setCollection] = useState(initial.collection); const [kind, setKind] = useState(initial.kind); const [domainId,setDomainId]=useState(initial.domainId); const[categoryId,setCategoryId]=useState(initial.categoryId); const[tagId,setTagId]=useState(initial.tagId);const[format,setFormat]=useState(initial.format);
   const [page,setPage]=useState(initial.page),[pageSize,setPageSize]=useState(initial.pageSize);
   const listLocation=documentListLocation({search,collection,kind,domainId,categoryId,tagId,format,page,pageSize});
-  useEffect(()=>{history.replaceState(history.state,'',listLocation);},[listLocation]);
+  useEffect(()=>{replaceCurrentHashLocation(listLocation);},[listLocation]);
   const debouncedSearch = useDebounced(search), waiting = debouncedSearch !== search;
   const listUrl = `/api/documents/page?${qs({ search: debouncedSearch, collection, kind, domainId, categoryId, tagIds:tagId, format, page, pageSize })}`;
   const resource = useResource<ListPage<DocumentListItem>>(waiting ? null : listUrl);
@@ -77,7 +78,14 @@ export function DocumentEditor({ id }: { id?: string }) {
   const blocked = !drafts.initialized || busy || uploading || drafts.publishing || drafts.leaving;
   const readFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; setError('');
-    if (file.size > settings.maxDocumentMiB * 1024 * 1024) { setError(`资料超过${settings.maxDocumentMiB} MiB，可在系统配置调整上限。`); return; }
+    if (file.size > settings.maxDocumentMiB * 1024 * 1024) {
+      setError(
+        file.size > MAX_DOCUMENT_UPLOAD_MIB * 1024 * 1024
+          ? `文件超过单份资料允许的 ${MAX_DOCUMENT_UPLOAD_MIB} MiB 上限。请拆分或压缩后再上传。`
+          : `文件超过当前 ${settings.maxDocumentMiB} MiB 上限。请拆分或压缩后再上传，或在「系统配置 → 文件资源 → 上传限制」调整上限。`,
+      );
+      return;
+    }
     setUploading(true);
     try {
       const extension = file.name.split('.').pop()?.toLowerCase(); const title = file.name.replace(/\.[^.]+$/, '');

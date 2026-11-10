@@ -110,6 +110,16 @@ async function apply() {
 }
 try {
   await page.goto(origin + '/#/sharing');
+  await page.getByText('选择哪种导入方式？', { exact: true }).click();
+  await page.getByRole('link', { name: '旧题库包转换步骤', exact: true }).click();
+  await page.getByRole('heading', { name: '转换旧文件', exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    const rect = document.getElementById('转换旧文件')?.getBoundingClientRect();
+    return rect && rect.top >= 0 && rect.top < innerHeight;
+  });
+  assert.match(await page.locator('.handbook-content').innerText(), /npm run data:pack -- share/);
+  checks.push('早期领域 ZIP 的转换帮助在应用内离线可读，并定位到封包命令');
+  await page.goto(origin + '/#/sharing');
   const toggle = page.getByRole('checkbox', { name: '导入前查重', exact: true });
   await toggle.waitFor();
   assert.equal(await toggle.isChecked(), true);

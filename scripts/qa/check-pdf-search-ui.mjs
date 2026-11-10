@@ -111,9 +111,8 @@ try {
   await page.screenshot({ path: resolve(folder, 'pdf-search-mobile.png'), fullPage: true });
   checks.push('320像素PDF阅读/高亮/查找布局');
   await page.goto(origin + '/#/documents/image-book');
-  await page
-    .getByText('未提取到可搜索文字，需要先对扫描件进行OCR；仍可正常阅读原文件。', { exact: true })
-    .waitFor();
+  await page.getByText(/仍可阅读原文件。.*外部 OCR 工具.*带文字层的 PDF.*资料库上传/).waitFor();
+  checks.push('扫描件可读，提示先用外部 OCR 生成带文字层的 PDF 再上传');
   harness.assertClean();
   await writeFile(
     resolve(folder, 'report.json'),

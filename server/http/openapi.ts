@@ -362,6 +362,19 @@ function documentationSchema(entry:RouteEntry):FastifySchema {
   if(url==='/api/learning-plans/:id/start'&&method==='POST')success={type:'object',required:['id','kind','resumed'],properties:{id:{type:'string'},kind:{enum:['focus','practice']},resumed:{type:'boolean'}}};
   const body=bodyFor(method,url); if(body)schema.body=body;
   if(method==='POST')schema.response={...(schema.response as Record<string,unknown>),201:success};
+  if(url.startsWith('/api/tasks')) {
+    schema.tags=['后台任务'];
+    if(url==='/api/tasks'&&method==='POST'){
+      schema.body=toJson(z.object({operation:z.string(),method:z.enum(['GET','POST']).optional(),body:z.unknown().optional(),steps:z.array(z.unknown()).min(1).max(2000).optional(),title:z.string().max(160).optional(),returnTo:z.string().max(4000).optional()}).strict());
+      schema.response={202:{description:'任务已进入设备队列',type:'object',properties:{id:{type:'string'},status:{type:'string'},total:{type:'integer'}}}};
+      schema.description+=' 操作必须在允许的列表中。教材总结和生成支持使用 steps 分块提交；其他操作使用 body。';
+    }else if(url==='/api/tasks'&&method==='GET'){
+      schema.response={200:{type:'array',items:object}};
+      schema.description+=' 返回任务状态摘要，不包含输入、结果文件或模型输出片段。';
+    }else if(url.endsWith('/download')){
+      schema.response={200:{description:'下载已经完成的二进制结果',content:{'application/octet-stream':{schema:{type:'string',format:'binary'}}}}};
+    }
+  }
   if(streamingAiRoute(method,url)) {
     schema.headers={type:'object',properties:{accept:{type:'string',description:'默认 application/json；Web/桌面传 text/event-stream 可实时接收执行阶段、答案片段和最终结果。'}}};
     schema.description+=' AI 流式模式：Accept: text/event-stream，逐帧 data: JSON + 两次换行；事件为 status、delta、result 或 error，注释心跳应忽略。result 仅在结构校验、版本校验与服务端写入成功后发送；delta 尚未验证，不代表已保存。流已建立时错误通过 error 事件的 statusCode/code/message 返回；建立流之前仍可能返回正常 HTTP 错误。取消或断开连接会中止模型请求，未完成的结果不保存。Android 使用同进程进度通道并等待 JSON 与本地持久化完成，不走 HTTP SSE。';

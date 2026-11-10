@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { PDFDocument } from 'pdf-lib';
+import { DEFAULT_SETTINGS, MAX_DOCUMENT_UPLOAD_MIB } from '../../shared/models/settings.ts';
 
 const root = resolve(import.meta.dirname, '../..'), output = resolve(root, 'test-results/document-drafts-ui');
 await mkdir(output, { recursive: true });
@@ -141,6 +142,23 @@ try {
   await go('documents'); await go('documents/new'); await recover(); await page.getByRole('button', { name: '改为Markdown', exact: true }).waitFor();
   const pdfDocument = await publish(); assert.equal(pdfDocument.format, 'pdf'); assert.equal(pdfDocument.assetId, pdfDraft.state.assetId); assert.equal((await drafts()).length, 0);
   checks.push('PDF附件随草稿恢复且受引用保护，发布后附件仍存在并清理草稿');
+
+  await go('documents/new'); await ready();
+  const upload = page.getByLabel('上传资料文件', { exact: true });
+  const chooseOversizePdf = limitMiB => upload.evaluate((input, limit) => {
+    const files = new DataTransfer();
+    files.items.add(new File([new Uint8Array(limit * 1024 * 1024 + 1)], '超限资料.pdf', { type: 'application/pdf' }));
+    input.files = files.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, limitMiB);
+  await chooseOversizePdf(DEFAULT_SETTINGS.maxDocumentMiB);
+  await page.getByRole('alert').getByText(/超过当前.*拆分或压缩.*上传限制/).waitFor();
+  await chooseOversizePdf(MAX_DOCUMENT_UPLOAD_MIB);
+  const hardLimit = page.getByRole('alert').getByText(/超过单份资料允许的.*拆分或压缩/);
+  await hardLimit.waitFor();
+  assert.doesNotMatch(await hardLimit.innerText(), /上传限制/);
+  assert.equal((await drafts()).length, 0);
+  checks.push('上传前拦截超限资料，区分可调上限和必须拆分或压缩的文件');
 
   assert.deepEqual(errors, []); assert.deepEqual(externalRequests, []);
   const report = { passed: checks.length, checks, errors, externalRequests, isolated: true, databasePath: ':memory:', leaveConfirmations: dialogs.filter(dialog => dialog.type === 'confirm').length };

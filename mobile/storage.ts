@@ -1,13 +1,17 @@
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 import type { DurableStorage } from './runtime';
 import type { SQLiteRecoveryBackup } from '../shared/models/sqlite-restore';
 
 const MAIN = 'learning.sqlite'; const PREVIOUS = 'learning.previous.sqlite'; const TEMP = 'learning.next.sqlite';
 const RECOVERY_INDEX = 'learning.restore-backup.json';
+const WRITE_CHUNK_BYTES = 2 * 1024 * 1024;
 const sameBytes = (left: Uint8Array, right: Uint8Array) => left.length === right.length && left.every((value, index) => value === right[index]);
 export function bytesToBase64(bytes: Uint8Array): string { let value = ''; for (let i = 0; i < bytes.length; i += 32768) value += String.fromCharCode(...bytes.subarray(i, i + 32768)); return btoa(value); }
 export function base64ToBytes(value: string) { const binary = atob(value); return Uint8Array.from(binary, ch => ch.charCodeAt(0)); }
-export function createDeviceStorage(filesystem: Pick<typeof Filesystem, 'stat' | 'readFile' | 'writeFile' | 'deleteFile' | 'rename'> = Filesystem): DurableStorage {
+type DeviceFilesystem = Pick<typeof Filesystem, 'stat' | 'readFile' | 'writeFile' | 'deleteFile' | 'rename'> &
+  Partial<Pick<typeof Filesystem, 'getUri' | 'appendFile'>>;
+export function createDeviceStorage(filesystem: DeviceFilesystem = Filesystem): DurableStorage {
 async function exists(path: string) {
   try { await filesystem.stat({ directory: Directory.Data, path }); return true; }
   catch (error) {
@@ -17,7 +21,39 @@ async function exists(path: string) {
     throw error;
   }
 }
-async function read(path: string) { const value = await filesystem.readFile({ directory: Directory.Data, path }); if (typeof value.data !== 'string') return new Uint8Array(await value.data.arrayBuffer()); return base64ToBytes(value.data); }
+async function read(path: string) {
+  const location = { directory: Directory.Data, path };
+  if (Capacitor.isNativePlatform() && filesystem.getUri) {
+    // Capacitor serves app-private files through the local WebView origin. Read
+    // bytes there to avoid copying a growing SQLite file as Base64 in the bridge.
+    const file = await filesystem.getUri(location);
+    const response = await fetch(Capacitor.convertFileSrc(file.uri), { cache: 'no-store' });
+    if (!response.ok) throw new Error(`无法读取本机数据库文件（${response.status}）`);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  const value = await filesystem.readFile(location);
+  if (typeof value.data !== 'string') return new Uint8Array(await value.data.arrayBuffer());
+  return base64ToBytes(value.data);
+}
+async function write(path: string, bytes: Uint8Array) {
+  const location = { directory: Directory.Data, path };
+  if (!filesystem.appendFile || bytes.length <= WRITE_CHUNK_BYTES) {
+    await filesystem.writeFile({ ...location, data: bytesToBase64(bytes) });
+    return;
+  }
+  // A bounded payload protects the WebView bridge while a file grows. All
+  // chunks still go to the existing staging file before verification and rename.
+  await filesystem.writeFile({
+    ...location,
+    data: bytesToBase64(bytes.subarray(0, WRITE_CHUNK_BYTES)),
+  });
+  for (let offset = WRITE_CHUNK_BYTES; offset < bytes.length; offset += WRITE_CHUNK_BYTES) {
+    await filesystem.appendFile({
+      ...location,
+      data: bytesToBase64(bytes.subarray(offset, offset + WRITE_CHUNK_BYTES)),
+    });
+  }
+}
 async function rename(from: string, to: string) { await filesystem.rename({ from, to, directory: Directory.Data, toDirectory: Directory.Data }); }
 function recoveryPath(id: string) { if (!/^before-restore-[0-9T.Z-]+-[a-f0-9-]+$/.test(id)) throw new Error('恢复前副本标识无效'); return `${id}.sqlite`; }
 
@@ -29,7 +65,7 @@ return {
     return undefined;
   },
   async save(bytes) {
-    await filesystem.writeFile({ directory: Directory.Data, path: TEMP, data: bytesToBase64(bytes) });
+    await write(TEMP, bytes);
     if (!sameBytes(await read(TEMP), bytes)) throw new Error('写入的数据库副本不完整');
     const hadMain = await exists(MAIN);
     if (hadMain) {
@@ -51,9 +87,9 @@ return {
     const path = recoveryPath(backup.id);
     // This is independent of PREVIOUS. Ordinary future saves must never rotate
     // away the one complete copy from before a destructive database replacement.
-    await filesystem.writeFile({ directory: Directory.Data, path, data: bytesToBase64(bytes) });
+    await write(path, bytes);
     if (!sameBytes(await read(path), bytes)) throw new Error('恢复前副本写入不完整，已取消恢复');
-    await filesystem.writeFile({ directory: Directory.Data, path: RECOVERY_INDEX, data: bytesToBase64(new TextEncoder().encode(JSON.stringify(backup))) });
+    await write(RECOVERY_INDEX, new TextEncoder().encode(JSON.stringify(backup)));
     return backup;
   },
   async loadRecoveryBackup(id) { return read(recoveryPath(id)); },

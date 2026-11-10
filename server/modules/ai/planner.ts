@@ -1,3 +1,5 @@
+import { paperCoverageReport } from '../../../shared/ai/paper-coverage.js';
+import { reservePaperCoverage, validateCoverageReferences } from './paper-coverage.js';
 import { paperMetadataForCount } from '../../../shared/ai/paper-metadata.js';
 import { z } from 'zod';
 import { AI_PAPER_MAX_QUESTIONS, type AiPaperPlanItem, type AiPaperPlanResult } from '../../../shared/ai/ai.js';
@@ -107,6 +109,7 @@ function publicCandidate({version:_version,status:_status,collection:_collection
 export async function recommendPaper(store:Store,settings:PrivateAiSettings,input:PlannerInput,stemText:(text:string)=>string,execution?:AiExecutionContext){
   assertAiActive(execution);if(!settings.enabled)fail(409,'AI_DISABLED','AI辅助尚未开启，请到系统配置中启用');
   const taxonomy:Taxonomy={...store.taxonomy(),papers:paperList(store,{archived:'true'}) as Paper[]};
+  validateCoverageReferences(input.coverage,taxonomy);
   execution?.emit({type:'status',stage:'catalog',message:'正在读取可用题目目录和手动限定范围'});
   let pool=store.questionMetadata(input.filters),intent=defaultIntent(),interpreted=false;
   // A small explicit-count request already exposes all of its candidates to
@@ -126,13 +129,16 @@ export async function recommendPaper(store:Store,settings:PrivateAiSettings,inpu
   if(pool.length<requestedCount)fail(422,'AI_PAPER_INSUFFICIENT_QUESTIONS','识别条件与手动范围交集内已发布题目不足，请调整描述、范围或题量',{available:pool.length,requested:requestedCount});
   execution?.emit({type:'status',stage:'retrieval',message:`已检索${availableCount}道可用题，符合识别范围${pool.length}道；准备分批推荐`,current:pool.length,total:availableCount});
   const remaining=ranked(pool,taxonomy,intent,input.prompt),selected:AiPaperPlanItem[]=[],seen=new Map<string,Candidate>(),reviewed=new Set<string>();
+  const reserved = reservePaperCoverage(remaining,requestedCount,input.coverage,taxonomy);
   const queryView=taxonomyContext(taxonomy,input.prompt),baseBytes=bytes({requirements:input.prompt,taxonomy:queryView});
   const candidateBudget=Math.max(50_000,480_000-baseBytes),batchSize=Math.max(1,Math.min(50,Math.floor((settings.maxTokens-512)/128)));
   let title='',description='',answerCount=0,batches=0;
   while(selected.length<requestedCount){
     assertAiActive(execution);
     const target=Math.min(batchSize,requestedCount-selected.length),selectedIds=new Set(selected.map(item=>item.questionId));
-    const wanted=remaining.filter(question=>!selectedIds.has(question.id)).slice(0,Math.max(1000,target*8));
+    const required = reserved.filter(question=>!selectedIds.has(question.id)).slice(0,target);
+    const requiredIds = new Set(required.map(question=>question.id));
+    const wanted=[...required,...remaining.filter(question=>!selectedIds.has(question.id)&&!requiredIds.has(question.id))].slice(0,Math.max(1000,target*8));
     const candidates:Candidate[]=[];let usedBytes=0;
     for(let offset=0;offset<wanted.length;offset+=32){
       const group=wanted.slice(offset,offset+32),uncached=group.filter(q=>!seen.has(q.id));
@@ -142,9 +148,10 @@ export async function recommendPaper(store:Store,settings:PrivateAiSettings,inpu
       if(candidates.length>=target&&usedBytes+16_000>candidateBudget)break;
     }
     if(candidates.length<target)fail(422,'AI_PAPER_INSUFFICIENT_QUESTIONS','候选题目在生成期间发生变化，可用题量不足，请重新推荐');
-    const task=`从本批候选中选择恰好${target}道已存在题目，结合学习要求覆盖知识、难度和递进。只输出候选id，不重复、不生成新题，不选previouslySelected题号。reason每题用10至40字说明与目标的关系，不重复整段题干。selectionCount（兼容字段requestedCount）只表示本批选题数量；paperQuestionCount才是整份题集的总题量。title和description描述整份题集，不能把本批数量写成总题量，不能使用“本批/首批/当前批”的说明，也不能根据本批候选虚构全卷已覆盖的具体内容。title简短，description不超过500字。组合题整组计数且展开小题合计不能超过remainingAnswerSlots，非组合题消耗1个作答项。若不能满足，应明确不足，禁止用不符合条件的题凑数。未提供图片、选项与答案，不能据此保证正确性。候选可能只提供题干与分类标签摘要，缺失信息不得补造。`;
+    const task=`coverage为可选整卷覆盖目标；requiredQuestionIds是本批必须纳入的已有题号，必须全部选入，不能通过覆盖说明代替实际选题。覆盖最低题数按整题统计，同题可同时满足不同覆盖项。
+从本批候选中选择恰好${target}道已存在题目，结合学习要求覆盖知识、难度和递进。只输出候选id，不重复、不生成新题，不选previouslySelected题号。reason每题用10至40字说明与目标的关系，不重复整段题干。selectionCount（兼容字段requestedCount）只表示本批选题数量；paperQuestionCount才是整份题集的总题量。title和description描述整份题集，不能把本批数量写成总题量，不能使用“本批/首批/当前批”的说明，也不能根据本批候选虚构全卷已覆盖的具体内容。title简短，description不超过500字。组合题整组计数且展开小题合计不能超过remainingAnswerSlots，非组合题消耗1个作答项。若不能满足，应明确不足，禁止用不符合条件的题凑数。未提供图片、选项与答案，不能据此保证正确性。候选可能只提供题干与分类标签摘要，缺失信息不得补造。`;
     const outputDefinition={title:`整份题集名称（全卷${requestedCount}题；非本批${target}题）`,description:`整份题集的学习目标；全卷${requestedCount}题。仅描述要求支持的范围，不虚构覆盖` ,items:[{questionId:'候选id',reason:'推荐理由'}]};
-    const material={requirements:input.prompt,requestedCount:target,selectionCount:target,paperQuestionCount:requestedCount,totalRequestedCount:requestedCount,previouslySelected:[...selectedIds],remainingAnswerSlots:AI_PAPER_MAX_QUESTIONS-answerCount,candidates:candidates.map(publicCandidate),taxonomy:queryView};
+    const material={requirements:input.prompt,requestedCount:target,selectionCount:target,paperQuestionCount:requestedCount,totalRequestedCount:requestedCount,previouslySelected:[...selectedIds],requiredQuestionIds:[...requiredIds],coverage:input.coverage?paperCoverageReport([...selectedIds].map(id=>seen.get(id)!),input.coverage,taxonomy,pool):undefined,remainingAnswerSlots:AI_PAPER_MAX_QUESTIONS-answerCount,candidates:candidates.map(publicCandidate),taxonomy:queryView};
     const inputBytes=()=>bytes({task,outputSchema:outputDefinition,untrustedMaterial:material});
     while(inputBytes()>550_000&&material.candidates.length>target){material.candidates.pop();candidates.pop();}
     // Extreme but valid custom metadata can be larger than a normal stem. Keep
@@ -162,6 +169,7 @@ export async function recommendPaper(store:Store,settings:PrivateAiSettings,inpu
     assertAiActive(execution);
     const allowed=new Set(candidates.map(candidate=>candidate.id));
     if(result.items.length!==target||new Set(result.items.map(item=>item.questionId)).size!==target||result.items.some(item=>!allowed.has(item.questionId)||selectedIds.has(item.questionId)))fail(502,'AI_PAPER_SELECTION_INVALID','AI未按约定选择已有且不重复的题目，请重新推荐，未创建题集');
+    if([...requiredIds].some(id=>!result.items.some(item=>item.questionId===id)))fail(502,'AI_PAPER_COVERAGE_NOT_MET','模型未选入本批必要覆盖题目，未生成题集，请重试或调整覆盖要求');
     for(const item of result.items){const question=seen.get(item.questionId)!;answerCount+=question.type==='group'?question.partCount:1;}
     if(answerCount>AI_PAPER_MAX_QUESTIONS)fail(422,'AI_PAPER_TOO_MANY_PARTS',`推荐组合题展开超过${AI_PAPER_MAX_QUESTIONS}个作答项，请减少题量`);
     if(!title){title=result.title;description=result.description;}selected.push(...result.items);
@@ -171,8 +179,10 @@ export async function recommendPaper(store:Store,settings:PrivateAiSettings,inpu
   const reviewedCandidates=[...reviewed].map(id=>seen.get(id)!);
   const candidateVersions=Object.fromEntries(reviewedCandidates.map(candidate=>[candidate.id,candidate.version]));
   const questionVersions=Object.fromEntries(selected.map(item=>[item.questionId,candidateVersions[item.questionId]!]));
+  const coverage = input.coverage?.rules.length ? paperCoverageReport(selected.map(item=>seen.get(item.questionId)!),input.coverage,taxonomy,pool) : undefined;
+  if(coverage?.requirements.enforcement==='required'&&!coverage.satisfied)fail(502,'AI_PAPER_COVERAGE_NOT_MET','推荐题目未满足覆盖要求，未生成题集',{coverage});
   const metadata = paperMetadataForCount({title,description},selected.length,{providerBatch:true});
-  const output:AiPaperPlanResult={title:metadata.title,description:metadata.description,items:selected,requestedCount,candidateCount:pool.length,candidates:reviewedCandidates.map(({id,title,type})=>({id,title,type})),retrieval:{availableCount,matchedCount:pool.length,reviewedCount:reviewed.size,batches,interpreted,summary:intent.summary||'根据本次提示词与可选手动范围推荐'}};
-  const warnings=[...(metadata.adjusted?['模型说明使用了单批数量或单批语义，已按实际全卷题量生成说明；请核对全卷预览。']:[]),'本次仅推荐已有题目，未发送参考答案、学习记录或图片。保存前可调整题目和分值。',...(pool.length>reviewed.size?[`已从${pool.length}道匹配题中检索并比较${reviewed.size}道候选；没有将全库正文一次性发送给模型。`]:[]),...(batches>1?[`本次分${batches}批生成，已校验跨批题号不重复。`]:[])];
+  const output:AiPaperPlanResult={title:metadata.title,description:metadata.description,items:selected,requestedCount,candidateCount:pool.length,candidates:reviewedCandidates.map(({id,title,type,difficulty,categoryIds,tagIds})=>({id,title,type,difficulty,categoryIds,tagIds})),...(coverage?{coverage}:{}),retrieval:{availableCount,matchedCount:pool.length,reviewedCount:reviewed.size,batches,interpreted,summary:intent.summary||'根据本次提示词与可选手动范围推荐'}};
+  const warnings=[...(coverage&&!coverage.satisfied?['部分建议覆盖目标未达到，请查看客观覆盖摘要；建议模式允许继续调整和保存。']:[]),...(metadata.adjusted?['模型说明使用了单批数量或单批语义，已按实际全卷题量生成说明；请核对全卷预览。']:[]),'本次仅推荐已有题目，未发送参考答案、学习记录或图片。保存前可调整题目和分值。',...(pool.length>reviewed.size?[`已从${pool.length}道匹配题中检索并比较${reviewed.size}道候选；没有将全库正文一次性发送给模型。`]:[]),...(batches>1?[`本次分${batches}批生成，已校验跨批题号不重复。`]:[])];
   return {output,context:{questionVersions,candidateVersions,sourceByItem:{}},warnings};
 }

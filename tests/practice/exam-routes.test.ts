@@ -25,4 +25,36 @@ test('exam routes enforce one active exam, retain it independently of normal dra
   const backup = await api('/api/export'); const target = await buildApp({ databasePath: ':memory:', seedPath: 'missing-exam-route-seed', staticRoot: 'missing-exam-route-web', native: true }); t.after(() => target.close());
   const imported = await target.inject({ method: 'POST', url: '/api/import', payload: { mode: 'merge', data: backup } }); assert.equal(imported.statusCode, 200, imported.body);
   const restored = (await target.inject(`/api/attempts/${exam.id}`)).json(); assert.equal(restored.elapsedSeconds, 60); assert.equal(restored.autoSubmitted, true); assert.equal(restored.deadlineAt, exam.deadlineAt);
+
+  const normalDraft = await api(`/api/papers/${paper.id}/attempts`, 'POST', {}, 201);
+  const normalResults = await Promise.all(['true', 'false', 'true', 'false'].map((value) =>
+    api(`/api/attempts/${normalDraft.id}/submit`, 'POST', { answers: { 'Q-TIME': { value } } }),
+  ));
+  for (const result of normalResults) {
+    assert.equal(result.status, 'submitted');
+    assert.equal(result.submittedAt, normalResults[0].submittedAt);
+    assert.deepEqual(result.answers, normalResults[0].answers, 'only the first submission can change answers');
+  }
+
+  const expiring = await api(`/api/papers/${paper.id}/attempts`, 'POST', { mode: 'exam', durationMinutes: 1 }, 201);
+  await api(`/api/attempts/${expiring.id}`, 'PUT', { answers: { 'Q-TIME': { value: 'false' } } });
+  t.mock.timers.tick(61000);
+  const [, synced, submitted] = await Promise.all([
+    api('/api/exams/sync', 'POST'),
+    api(`/api/attempts/${expiring.id}/sync`, 'POST'),
+    api(`/api/attempts/${expiring.id}/submit`, 'POST', { answers: { 'Q-TIME': { value: 'true' } } }),
+  ]);
+  for (const result of [synced, submitted]) {
+    assert.equal(result.status, 'submitted');
+    assert.equal(result.autoSubmitted, true);
+    assert.equal(result.submittedAt, expiring.deadlineAt);
+    assert.equal(result.answers['Q-TIME'].value, 'false');
+  }
+  const history = await api('/api/questions/Q-TIME/history');
+  assert.equal(history.summary.answered, 3, 'each of the three completed attempts counts once');
+  const finalBackup = await api('/api/export');
+  for (const id of [exam.id, normalDraft.id, expiring.id]) {
+    assert.equal(finalBackup.learningResults.filter((item: { id: string }) => item.id === id).length, 1);
+    assert.equal(finalBackup.reviewEvents.filter((item: { attemptId?: string }) => item.attemptId === id).length, 1);
+  }
 });

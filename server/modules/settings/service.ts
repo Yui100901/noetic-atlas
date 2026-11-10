@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   DEFAULT_SETTINGS,
   DEFAULT_REVIEW_SCHEDULING,
+  MAX_DOCUMENT_UPLOAD_MIB,
   THEMES,
   type RetentionPreview,
   type SystemSettings,
@@ -59,7 +60,7 @@ export const settingsSchema = z
       z.number().int().min(0).max(3650),
     ]),
     autosaveDebounceMs: z.number().int().min(100).max(10000),
-    maxDocumentMiB: z.number().int().min(1).max(50),
+    maxDocumentMiB: z.number().int().min(1).max(MAX_DOCUMENT_UPLOAD_MIB),
     maxImageMiB: z.number().int().min(1).max(20),
     aiImport: aiImportSettingsSchema.default(DEFAULT_SETTINGS.aiImport),
     dailyPush: dailyPushSettingsSchema,

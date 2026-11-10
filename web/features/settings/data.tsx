@@ -1,9 +1,11 @@
+import { useTaskResume } from '../tasks/use-task-resume';
 import { useEffect, useRef, useState } from 'react';
 import { Database, Download, Eye, Upload } from 'lucide-react';
 import { isNativeApp } from '@platform';
 import type { SQLiteMigrationPreview } from '../../../shared/models/sqlite-migration';
 import { exportSQLiteMigration } from '../../shared/lib/sqlite-migration';
 import { request } from '../../shared/lib/api';
+import { upgradeGuideHref } from '../../shared/lib/feature-destinations';
 import { ErrorNotice, PageHeader, useApp } from '../../shared/ui/components';
 import { SQLiteRestore } from './sqlite-restore';
 import { sqliteRecordLabels } from './sqlite-record-labels';
@@ -18,11 +20,25 @@ export function DataPage({ embedded = false }: { embedded?: boolean }) {
   const [phase, setPhase] = useState<'preview' | 'export' | null>(null);
   const [error, setError] = useState('');
   const generation = useRef(0);
+  const exportObserver = useRef<AbortController>(null);
   useEffect(
     () => () => {
       generation.current++;
+      exportObserver.current?.abort();
     },
     [],
+  );
+  useTaskResume(
+    '/api/migrations/preview',
+    true,
+    (_input, result) => {
+      const value = result.json as SQLiteMigrationPreview;
+      setPreview(value);
+      setScope(value.scope);
+      setDomainIds(value.domainIds);
+      setError('');
+    },
+    (reason) => setError((reason as Error).message),
   );
   const selectedIds = scope === 'all' ? [] : domainIds;
   const change = (nextScope: typeof scope, nextIds = domainIds) => {
@@ -54,10 +70,12 @@ export function DataPage({ embedded = false }: { embedded?: boolean }) {
   const perform = async () => {
     if (!preview || phase) return;
     const current = ++generation.current;
+    const controller = new AbortController();
+    exportObserver.current = controller;
     setPhase('export');
     setError('');
     try {
-      await exportSQLiteMigration(preview, format);
+      await exportSQLiteMigration(preview, format, controller.signal);
       if (current === generation.current)
         toast(isNativeApp() ? '迁移文件已准备，可选择保存位置' : '迁移文件已下载');
     } catch (reason) {
@@ -220,13 +238,24 @@ export function DataPage({ embedded = false }: { embedded?: boolean }) {
         <section className="card ui-stack">
           <h2>恢复迁移数据库</h2>
           <p>
-            先停止目标学习站并备份其当前数据库。ZIP 包使用{' '}
-            <code>npm run data:unpack -- 文件路径 输出.sqlite</code> 校验并提取；原始 .sqlite
-            文件可直接使用。将 <code>DATABASE_PATH</code> 指向迁移数据库后重新启动。
+            <strong>Windows 免安装版</strong>建议先导出整个学习站的 <code>.sqlite</code>{' '}
+            文件。完全退出桌面程序，另存目标目录的原 <code>data</code> 文件夹，在新建的{' '}
+            <code>data</code> 文件夹中将导出文件保存为 <code>noetic-atlas.sqlite</code>
+            ，再启动核对。
+          </p>
+          <p>
+            <strong>Web 部署</strong>时先停服务并备份目标库。可直接使用原始 <code>.sqlite</code>
+            ，或用 <code>npm run data:unpack -- 文件路径 输出.sqlite</code> 校验并提取 ZIP 包，再将{' '}
+            <code>DATABASE_PATH</code> 指向恢复文件后启动。
           </p>
           <p className="muted">
             恢复会整体替换目标库。指定领域迁移也应恢复到独立数据库；需要合并题目时使用分享包。
           </p>
+          <div>
+            <a className="button" href={upgradeGuideHref}>
+              备份、升级与恢复
+            </a>
+          </div>
         </section>
       )}
       <div>

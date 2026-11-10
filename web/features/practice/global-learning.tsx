@@ -1,4 +1,5 @@
 import { ShareButton } from '../sharing/share-button';
+import { replaceCurrentHashLocation } from '../../shared/lib/route-location';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, CalendarCheck2, ChevronRight, Star, Target } from 'lucide-react';
 import type { GlobalLearningKind, GlobalLearningQuestion, GlobalLearningSummary } from '../../../shared/practice/global-learning';
@@ -25,7 +26,7 @@ export function GlobalLearningPage({ kind }: { kind: GlobalLearningKind }) {
   const [initial]=useState(()=>readLearningPagination(new URLSearchParams(window.location.hash.split('?')[1])));
   const [page, setPage] = useState(initial.page), [pageSize, setPageSize] = useState(initial.pageSize);
   const context={scope:'global' as const,kind,page,pageSize};
-  useEffect(()=>{if(!adaptive)history.replaceState(history.state,'',learningListHref(context));},[kind,page,pageSize,adaptive]);
+  useEffect(()=>{if(!adaptive)replaceCurrentHashLocation(learningListHref(context));},[kind,page,pageSize,adaptive]);
   const summary = useResource<GlobalLearningSummary>('/api/learning/global/summary');
   const questions = useResource<Paged<GlobalLearningQuestion>>(adaptive ? null : `/api/learning/global/questions?${qs({ kind, page, pageSize })}`);
   const refresh = () => { summary.refresh(); questions.refresh(); };

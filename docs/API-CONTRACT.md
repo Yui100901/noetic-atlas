@@ -327,7 +327,7 @@ AI选择批次中的`selectionCount`（兼容字段`requestedCount`）只表示�
 - `POST /api/content-exports/preview`：传`{domainIds,purpose?,mode?,status?,collection?}`，返回领域题量目录、范围、去重题量、归属次数、空领域、分类／标签数量、预计题目字节及`fingerprint`。领域空数组只查询目录，不默认导出全部。底层`purpose=migration|share`仍保留，省略为旧迁移用途；当前“分享与导入 → 按领域分享”界面显式使用share，默认`published/general`。`mode=combined|per_domain`，默认合并；旧迁移用途默认`all/all`且只导出内容，不代表完整SQLite领域迁移。
 - `POST /api/content-exports`：相同范围加 `expectedFingerprint`，返回 `{filename,mimeType,dataBase64,byteLength,summary}`。两种模式都返回带 manifest 的 ZIP，`combined` 合并去重，`per_domain` 在包内分领域及分片。实际ZIP上限128MiB，单次去重题量最多50000。源题、依赖、范围变化返回409，需重新预览。
 - `POST /api/migrations/preview`：`{domainIds?:string[]}`，省略或空数组为整体迁移；否则为指定的一个或多个领域。返回`{scope,domainIds,fingerprint,counts,seedQuestions,dependencyQuestions,warnings}`。只读图规划，不生成数据库、不改原库。
-- `GET /api/migrations/database?domainIds=<JSON数组>&fingerprint=...`：返回`application/vnd.sqlite3`二进制一致性副本，附下载文件名及Content-Length。必须与预览范围和指纹相符；源数据在预览或异步备份期间变化返回409 `MIGRATION_PREVIEW_STALE`。前端可直接保存.sqlite或封装为manifest.kind=`sqlite-backup`的ZIP，二者数据语义一致。
+- `GET /api/migrations/database?domainIds=<JSON数组>&fingerprint=...`：返回`application/vnd.sqlite3`二进制一致性副本，附下载文件名及Content-Length。必须与预览范围和指纹相符；源数据在预览或异步备份期间变化返回409 `MIGRATION_PREVIEW_STALE`。`format=zip` 返回含 `manifest.kind=sqlite-backup` 的 ZIP 文件，省略或 `format=sqlite` 时返回裸 SQLite。二者数据语义一致。
 - `GET /api/export`和`POST /api/import`（`{data,mode:'merge'}`）保留早期JSON白名单合并协议；同ID内容不静默覆盖，保留题目原审核状态。仅接收无format的可信迁移封包，拒绝learning-share等专用格式。设置界面不再以该协议导出迁移。
 - `GET /api/backup.sqlite`保留旧整体下载接口；新设置迁移统一使用带范围预览和新鲜度校验的`/api/migrations/*`。所有产品导出的SQLite副本清除AI密钥，保留本机原库。
 
@@ -451,3 +451,10 @@ learning_days保存生成时的目标与任务快照，learning_task_results以�
 统一搜索的`scope.pdf`为`indexed_text`。PDF资料仍按一个资料计数和分页，命中时提供`pdfTotalPages`与最多3项`pdfHits`；每项链接带固定内容版本、文件页码及关键词，读者可在原文中查找并显示坐标高亮。当前版本的全文参与全局搜索，旧版本通过原引用及文件内查找访问。
 
 完整与按领域SQLite迁移保留相关的提取页、内容哈希与任务进度。FTS是可重建投影，原生恢复先丢弃传入虚表及影子表，再从验证过的提取页重建。普通题目分享不附带整本教材或全文缓存。
+
+## 后台任务
+
+- `POST /api/tasks` 接受 `{operation,method?,body?,steps?,title?,returnTo?}` 并返回 `202`。`operation` 只接受应用规定的耗时接口。`steps` 仅用于教材的总结或生成，每次提交一个知识块。
+- `GET /api/tasks` 返回轻量摘要，`GET /api/tasks/:id` 返回进度及可能存在的临时 AI 正文片段。`GET /api/tasks/:id/input` 读取原操作参数，供原界面继续确认。考试期间禁止读取或新建任务。
+- `POST /api/tasks/:id/cancel|retry|read` 分别取消、续跑、标为已读。事务提交阶段不能取消。`DELETE /api/tasks/:id` 移除终态任务及其文件。
+- `GET /api/tasks/:id/result` 读取已经完成的结果。包含 `binaryByteLength` 时，从 `GET /api/tasks/:id/download` 下载原始二进制文件。

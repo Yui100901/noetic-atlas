@@ -5,6 +5,8 @@ import { ErrorNotice, Pagination } from '../../shared/ui/components';
 import { wakePdfIndexer } from './pdf-index-runner';
 import './pdf-index.css';
 type Job = PdfJob & { cache: PdfCache };
+const ocrHint =
+  '未提取到可搜索文字，仍可阅读原文件。需要检索时，请用外部 OCR 工具生成带文字层的 PDF，再到资料库上传。';
 const labels: Record<PdfJob['status'], string> = {
   queued: '等待索引',
   running: '建立索引中',
@@ -103,11 +105,7 @@ export function PdfIndexPanel({ assetId }: { assetId?: string }) {
                     max={job.cache.pageCount}
                   />
                 )}{' '}
-                {job.cache?.status === 'needs_ocr' && (
-                  <p className="notice info">
-                    未提取到可搜索文字，需要先对扫描件进行OCR；仍可正常阅读原文件。
-                  </p>
-                )}
+                {job.cache?.status === 'needs_ocr' && <p className="notice info">{ocrHint}</p>}
                 {job.cache?.status === 'ready' && job.cache.textPages < job.cache.pageCount && (
                   <p className="muted">
                     其中{job.cache.pageCount - job.cache.textPages}
@@ -138,9 +136,7 @@ export function PdfIndexPanel({ assetId }: { assetId?: string }) {
         </>
       )}
       {!showDetails && current?.cache?.status === 'needs_ocr' && (
-        <p className="notice info">
-          未提取到可搜索文字，需要先对扫描件进行OCR；仍可正常阅读原文件。
-        </p>
+        <p className="notice info">{ocrHint}</p>
       )}
       {(error || jobs.error) && <ErrorNotice message={error || jobs.error} />}
     </section>

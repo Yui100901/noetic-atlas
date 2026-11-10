@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PDFDocument } from 'pdf-lib';
 import { readDataPackage } from '../../shared/packages/data-package.ts';
 import { startBrowserHarness } from './helpers/browser-harness.mjs';
 
@@ -14,6 +15,7 @@ const paper=await app.inject({method:'POST',url:'/api/papers',payload:{title:'ZI
 });
 const { page, origin } = h,
   checks = [];
+const pdfEvidence = { responses: [], workers: [], warnings: [] };
 const goto = (path) => page.goto(origin + '/#/' + path);
 const api = async (path, data) => {
   const r = await page.request.post(origin + path, { data });
@@ -22,6 +24,7 @@ const api = async (path, data) => {
 };
 try {
   await goto('');
+  await page.locator('.sidebar nav').getByRole('link', { name: '综合统计', exact: true }).waitFor();
   assert.equal(
     await page.locator('.sidebar nav').getByRole('link', { name: 'AI工作台', exact: true }).count(),
     0,
@@ -54,6 +57,48 @@ try {
   await goto('papers/' + h.state.paperId);
   await page.getByRole('button', { name: '分享', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '分享题集', exact: true });
+  await dialog.getByRole('radio', { name: 'PDF 文档', exact: true }).check();
+  page.on('response', (response) => {
+    const { pathname } = new URL(response.url());
+    if (/export-document|NotoSansSC|pdf-render-worker/.test(pathname))
+      pdfEvidence.responses.push({ pathname, status: response.status() });
+  });
+  page.on('worker', (worker) => pdfEvidence.workers.push(worker.url()));
+  page.on('console', (entry) => {
+    if (['warning', 'error'].includes(entry.type())) pdfEvidence.warnings.push(entry.text());
+  });
+  const releasePdf = Promise.withResolvers();
+  const exportDocumentPath = '**/api/papers/*/export-document?*';
+  await page.route(exportDocumentPath, async (route) => {
+    await releasePdf.promise;
+    await route.continue();
+  });
+  const [pdfDownload] = await Promise.all([
+    page.waitForEvent('download', { timeout: 60_000 }),
+    page.waitForEvent('worker', {
+      predicate: (worker) => /\/pdf-render-worker-[^/]+\.js$/.test(new URL(worker.url()).pathname),
+      timeout: 60_000,
+    }),
+    (async () => {
+      try {
+        await dialog.getByRole('button', { name: '下载文件', exact: true }).click();
+        await dialog.getByRole('button', { name: '关闭并继续生成', exact: true }).click();
+        await goto('questions');
+        await dialog.waitFor({ state: 'hidden' });
+      } finally {
+        releasePdf.resolve();
+      }
+    })(),
+  ]);
+  await page.unroute(exportDocumentPath);
+  assert.match(pdfDownload.suggestedFilename(), /\.pdf$/i);
+  const pdf = await PDFDocument.load(await readFile(await pdfDownload.path()));
+  assert.match(pdf.getTitle(), /ZIP题集验收/);
+  assert.ok(pdf.getPageCount() > 0);
+  checks.push('关闭分享窗口并切页后，独立线程继续渲染并下载可打开的题集 PDF');
+
+  await goto('papers/' + h.state.paperId);
+  await page.getByRole('button', { name: '分享', exact: true }).click();
   await dialog.getByRole('radio', { name: '题集数据包（ZIP）', exact: true }).check();
   const button = dialog.getByRole('button', { name: '下载文件', exact: true });
   await dialog.getByText('导出规模检查通过', { exact: true }).waitFor();
@@ -157,7 +202,7 @@ try {
   );
   console.log(JSON.stringify({ passed: checks.length, checks }));
 } catch (error) {
-  await h.captureFailure(error, { checks });
+  await h.captureFailure(error, { checks, pdfEvidence });
   throw error;
 } finally {
   await h.close();

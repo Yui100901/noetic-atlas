@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { connectAndroid, until } from '../testing/android/device.mjs';
 import { seedAndroidLayout } from '../testing/android/layout-fixture.mjs';
+import { androidLayoutProfiles } from '../testing/android/profiles.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -40,6 +41,11 @@ const screenshot = async (name) => {
 async function geometry(label) {
   const result = await page.evaluate(() => {
     const visible = (el) => {
+      // Closed details can retain descendant layout boxes in Android WebView.
+      // Only the first summary is rendered and available to a user.
+      const closedDetails = el.closest('details:not([open])');
+      if (closedDetails && !closedDetails.querySelector(':scope > summary')?.contains(el))
+        return false;
       const r = el.getBoundingClientRect(),
         s = getComputedStyle(el);
       return (
@@ -138,6 +144,7 @@ try {
     ['paper-reader', 'papers/' + state.paperId + '/questions/ANDROID-LAYOUT-0'],
     ['manual', 'papers/new'],
     ['random', 'papers/new/random'],
+    ['ai-paper', 'papers/new/ai'],
     ['attempt', 'attempts/' + state.draftId],
     ['submitted', 'attempts/' + state.submittedId],
     ['focus', 'focus-review/' + state.focusId],
@@ -150,6 +157,7 @@ try {
     ['search', 'search?q=事务'],
     ['analytics', 'analytics'],
     ['sharing', 'sharing'],
+    ['tasks', 'tasks'],
     ['ai', 'ai?tab=import'],
     ['settings', 'settings'],
     ['settings-practice', 'settings?tab=practice'],
@@ -158,11 +166,11 @@ try {
     ['settings-health', 'settings?tab=backup&sub=health'],
     ['help', 'help'],
   ];
-  for (const profile of [
-    { name: 'portrait', rotation: 0, font: '1.0' },
-    { name: 'landscape', rotation: 1, font: '1.0' },
-    { name: 'large-font', rotation: 0, font: '1.3' },
-  ]) {
+  // Some Android 14 tablet profiles honor an app's requested orientation
+  // ahead of the user lock. Force only rotation, never change the resolution.
+  if (['default', 'disabled'].includes(device.original.fixedRotation))
+    adb('shell', 'wm', 'fixed-to-user-rotation', 'enabled');
+  for (const profile of androidLayoutProfiles(device.original.size)) {
     adb('shell', 'settings', 'put', 'system', 'font_scale', profile.font);
     adb('shell', 'wm', 'user-rotation', 'lock', String(profile.rotation));
     await device.restart();
@@ -171,7 +179,7 @@ try {
       () =>
         page.evaluate(
           (landscape) => (landscape ? innerWidth > innerHeight : innerHeight > innerWidth),
-          profile.rotation === 1,
+          profile.name === 'landscape',
         ),
       'native orientation',
     );
@@ -182,7 +190,7 @@ try {
     }));
     report.profiles.push({ ...profile, ...dimensions });
     for (const [name, path] of routes) {
-      await go(path);
+      await go(path, { reload: false });
       await geometry(profile.name + '-' + name);
       if (['overview', 'question', 'manual', 'document-edit', 'settings', 'attempt'].includes(name))
         await screenshot(profile.name + '-' + name);
@@ -215,7 +223,7 @@ try {
       );
     }
     // The navigation drawer must open, remain within the viewport and close.
-    await go('questions');
+    await go('questions', { reload: false });
     const menu = page.getByRole('button', { name: '打开菜单', exact: true });
     if (await menu.isVisible()) {
       await menu.click();

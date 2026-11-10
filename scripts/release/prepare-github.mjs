@@ -200,7 +200,29 @@ export async function prepareGithubRelease({
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const notes = `# 认知星图 ${version}\n\n本地优先的通用学习平台，支持知识题库、组卷练习、考试、学习记录和 AI 辅助。\n\n${changes ? `## 本次更新\n\n${changes}\n\n` : ''}## 下载\n\n${files.map((file) => `- \`${file.file}\``).join('\n')}\n\n软件首次启动为空题库，不内置领域、分类、标签或任何题目。包内仅附干净基础配置 config/defaults.json；AI 默认关闭，没有预设端点或凭据。题库按领域作为独立附件选择下载，直接从“分享与导入”上传领域 ZIP，再确认审核。软件附件不含工作数据库、学习记录或个人配置。\n\n## 配置与升级\n\n系统配置 → 数据与迁移 → 配置迁移，可单独导出/导入常规配置及 AI 非敏感参数；密钥不会进入配置包，换设备后重新填写。完整学习数据使用 JSON/SQLite 备份迁移。升级前备份，Windows 保留原 data/，Web 保留数据库，Android 使用相同签名覆盖安装。\n\n${excluded.length ? `本次未附 Android 调试包或未签名包：${excluded.map((name) => `\`${name}\``).join('、')}。Android 正式安装包需完成签名。\n\n` : ''}使用和部署见仓库 README 与 docs/发布与部署.md；各附件 SHA256 见 SHA256SUMS.txt。\n`;
+  const notes = `# 认知星图 ${version}
+
+本地优先的通用学习平台，支持知识题库、组卷练习、考试、学习记录和 AI 辅助。
+
+${changes ? `## 本次更新\n\n${changes}\n\n` : ''}## 下载
+
+${files.map((file) => `- \`${file.file}\``).join('\n')}
+
+## 第一次使用
+
+软件首次启动为空题库，附带基础配置 \`config/defaults.json\`，AI 默认关闭。题库 ZIP 按领域作为独立附件提供。可在“知识总览 → 开始第一次学习”选择“导入题库包”或“自己建题”，审核通过后创建题集并开始练习。软件附件不含工作数据库、学习记录或个人配置。
+
+## 备份、升级与恢复
+
+在“系统配置 → 数据与迁移 → 迁移”选择“整个学习站”，导出 SQLite 迁移 ZIP 或原始数据库。使用 2.0 时，请在“数据与迁移 → 完整备份与恢复”导出 SQLite 数据库。配置随数据库保存，迁移副本会清除 AI 密钥，恢复后需重新填写。
+
+- **Windows 免安装版**先备份并完全退出旧版，再将新版解压到独立目录，把旧版的整个 \`data/\` 复制到新版程序旁后启动。使用原始 \`.sqlite\` 恢复时，先退出目标程序并另存目标 \`data/\`，再把备份文件复制为 \`data/noetic-atlas.sqlite\`。
+- **Web**先备份并停服，再让新版使用原数据库路径。
+- **Android**先把备份保存到应用外，再用相同签名的新版 APK 覆盖安装。需要恢复时可在迁移页选择 SQLite ZIP 或原始数据库。
+
+Windows 或 Web 回滚时，使用旧程序配合升级前的数据。详细步骤见仓库中的 \`docs/发布与部署.md\`。各附件 SHA256 见 \`SHA256SUMS.txt\`。
+
+${excluded.length ? `本次未附 Android 调试包或未签名包（${excluded.map((name) => `\`${name}\``).join('、')}）。Android 正式安装包需完成签名。\n` : ''}`;
   await writeFile(join(destination, 'release-files.json'), JSON.stringify(release, null, 2) + '\n');
   await writeFile(
     join(destination, 'SHA256SUMS.txt'),

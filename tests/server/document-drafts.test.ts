@@ -8,6 +8,7 @@ import { exportData, importData } from '../../server/modules/transfer/migration.
 import { exportConfiguration } from '../../server/modules/settings/configuration.js';
 import type { DocumentDraftState } from '../../shared/models/document-drafts.js';
 import { collectAssetReferences } from '../../shared/assets/asset-references.js';
+import { PDFDocument } from 'pdf-lib';
 
 const state = (title = '', bodyMarkdown = ''): DocumentDraftState => ({ title, kind: '学习笔记', bodyMarkdown, collection: 'general', categoryIds: [], tagIds: [], domainIds: [], format: 'markdown', assetId: null, fileName: null, sourcePath: null, author: '', publisher: '', publishedYear: '', description: '' });
 async function fixture(t: test.TestContext) {
@@ -34,6 +35,25 @@ test('incomplete drafts stay outside the library and publish atomically only aft
   assert.equal(document.title, '正式资料'); assert.equal((await api('/api/documents')).length, 1);
   assert.deepEqual((await api('/api/document-drafts')).map((draft: any) => draft.id), [second.id]);
   await api(`/api/document-drafts/${saved.id}`, 'PUT', { expectedUpdatedAt: saved.updatedAt, state: state('不能复活') }, 404);
+});
+
+test('publishing uploaded PDF drafts queues text indexing once and retains the old source index when replacing a file', async t => {
+  const { api, create } = await fixture(t);
+  const pdf = await PDFDocument.create(); pdf.addPage();
+  const asset = await api('/api/assets', 'POST', { filename: 'real-upload-path.pdf', mimeType: 'application/pdf', dataBase64: Buffer.from(await pdf.save()).toString('base64') }, 201);
+  const first = await create({ ...state('PDF资料'), format: 'pdf', assetId: asset.id, fileName: asset.filename });
+  assert.equal((await api('/api/pdf-index/jobs')).length, 0, 'unpublished upload stays outside the indexing queue');
+  const saved = await api(`/api/document-drafts/${first.id}/publish`, 'POST', { expectedUpdatedAt: first.updatedAt });
+  const jobs = await api('/api/pdf-index/jobs');
+  assert.equal(jobs.length, 1); assert.equal(jobs[0].assetId, asset.id); assert.equal(jobs[0].status, 'queued');
+  const renamed = await create({ ...state('PDF重命名'), format: 'pdf', assetId: asset.id, fileName: asset.filename }, saved.id, saved.updatedAt);
+  const updated = await api(`/api/document-drafts/${renamed.id}/publish`, 'POST', { expectedUpdatedAt: renamed.updatedAt });
+  assert.equal((await api('/api/pdf-index/jobs')).length, 1, 'metadata-only edits must reuse the queued file');
+  const otherPdf = await PDFDocument.create(); otherPdf.addPage([400, 500]);
+  const other = await api('/api/assets', 'POST', { filename: 'replacement.pdf', mimeType: 'application/pdf', dataBase64: Buffer.from(await otherPdf.save()).toString('base64') }, 201);
+  const replacement = await create({ ...state('PDF替换'), format: 'pdf', assetId: other.id, fileName: other.filename }, updated.id, updated.updatedAt);
+  await api(`/api/document-drafts/${replacement.id}/publish`, 'POST', { expectedUpdatedAt: replacement.updatedAt });
+  assert.deepEqual(new Set((await api('/api/pdf-index/jobs')).map((job: any) => job.assetId)), new Set([asset.id, other.id]));
 });
 
 test('draft writes, deletion and publish reject stale tabs without overwriting current content', async t => {

@@ -6,6 +6,7 @@ import { makeId, nextStamp, type Store } from '../../core/store.js';
 import { documentSchema, fail, id, parse } from '../../core/validation.js';
 import { getSettings } from '../settings/service.js';
 import { normalizeDocument, validateDocument } from './service.js';
+import { queueDocumentPdf } from './pdf-index-service.js';
 import { captureDocumentVersion } from './sources.js';
 import { documentDraftRetentionCandidates } from './document-draft-retention.js';
 import { createDocumentDraftSchema, updateDocumentDraftSchema, deleteDocumentDraftSchema, publishDocumentDraftSchema, documentDraftQuerySchema, validateDocumentDraftState } from './document-draft-schema.js';
@@ -61,6 +62,7 @@ export function registerDocumentDraftRoutes(app: FastifyInstance, store: Store) 
       const document = normalizeDocument(store, { ...value, id: previous?.id || makeId('doc'), updatedAt: nextStamp(previous?.updatedAt) } as DocumentRecord);
       validateDocument(store, document);
       if (previous) { captureDocumentVersion(store,previous); store.put('documents', document.id, document); } else store.insert('documents', document.id, document);
+      queueDocumentPdf(store, document);
       store.remove('document_drafts', draft.id); return document;
     });
   });

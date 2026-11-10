@@ -1,3 +1,4 @@
+import { getTask, isTasksEnabled } from '../tasks/client';
 import { aiImportLimits, materialLimitMessage } from '../../../shared/ai/import-limits';
 import { DocumentPicker, type SelectedDocument } from '../library/document-picker';
 import { extractLibrarySource } from './ai-library-source';
@@ -186,10 +187,17 @@ export function AiDocumentWorkspace() {
   }, []);
   useEffect(() => {
     if (!draft.ready) return;
-    const explicit = !explicitOpened.current
-      ? new URLSearchParams(window.location.hash.split('?')[1] || '').get('job')
-      : null;
+    const query = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const explicit = !explicitOpened.current ? query.get('job') : null;
+    const backgroundTask = !explicitOpened.current ? query.get('backgroundTask') : null;
     explicitOpened.current = true;
+    if (!explicit && backgroundTask && isTasksEnabled()) {
+      void getTask(backgroundTask).then(task => {
+        const match = /^\/api\/ai\/document-jobs\/([^/]+)\//.exec(task.operation);
+        if (match && opened.current !== match[1]) { opened.current = match[1]!; void open(match[1]!); }
+      }).catch(reason => setError(aiFailureMessage(reason)));
+      return;
+    }
     const id = explicit || jobId;
     if (!id) {
       opened.current = '';

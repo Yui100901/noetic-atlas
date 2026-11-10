@@ -1,4 +1,5 @@
 import { ShareButton } from '../sharing/share-button';
+import { replaceCurrentHashLocation } from '../../shared/lib/route-location';
 import { FocusLauncher, FocusHistory } from '../review-scheduler/focus-launcher';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, CalendarCheck2, ChevronRight, Clock3, History, NotebookPen, Star, Target } from 'lucide-react';
@@ -79,7 +80,7 @@ function LearningPanelBody({ source, paperId, practiceKind, initialTab, refreshK
   const changeTab = (next: LearningTab) => { setTab(next); setPage(1); };
   const changeReviewKind = (next: 'due' | 'favorite') => { setReviewKind(next); setPage(1); };
   const context:LearningReaderContext={scope:source==='paper'?'paper' as const:'quick' as const,kind,paperId,activity:window.location.hash.split('?')[0].endsWith('/activity'),tab,page,pageSize};
-  useEffect(()=>{history.replaceState(history.state,'',learningListHref(context));},[source,paperId,tab,kind,page,pageSize]);
+  useEffect(()=>{replaceCurrentHashLocation(learningListHref(context));},[source,paperId,tab,kind,page,pageSize]);
   const panelId = useId();
   if (!contextValid) return <ErrorNotice message="缺少题集标识，无法读取学习进度。" />;
   if (summaryLoading && !summary) return <Loading text={`正在读取${scopeLabel}的学习进度…`} />;

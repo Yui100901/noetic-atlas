@@ -5,3 +5,45 @@
 .handbook-entry p{line-height:1.9;margin:0;color:var(--muted)}
 @media(max-width:900px){.dashboard-utilities{grid-template-columns:1fr}}
 @media(max-width:500px){.dashboard-utilities{gap:16px}}
+
+.first-run-guide {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: clamp(16px, 3vw, 26px);
+}
+.first-run-guide h2 {
+  margin: 0;
+  font-size: clamp(18px, 3vw, 22px);
+}
+.first-run-guide p,
+.first-run-guide-steps {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.first-run-guide-steps {
+  padding-inline-start: 1.5em;
+}
+.first-run-guide-steps a,
+.first-run-guide-recovery a {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.first-run-guide-recovery {
+  padding-top: 10px;
+  border-top: 1px solid var(--theme-border);
+}
+.dashboard-guide-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.first-run-guide .dashboard-guide-actions .button {
+  min-height: 44px;
+  font-size: 13px;
+}
+.local-first .dashboard-guide-actions {
+  margin-top: 18px;
+}

@@ -1,3 +1,4 @@
+import { paperCoverageRequirementsSchema } from './paper-coverage-schema.js';
 import { AI_IMPORT_HARD_LIMITS } from '../../../shared/ai/import-limits.js';
 import { z } from 'zod';
 import { id, leafId, moneySchema, questionSchema, filtersSchema, scoringInputSchema, gradingRequirementsSchema, questionGradingRequirementsSchema, questionVersionsSchema, types } from '../../core/validation.js';
@@ -27,6 +28,6 @@ export const aiIds = z.array(id).min(1).max(20).refine(v => new Set(v).size === 
 export const aiLeafIds = z.array(leafId).min(1).max(20).refine(v => new Set(v).size === v.length, '题号不能重复');
 export const applySchema = z.object({ confirmed: z.literal(true), applyScores: z.boolean().default(false), appendNotes: z.boolean().default(false), questionIds: aiLeafIds.optional() }).strict().refine(v => v.applyScores || v.appendNotes, '至少选择应用判题结果或写入笔记');
 
-export const aiPaperPlanInputSchema = z.object({ prompt: z.string().trim().min(1).max(10000), count: z.number().int().min(1).max(AI_PAPER_MAX_QUESTIONS).optional(), filters: filtersSchema.default({}) }).strict();
+export const aiPaperPlanInputSchema = z.object({ prompt: z.string().trim().min(1).max(10000), count: z.number().int().min(1).max(AI_PAPER_MAX_QUESTIONS).optional(), filters: filtersSchema.default({}), coverage: paperCoverageRequirementsSchema.optional() }).strict();
 export const aiPaperPlanOutputSchema = z.object({ title: z.string().trim().min(1).max(300), description: z.string().max(10000), items: z.array(z.object({ questionId: id, reason: z.string().trim().min(1).max(4000) }).strict()).min(1).max(AI_PAPER_MAX_QUESTIONS) }).strict();
 export const aiPaperPlanApplySchema = z.object({ confirmed: z.literal(true), title: z.string().trim().min(1).max(300), description: z.string().max(500000).default(''), questionIds: z.array(id).min(1).max(AI_PAPER_MAX_QUESTIONS).refine(v => new Set(v).size === v.length, '题号不能重复'), organization: z.enum(['domain', 'other']).default('other'), domainId: id.nullable().default(null), scoring: scoringInputSchema.optional(), gradingRequirements: gradingRequirementsSchema.optional(), questionGradingRequirements: questionGradingRequirementsSchema.optional(), expectedQuestionVersions: questionVersionsSchema.optional() }).strict();

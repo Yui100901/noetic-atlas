@@ -6,7 +6,7 @@ import {useAiDraftSession} from './ai-workspace-draft-context';
 import { ActionDropdown } from '../../shared/ui/action-dropdown';
 import './ai-import-layout.css';
 
-interface Options {kind:AiWorkspaceDraftKind;contextId?:string;state:Record<string,unknown>;restore(state:Record<string,unknown>):void;ready?:boolean;busy?:boolean;hasContent:boolean;compact?:boolean}
+interface Options {kind:AiWorkspaceDraftKind;contextId?:string;state:Record<string,unknown>;restore(state:Record<string,unknown>):void;ready?:boolean;busy?:boolean;detachable?:boolean;hasContent:boolean;compact?:boolean}
 /** Drafts contain editor snapshots only: never file handles, credentials, or
  * in-flight model output. Serialized writes prevent an older save winning. */
 export function useAiWorkspaceDraft(options:Options){
@@ -47,7 +47,9 @@ export function useAiWorkspaceDraft(options:Options){
   }).catch(reason=>{if(!controller.signal.aborted)setError((reason as Error).message);});
   return()=>{mounted.current=false;controller.abort();};
  },[options.kind,options.contextId,revision]);
- useEffect(()=>session?.register({dirty,busy:()=>!finished.current&&(!!latest.current.busy||locked.current),saving:()=>!!operation.current,save:()=>saveRef.current()}),[session]);
+ // Only an accepted durable task may release the navigation lock. Draft writes
+ // remain independently protected, including a save immediately before submit.
+ useEffect(()=>session?.register({dirty,busy:()=>!finished.current&&!latest.current.detachable&&(!!latest.current.busy||locked.current),saving:()=>!!operation.current,save:()=>saveRef.current()}),[session]);
  useEffect(()=>{
   if(!ready||options.ready===false||conflict)return;
   if(finished.current&&serial!==saved.current)finished.current=false;

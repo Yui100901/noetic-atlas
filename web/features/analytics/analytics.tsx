@@ -1,4 +1,5 @@
 import { LearningPlanMetrics } from '../daily-push/learning-plan-metrics';
+import { replaceCurrentHashLocation } from '../../shared/lib/route-location';
 import {
   analyticsMonday,
   periodRange,
@@ -711,9 +712,7 @@ export function AnalyticsPage({ initialTab }: { initialTab?: string }) {
   const active = mode === 'week' ? weekly : analytics,
     report = mode === 'week' ? weekly.data?.current : analytics.data;
   useEffect(() => {
-    history.replaceState(
-      history.state,
-      '',
+    replaceCurrentHashLocation(
       statisticsLocation({ currentHash: window.location.hash, tab, mode, anchor, custom, allAi }),
     );
   }, [tab, mode, anchor, custom, allAi]);

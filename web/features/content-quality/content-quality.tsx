@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {replaceCurrentHashLocation} from '../../shared/lib/route-location';
 import {ArrowLeft,RefreshCw,Settings2} from 'lucide-react';
 import type {Paged} from '../../../shared/utils/pagination';
 import type {FeedbackReviewBatch,QuestionFeedbackView} from '../../../shared/models/question-feedback';
@@ -32,7 +33,7 @@ export function ContentQualityPage({questionId='',feedbackId='',issueId=''}:{que
   const debounced=useDebounced(search),overview=useResource<QualityOverview>(`${base}/overview`);
   const groups=useResource<Paged<QualityQuestionGroup>>(`${base}/questions?${qs({search:debounced,status,origin,severity,rule,domainId,questionId:scopedQuestion,scanId,page,pageSize})}`);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  useEffect(()=>{if(!issueId&&!feedbackId&&window.location.hash!==returnTo)history.replaceState(history.state,'',returnTo);},[returnTo,issueId,feedbackId]);
+  useEffect(()=>{if(!issueId&&!feedbackId)replaceCurrentHashLocation(returnTo);},[returnTo,issueId,feedbackId]);
   useEffect(()=>{
     if(!issueId&&!feedbackId)return;let cancelled=false;
     async function locate(){

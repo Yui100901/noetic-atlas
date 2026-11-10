@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNativeApp, nativeFetch, nativeDownload } from '@platform';
+import { backgroundResponse, shouldBackground } from '../../features/tasks/client';
 
 export class ApiError extends Error {
   code: string;
@@ -14,7 +15,14 @@ export async function request<T>(url: string, options: RequestInit = {}): Promis
   const headers = new Headers(options.headers);
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const prepared = { ...options, headers };
-  const response = await (isNativeApp() ? nativeFetch(url, prepared) : fetch(url, prepared));
+  let response: Response;
+  try {
+    response = await (shouldBackground(url, prepared) ? backgroundResponse(url, prepared) : isNativeApp() ? nativeFetch(url, prepared) : fetch(url, prepared));
+  } catch (error) {
+    const taskError = error as { code?: string; status?: number; details?: unknown; message?: string };
+    if (taskError?.code && taskError.status) throw new ApiError(taskError.message || '后台任务未完成', taskError.code, taskError.status, taskError.details);
+    throw error;
+  }
   let data: any;
   try { data = await response.json(); } catch { if (!response.ok) throw new ApiError(`请求失败（${response.status}）`, 'HTTP_ERROR', response.status); }
   if (!response.ok) { const detail = Array.isArray(data?.error?.details) ? data.error.details.map((item: any) => `${item.path ? item.path + '：' : ''}${item.message || ''}`).filter(Boolean).join('；') : ''; throw new ApiError((data?.error?.message || `请求失败（${response.status}）`) + (detail ? `：${detail}` : ''), data?.error?.code || 'HTTP_ERROR', response.status, data?.error?.details); }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { replaceCurrentHashLocation } from '../../shared/lib/route-location';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import type { AiRun } from '../../../shared/ai/ai';
 import type { Paged } from '../../../shared/utils/pagination';
@@ -94,7 +95,7 @@ export function AiRunHistory({
       if (value) params.set(key, value);
       else params.delete(key);
     }
-    history.replaceState(history.state, '', '#/analytics?' + params);
+    replaceCurrentHashLocation('#/analytics?' + params);
   }, [kind, status, questionId, debouncedModel, managedRange]);
   const resource = useResource<Paged<AiRun>>(
     `/api/ai/runs?page=${page}&pageSize=${pageSize}${query ? `&${query}` : ''}`,

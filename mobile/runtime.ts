@@ -1,3 +1,4 @@
+import { restorePackageQuestionPreviewContext } from '../server/modules/transfer/packages';
 import type { SqlJsStatic } from 'sql.js';
 import { buildApp } from '../server/index';
 import { configureSQLite, currentDatabase } from './shims/sqlite';
@@ -10,6 +11,12 @@ import { pendingFailureAudit, replayFailureAudit } from './database/ai-audit-com
 import { dailyPushTimerDelay, dailyPushRefreshesAfter } from '../server/scheduling/daily-push';
 import { isDailyPushDue } from '../server/modules/daily-push/calendar';
 import type { DailyPushOverview, DailyPushSettings } from '../shared/models/daily-push';
+import type { Store } from '../server/core/store';
+import type { TaskExecution } from '../server/modules/tasks/contracts';
+import type { TaskInput, TaskProgress } from '../shared/tasks/tasks';
+import { BackgroundTaskManager } from '../server/modules/tasks/manager';
+import { IndexedTaskStorage } from './tasks/indexed-storage';
+import { commitTaskChanges, taskWasCommitted } from '../server/modules/tasks/changes';
 
 export interface DurableStorage {
   load(): Promise<Uint8Array | undefined>;
@@ -25,12 +32,30 @@ async function sha256(bytes: Uint8Array) { const value = await crypto.subtle.dig
  * A successful mutation is acknowledged only after its SQLite bytes are durable.
  * A failed file commit restores the same live DB object to its previous snapshot.
  */
-export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storage: DurableStorage, options: { dailyPushNow?: () => Date; dailyPushScheduler?: boolean } = {}) {
+export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storage: DurableStorage, options: { dailyPushNow?: () => Date; dailyPushScheduler?: boolean; onStore?:(store:Store)=>void; backgroundExecutor?:(bytes:Uint8Array,input:TaskInput,signal:AbortSignal,progress:(value:TaskProgress)=>void)=>Promise<TaskExecution> } = {}) {
   const initial = await storage.load(); configureSQLite(sql, initial); configureSeed(seed);
   const dailyNow = options.dailyPushNow || (() => new Date());
   let requestDailyAt: Date | undefined;
   let startupMigrated = false;
-  const app = await buildApp({ databasePath: ':memory:', seedPath: SEED_PATH, staticRoot: '/not-a-web-server', native: true, dailyPushNow: () => requestDailyAt || dailyNow(), onDataMigrated:()=>{startupMigrated=true;} }) as unknown as LocalApp;
+  let taskManager:BackgroundTaskManager|undefined;
+  const app = await buildApp({ databasePath: ':memory:', seedPath: SEED_PATH, staticRoot: '/not-a-web-server', native: true, dailyPushNow: () => requestDailyAt || dailyNow(), onDataMigrated:()=>{startupMigrated=true;},onStore:options.onStore,
+    ...(options.backgroundExecutor?{taskFactory:async(store:Store)=>{
+      taskManager=new BackgroundTaskManager(new IndexedTaskStorage(),{
+        committed:async id=>taskWasCommitted(store,id),
+        execute:async(_id,input,signal,progress)=>{const snapshot=await enqueue(async()=>database.export());return options.backgroundExecutor!(snapshot,input,signal,progress);},
+        commit:async(id,execution)=>enqueue(async()=>{
+          if(reloadRequired)throw new Error('数据库已恢复，请重新打开应用后继续任务');
+          if(!execution.changes?.patches.length){
+            if(execution.context?.packagePreview)restorePackageQuestionPreviewContext(store,execution.context.packagePreview);
+            return;
+          }
+          const before=database.export();
+          try{commitTaskChanges(store,id,execution.changes);const bytes=database.export();await storage.save(bytes);durableBaseline=bytes.slice();revision++;}
+          catch(error){database.restore(before);throw error;}
+        }),
+      });await taskManager.initialize();return taskManager;
+    }}:{}),
+  }) as unknown as LocalApp;
   const database = currentDatabase();
   if (!initial || startupMigrated) {
     try { await storage.save(database.export()); }
@@ -133,6 +158,7 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       const selected = bytes.slice();
       return enqueue(async () => {
         pending = undefined; assertNoActiveExam();
+        if(taskManager?.list().some(task=>['queued','running','committing'].includes(task.status)))throw new Error('请先完成或取消后台任务，再预览恢复数据库。');
         const disk = await storage.load();
         if (!sameBytes(disk, durableBaseline)) throw new Error('本机数据库文件已在应用外改变，请重启应用后重新预览');
         const prepared = await prepareSQLiteRestore(sql, selected);
@@ -144,6 +170,7 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
     restore(token: string): Promise<SQLiteRestoreResult> {
       return enqueue(async () => {
         assertNoActiveExam();
+        if(taskManager?.list().some(task=>['queued','running','committing'].includes(task.status)))throw new Error('后台任务尚未结束，请先完成或取消再恢复数据库。');
         const prepared = pending; pending = undefined;
         if (!prepared || token !== prepared.preview.token || prepared.revision !== revision) throw new Error('恢复预览已失效，或本机数据已修改，请重新选择文件并预览');
         if (!sameBytes(await storage.load(), prepared.disk)) throw new Error('本机数据库文件在预览后发生变化，已取消恢复，请重启应用');
@@ -178,6 +205,6 @@ export async function createLocalRuntime(sql: SqlJsStatic, seed: unknown, storag
       if (!storage.loadRecoveryBackup) throw new Error('当前存储不支持读取恢复前副本');
       return shareableRecoveryBytes(sql, await storage.loadRecoveryBackup(id));
     }),
-    close: async () => { closing = true; stopDailyTimer(); await dailyChecking; await queue; closed = true; pending = undefined; await app.close(); },
+    close: async () => { closing = true; stopDailyTimer(); await dailyChecking; await taskManager?.close(); await queue; closed = true; pending = undefined; await app.close(); },
   };
 }

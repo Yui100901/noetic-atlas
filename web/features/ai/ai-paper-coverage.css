@@ -1,0 +1,63 @@
+.ai-paper-coverage-editor > .form-stack {
+  margin-top: 14px;
+}
+.ai-paper-coverage-rule {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(140px, 2fr) minmax(85px, 0.7fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+.ai-paper-coverage-rule > .field {
+  min-width: 0;
+}
+.ai-paper-coverage-rule select,
+.ai-paper-coverage-rule input {
+  width: 100%;
+  min-width: 0;
+}
+.ai-paper-coverage-rule > button {
+  margin-bottom: 0;
+}
+.ai-paper-coverage-summary {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.ai-paper-coverage-summary h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.ai-paper-coverage-summary ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.ai-paper-coverage-summary li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.ai-paper-coverage-summary li span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ai-paper-coverage-summary .coverage-missing {
+  border: 1px solid var(--border);
+  background: var(--green-soft);
+}
+@media (max-width: 700px) {
+  .ai-paper-coverage-rule {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ai-paper-coverage-rule .button {
+    min-height: 44px;
+  }
+}

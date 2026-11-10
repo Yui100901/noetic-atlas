@@ -6,6 +6,21 @@ import { tmpdir } from 'node:os';
 import { buildApp } from '../../server/index.js';
 import { seedAndroidLayout } from '../../scripts/testing/android/layout-fixture.mjs';
 import { connectAndroid } from '../../scripts/testing/android/device.mjs';
+import { androidLayoutProfiles } from '../../scripts/testing/android/profiles.mjs';
+
+test('real Android layout profiles cover portrait and landscape for phone and tablet natural displays', () => {
+  for (const [size, portrait, landscape] of [
+    ['Physical size: 1080x1920', 0, 1],
+    ['Physical size: 1280x720', 1, 0],
+    ['Physical size: 1080x1920\nOverride size: 1280x720', 1, 0],
+  ] as const) {
+    const profiles = androidLayoutProfiles(size);
+    assert.equal(profiles.find((p) => p.name === 'portrait')?.rotation, portrait);
+    assert.equal(profiles.find((p) => p.name === 'landscape')?.rotation, landscape);
+    assert.equal(profiles.find((p) => p.name === 'large-font')?.rotation, portrait);
+  }
+  assert.throws(() => androidLayoutProfiles('unknown display'), /natural display/);
+});
 
 test('Android layout seed exercises the real API with isolated content and valid reader/attempt identities', async (t) => {
   const external = t.mock.method(globalThis, 'fetch', async () => {
@@ -82,6 +97,8 @@ test('Android CLI help and argument errors finish before any device or toolchain
   const invalid = resolve(tmpdir(), 'noetic-qa-nonexistent-toolchain');
   for (const script of [
     'scripts/qa/check-android-layout.mjs',
+    'scripts/qa/check-android-functional.mjs',
+    'scripts/qa/check-android-real-pdf.mjs',
     'scripts/testing/android/build-qa.mjs',
   ]) {
     const run = (argument: string) =>

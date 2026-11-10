@@ -1,0 +1,59 @@
+.task-notification-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  text-decoration: none;
+}
+.task-notification-button:hover,
+.task-notification-button:focus-visible {
+  color: var(--theme-link, var(--green));
+  border-color: var(--green);
+}
+.task-notification-button:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+.task-notification-button.has-notifications {
+  color: var(--theme-link, var(--green));
+  background: var(--green-soft, var(--theme-inset));
+  border-color: var(--theme-primary-border, var(--green));
+}
+.task-notification-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 4px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  background: var(--theme-link, var(--green));
+  color: var(--surface);
+  border: 2px solid var(--surface);
+}
+
+.toast:has(> a[href='#/tasks']) {
+  width: max-content;
+  max-width: min(40rem, calc(100vw - 32px));
+  gap: 12px;
+}
+.toast > a[href='#/tasks'] {
+  color: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

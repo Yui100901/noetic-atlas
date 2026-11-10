@@ -22,6 +22,7 @@ import { ApiError, documentSchema } from '../../server/core/validation.js';
 import { archiveAttemptQuestionHistory } from '../../server/modules/questions/history-store.js';
 import { captureDocumentVersion } from '../../server/modules/library/sources.js';
 import { createAsset } from '../../server/modules/assets/service.js';
+import { taskCommitKey } from '../../server/modules/tasks/commit-marker.js';
 
 function fixture(t: test.TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'atlas-migration-test-')),
@@ -214,6 +215,10 @@ test('overall SQLite migration retains private records and standalone drafts, wh
     exportSQLiteMigration(store, selection, stale.fingerprint),
     (error: any) => error.code === 'MIGRATION_PREVIEW_STALE',
   );
+  const receipt = taskCommitKey('completed-import:0:1');
+  store.database.run(
+    store.database.query.insertInto('metadata').values({ key: receipt, value: 'committed' }),
+  );
   const preview = sqliteMigrationPlan(store, selection).preview,
     output = await exportSQLiteMigration(store, selection, preview.fingerprint),
     copy = open(output.bytes);
@@ -221,6 +226,12 @@ test('overall SQLite migration retains private records and standalone drafts, wh
   assert.equal(copy.all('questions').length, 8);
   assert.equal(copy.database.records('ai_runs').length, 2);
   assert.ok(copy.get('ai_workspace_drafts', 'unscoped-ai-draft'));
+  const receiptIn = (source: Store) =>
+    source.database.one(
+      source.database.query.selectFrom('metadata').select('value').where('key', '=', receipt),
+    );
+  assert.equal(receiptIn(store)?.value, 'committed');
+  assert.equal(receiptIn(copy), undefined);
   assert.equal(copy.database.getRecord<any>('ai_settings', 'local').key, '');
   assert.equal(store.database.records<any>('ai_settings')[0].key, 'SECRET-MIGRATION-TEST');
 });

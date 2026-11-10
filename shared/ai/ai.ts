@@ -1,3 +1,4 @@
+import type { PaperCoverageReport } from './paper-coverage.js';
 import type { QuestionInput } from '../models/types.js';
 import type { AiQuestionEditResult } from './question-edit.js';
 import type { AiTokenUsage, AiUsageSummary } from './usage.js';
@@ -51,7 +52,15 @@ export interface AiPaperPlanResult {
   items: AiPaperPlanItem[];
   requestedCount: number;
   candidateCount: number;
-  candidates: { id: string; title: string; type: string }[];
+  candidates: {
+    id: string;
+    title: string;
+    type: string;
+    difficulty?: number;
+    categoryIds?: string[];
+    tagIds?: string[];
+  }[];
+  coverage?: PaperCoverageReport;
   retrieval?: AiPaperPlanRetrieval;
 }
 export interface AiExplanation {

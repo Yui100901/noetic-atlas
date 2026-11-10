@@ -1,4 +1,5 @@
 import { ShareButton } from '../sharing/share-button';
+import { replaceCurrentHashLocation } from '../../shared/lib/route-location';
 import { useEffect, useState } from 'react';
 import { ArrowRight, CalendarClock, RefreshCw } from 'lucide-react';
 import type { ReviewDirection, ReviewQueue } from '../../../shared/models/adaptive-review';
@@ -22,7 +23,7 @@ export function AdaptiveReviewQueue() {
   const [initialPagination]=useState(()=>readLearningPagination(initial,true));
   const [page,setPage]=useState(initialPagination.page),[pageSize,setPageSize]=useState(initialPagination.pageSize);
   const context:LearningReaderContext={scope:'queue',kind:'due',queueKind:kind,domainId,categoryId,direction,page,pageSize};
-  useEffect(()=>{if(enabled)history.replaceState(history.state,'',learningListHref(context));},[enabled,kind,domainId,categoryId,direction,page,pageSize]);
+  useEffect(()=>{if(enabled)replaceCurrentHashLocation(learningListHref(context));},[enabled,kind,domainId,categoryId,direction,page,pageSize]);
   const resource = useResource<ReviewQueue>(enabled ? `/api/review-scheduler/queue?${qs({ kind, domainId, categoryId, direction, page, pageSize })}` : null);
   useEffect(() => { if (!enabled) return; const refresh = () => { if (document.visibilityState === 'visible' && !document.body.classList.contains('exam-active')) resource.refresh(); }; const timer = setInterval(refresh, 30000); window.addEventListener('focus', refresh); return () => { clearInterval(timer); window.removeEventListener('focus', refresh); }; }, [enabled, resource.refresh]);
   useEffect(() => { if (!resource.data || resource.loading) return; const maximum = Math.max(1, Math.ceil(resource.data.total / pageSize)); if (page > maximum) setPage(maximum); }, [resource.data, resource.loading, page, pageSize]);

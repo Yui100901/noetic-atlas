@@ -4,7 +4,11 @@ import {
   type AiImportLimits,
 } from '../../../shared/ai/import-limits';
 import type { ReactNode } from 'react';
-import { DEFAULT_SETTINGS, type SystemSettings } from '../../../shared/models/settings';
+import {
+  DEFAULT_SETTINGS,
+  MAX_DOCUMENT_UPLOAD_MIB,
+  type SystemSettings,
+} from '../../../shared/models/settings';
 import { typeLabels, type QuestionType } from '../../../shared/models/types';
 import { Field } from '../../shared/ui/components';
 import { ThemePicker } from '../../shared/theme/theme-picker';
@@ -295,7 +299,7 @@ export function SettingsFields({
               'maxDocumentMiB',
               '单份MD / PDF上限（MiB）',
               1,
-              50,
+              MAX_DOCUMENT_UPLOAD_MIB,
               `默认${DEFAULT_SETTINGS.maxDocumentMiB} MiB。`,
             )}
             {number(

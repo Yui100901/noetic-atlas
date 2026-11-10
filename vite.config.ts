@@ -1,10 +1,15 @@
-import { defineConfig } from 'vite';
+import { defaultClientConditions, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
-  resolve: { alias: [{ find: /^@platform$/, replacement: fileURLToPath(new URL('./web/shared/lib/platform.ts', import.meta.url)) }] },
+  resolve: {
+    // The Markdown parser is shared with PDF rendering in a Web Worker.
+    // Prefer its DOM-free entity decoder in development and production.
+    conditions: ['worker', ...defaultClientConditions],
+    alias: [{ find: /^@platform$/, replacement: fileURLToPath(new URL('./web/shared/lib/platform.ts', import.meta.url)) }],
+  },
   build: { manifest: true, outDir: 'dist/web', emptyOutDir: true },
   server: { host: '127.0.0.1', port: 5173, strictPort: true, proxy: { '/api': {
     target: 'http://127.0.0.1:4317', changeOrigin: false,

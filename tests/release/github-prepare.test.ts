@@ -73,15 +73,12 @@ for (const version of ['1.0.0', '1.5']) {
     assert.equal(manifest.version, version);
     assert.equal(manifest.tag, `v${version}`);
     assert.equal(manifest.files[0].file, `noetic-atlas-${version}-runtime.zip`);
-    assert.ok(
-      (await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8')).startsWith(
-        `# 认知星图 ${version}\n`,
-      ),
-    );
-    assert.match(
-      await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8'),
-      /密钥不会进入配置包/,
-    );
+    const notes = await readFile(join(result.output, 'RELEASE-NOTES.md'), 'utf8');
+    assert.ok(notes.startsWith(`# 认知星图 ${version}\n`));
+    assert.match(notes, /系统配置 → 数据与迁移 → 迁移/);
+    assert.match(notes, /迁移副本会清除 AI 密钥/);
+    assert.match(notes, /data\/noetic-atlas\.sqlite/);
+    assert.doesNotMatch(notes, /配置迁移/);
     await assert.rejects(() => prepareGithubRelease({ root }), /已存在/);
   });
 }

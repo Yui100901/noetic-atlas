@@ -1,7 +1,7 @@
 import { saveGeneratedFile } from '@platform';
 import { bytesToBase64 } from '../../../shared/assets/assets';
 import { DATA_PACKAGE_LIMITS } from '../../../shared/packages/data-package';
-import { send } from './api';
+import { request } from './api';
 import type { DataPackageExportInput } from '../../../shared/models/export-preflight';
 
 export interface DataPackageDownload {
@@ -54,7 +54,9 @@ export async function savePackageDownload(file: DataPackageDownload): Promise<vo
   await saveGeneratedFile(filename.toLowerCase().endsWith('.zip') ? filename : `${filename || '认知星图-数据包'}.zip`, bytes, 'application/zip');
 }
 
-export async function exportPackage(input: DataPackageExportInput): Promise<void> {
+export async function exportPackage(input: DataPackageExportInput, signal?: AbortSignal): Promise<void> {
   // The server rechecks the same budget before collecting export bodies.
-  await savePackageDownload(await send<DataPackageDownload>('/api/packages/export', 'POST', input));
+  const file = await request<DataPackageDownload>('/api/packages/export', { method: 'POST', body: JSON.stringify(input), signal });
+  signal?.throwIfAborted();
+  await savePackageDownload(file);
 }

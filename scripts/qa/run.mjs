@@ -11,7 +11,7 @@ import {
 } from './helpers/suite-runner.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
-const help = `用法：node scripts/qa/run.mjs [--group smoke|browser|static|performance|live-ai|release|content-audit|android] [--only ID,ID] [--list|--dry-run]
+const help = `用法：node scripts/qa/run.mjs [--group smoke|browser|static|performance|live-ai|release|content-audit|android|local-source] [--only ID,ID] [--list|--dry-run]
 默认运行smoke。--all仅运行离线浏览器、静态和性能组；串行运行，不自动构建。
 真实AI须显式 --allow-live-ai；工作数据核对须显式 --allow-operator-data。
 可重复--group和--only。报告与逐项日志在test-results/qa-runs/<时间-进程号>/。`;
@@ -34,7 +34,7 @@ try {
               id: entry.id,
               groups: entry.groups,
               requirements: entry.requirements,
-              access: entry.access || 'isolated',
+              access: entry.directArgs ? 'direct-command' : entry.access || 'isolated',
               command: [process.execPath, ...commandFor(entry)],
               timeoutMs: entry.timeoutMs,
               ...(entry.platform ? { platform: entry.platform } : {}),

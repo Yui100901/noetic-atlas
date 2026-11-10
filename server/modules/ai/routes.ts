@@ -1,3 +1,4 @@
+import { assertPaperCoverageForSave } from './paper-coverage.js';
 import { paperMetadataForCount } from '../../../shared/ai/paper-metadata.js';
 import { AI_IMPORT_REQUEST_BYTES, needsBatchedImport } from '../../../shared/ai/import-limits.js';
 import type { FastifyInstance } from 'fastify';
@@ -207,6 +208,7 @@ export function registerAiRoutes(app: FastifyInstance, store: Store, options: { 
     const versions = run._context.candidateVersions || run._context.questionVersions;
     if (input.questionIds.some(qid => !Object.hasOwn(versions,qid))) fail(400, 'AI_PAPER_CANDIDATE_MISMATCH', '调整后的题目必须来自本次候选范围，请重新推荐以更换范围');
     requireSameQuestions(store, { questionVersions: versions, sourceByItem: {} }, input.questionIds);
+    assertPaperCoverageForSave(store,run,input.questionIds);
     const metadata = paperMetadataForCount(input,input.questionIds.length,{previousCount:(run.result as AiPaperPlanResult).items.length});
     const paper = buildPaper(store, { ...input, title:metadata.title,description:metadata.description, mode: 'manual' });
     return reply.code(201).send(store.transaction(() => { store.insert('papers', paper.id, paper); run.createdPaperId = paper.id; run.appliedAt = now(); putRun(store, run); return { paper: paperView(paper, true), run: publicRun(run) }; }));

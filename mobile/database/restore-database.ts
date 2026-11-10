@@ -2,6 +2,7 @@ import { SUPPORTED_READ_PROJECTION_VERSIONS } from '../../server/database/projec
 import type { Database, SqlJsStatic } from 'sql.js';
 import { z } from 'zod';
 import { recordTables } from '../../server/database/schema';
+import { TASK_COMMIT_PREFIX } from '../../server/modules/tasks/commit-marker';
 import type { DatabaseSync } from '../shims/sqlite';
 const coreTables = [
   'domains',
@@ -129,6 +130,7 @@ export function inspectSQLite(sql: SqlJsStatic, bytes: Uint8Array) {
     if (
       [...metadata.keys()].some(
         (key) =>
+          !key.startsWith(TASK_COMMIT_PREFIX) &&
           ![
             'schema_version',
             'seed_initialized',
@@ -192,6 +194,11 @@ export function inspectSQLite(sql: SqlJsStatic, bytes: Uint8Array) {
     db.run("DELETE FROM metadata WHERE key='document_projection_version'");
     db.run("DELETE FROM metadata WHERE key='startup_validation_version'");
     db.run("DELETE FROM metadata WHERE key='question_import_version'");
+    // A private recovery copy may have receipts from its old task queue.
+    db.run('DELETE FROM metadata WHERE substr(key, 1, ?) = ?', [
+      TASK_COMMIT_PREFIX.length,
+      TASK_COMMIT_PREFIX,
+    ]);
     return db.export();
   } finally {
     db.close();

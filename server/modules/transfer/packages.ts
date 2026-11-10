@@ -64,6 +64,40 @@ const previewQuestions = new WeakMap<
 >();
 const cacheLimit = 256 * MiB,
   cacheAge = 10 * 60 * 1000;
+/** Private worker handoff. This content never enters task list/result APIs. */
+export interface PackageQuestionPreviewContext {
+  fingerprint: string;
+  questions: QuestionInput[];
+  assets: AssetRecord[];
+  createdAt: number;
+}
+export function exportPackageQuestionPreviewContext(
+  store: Store,
+  fingerprint: string,
+): PackageQuestionPreviewContext | undefined {
+  const cached = previewQuestions
+    .get(store)
+    ?.find((value) => value.fingerprint === fingerprint && Date.now() - value.at < cacheAge);
+  return cached
+    ? {
+        fingerprint,
+        questions: cached.questions,
+        assets: [...cached.images.values()],
+        createdAt: cached.at,
+      }
+    : undefined;
+}
+export function restorePackageQuestionPreviewContext(
+  store: Store,
+  context: PackageQuestionPreviewContext,
+) {
+  if (Date.now() - context.createdAt >= cacheAge) return;
+  rememberQuestions(store, context.fingerprint, context.questions, context.assets);
+  const cached = previewQuestions
+    .get(store)
+    ?.find((value) => value.fingerprint === context.fingerprint);
+  if (cached) cached.at = context.createdAt;
+}
 function rememberQuestions(
   store: Store,
   fingerprint: string,

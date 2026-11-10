@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useTaskDetachable } from '../../features/tasks/use-task-detachable';
+import { useRef, useState } from 'react';
 import { Download, FileText, LoaderCircle, Share2 } from 'lucide-react';
 import {
   exportModeLabels,
@@ -80,37 +81,51 @@ function ExportDialog({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const detachable = useTaskDetachable('/api/packages/export', busy && format === 'zip');
+  const active = useRef<AbortController>(null);
+  const close = () => {
+    if (!busy || format !== 'zip' || detachable) {
+      if (detachable) active.current?.abort();
+      onClose();
+    }
+  };
   const { toast } = useApp();
   const modes: ExportMode[] = attemptId ? ['completed', 'blank', 'answers'] : ['blank', 'answers'];
   const run = async () => {
+    const controller = new AbortController();
+    active.current = controller;
     setBusy(true);
     setError('');
     try {
       if (format === 'zip') {
         if (!paperId || !preflight.allowed) return;
-        await exportPackage({ kind: 'share', selection: { kind: 'paper', id: paperId } });
+        await exportPackage(
+          { kind: 'share', selection: { kind: 'paper', id: paperId } },
+          controller.signal,
+        );
         toast('题集数据包已准备，可在另一套认知星图导入。');
         return;
       }
       const path = attemptId
         ? `/api/attempts/${idPath(attemptId)}/export-document`
         : `/api/papers/${idPath(paperId!)}/export-document`;
-      const document = await request<ExportDocument>(`${path}?mode=${mode}`);
-      await downloadExport(document, format);
+      const document = await request<ExportDocument>(`${path}?mode=${mode}`, {
+        signal: controller.signal,
+      });
+      await downloadExport(document, format, controller.signal);
       toast(isNativeApp() ? '导出文件已准备，请在系统分享中保存。' : '文件已生成并开始下载。');
     } catch (err) {
-      setError((err as Error).message || '文件导出失败，请重试。');
+      if ((err as Error).name !== 'AbortError') {
+        const message = (err as Error).message || '文件导出失败，请重试。';
+        setError(message);
+        toast(message, true);
+      }
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Modal
-      title={share ? '分享题集' : '导出题集'}
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-    >
+    <Modal title={share ? '分享题集' : '导出题集'} onClose={close}>
       <div className="export-dialog">
         <p className="export-intro">
           {attemptId
@@ -167,11 +182,25 @@ function ExportDialog({
               : 'Markdown 为可编辑文本，便于迁移、修改或导入其他笔记工具。'}
         </p>
         {preflight.view}
+        {detachable && (
+          <p className="notice info">
+            数据包正在后台生成，可关闭此窗口或切换页面；完成后从顶部任务通知下载。
+          </p>
+        )}
         {error && <ErrorNotice message={error} />}
         <div className="export-actions">
-          <button className="button" disabled={busy} onClick={onClose}>
-            取消
+          <button
+            className="button"
+            disabled={busy && format === 'zip' && !detachable}
+            onClick={close}
+          >
+            {busy ? '关闭并继续生成' : '取消'}
           </button>
+          {busy && format !== 'zip' && (
+            <button type="button" className="button" onClick={() => active.current?.abort()}>
+              取消生成
+            </button>
+          )}
           <button
             className="button primary"
             disabled={busy || (format === 'zip' && !preflight.allowed)}

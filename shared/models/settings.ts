@@ -12,6 +12,8 @@ export const THEME_LABELS: Record<Theme, string> = {
   mint: '薄荷绿',
 };
 
+export const MAX_DOCUMENT_UPLOAD_MIB = 50;
+
 export interface ReviewSchedulingSettings {
   strategy: 'fsrs' | 'fixed';
   desiredRetention: number;

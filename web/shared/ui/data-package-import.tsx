@@ -1,3 +1,5 @@
+import { useTaskResume } from '../../features/tasks/use-task-resume';
+import { useTaskDetachable } from '../../features/tasks/use-task-detachable';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Archive, Check, Upload } from 'lucide-react';
 import type { DataPackagePreview } from '../../../shared/models/data-packages';
@@ -38,6 +40,10 @@ export function DataPackageImport({
     [encoded, setEncoded] = useState('');
   const [preview, setPreview] = useState<DataPackagePreview | null>(null);
   const [phase, setPhase] = useState<'reading' | 'preview' | 'import' | null>(null);
+  const detachable = useTaskDetachable(
+    phase === 'import' ? '/api/packages/import' : '/api/packages/preview',
+    phase === 'import' || phase === 'preview',
+  );
   const [error, setError] = useState(''),
     [done, setDone] = useState<DataPackagePreview['kind'] | null>(null);
   const [trusted, setTrusted] = useState(false),
@@ -91,6 +97,40 @@ export function DataPackageImport({
       active.current?.abort();
     },
     [],
+  );
+  useTaskResume(
+    '/api/packages/preview',
+    true,
+    (input, result) => {
+      const body = input.body as {
+        dataBase64?: string;
+        dedup?: { enabled?: boolean };
+        taxonomyMapping?: ImportTaxonomyMapping;
+      };
+      const value = result.json as DataPackagePreview;
+      setEncoded(body.dataBase64 || '');
+      setEnabled(body.dedup?.enabled !== false);
+      setMapping(body.taxonomyMapping || {});
+      setPreview(value);
+      setLoadedKind(value.kind);
+      setCatalog(value.taxonomy || null);
+      setFilename('后台校验的数据包');
+      setError('');
+      setPhase(null);
+    },
+    (reason) => setError((reason as Error).message),
+  );
+  useTaskResume(
+    '/api/packages/import',
+    true,
+    (_input, result) => {
+      setDone((result.json as DataPackagePreview).kind);
+      setError('');
+      setPhase(null);
+      reload();
+      onImported?.();
+    },
+    (reason) => setError((reason as Error).message),
   );
   const load = async (file?: File) => {
     if (!file || phase === 'import') return;
@@ -295,24 +335,30 @@ export function DataPackageImport({
                 ? enabled && ordinaryImport
                   ? '正在校验数据包并检查重复与近似题…'
                   : '正在校验数据包与引用…'
-                : '正在完整导入数据包，请保持当前页面…'}
+                : '正在完整导入数据包…'}
           </p>
-          {phase !== 'import' && (
-            <button
-              type="button"
-              className="button"
-              onClick={() => {
-                generation.current++;
-                active.current?.abort();
-                active.current = null;
-                setPhase(null);
-                setPreview(null);
-                setEncoded('');
-                setDecisions([]);
-              }}
-            >
-              取消检查
-            </button>
+          {detachable ? (
+            <a className="button" href="#/tasks">
+              已交给后台，可切换页面或查看任务
+            </a>
+          ) : (
+            phase !== 'import' && (
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  generation.current++;
+                  active.current?.abort();
+                  active.current = null;
+                  setPhase(null);
+                  setPreview(null);
+                  setEncoded('');
+                  setDecisions([]);
+                }}
+              >
+                取消检查
+              </button>
+            )
           )}
         </div>
       )}

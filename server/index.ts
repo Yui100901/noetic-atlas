@@ -1,4 +1,6 @@
 import { registerQuestionDraftRoutes } from './modules/questions/drafts.js';
+import { registerTaskRoutes } from './modules/tasks/routes.js';
+import type { BackgroundTaskManager } from './modules/tasks/manager.js';
 import { registerAiUsageRoutes } from './modules/ai/usage-routes.js';
 import { registerQuestionRevisionRoutes } from './modules/questions/revisions.js';
 import {registerMaintenanceRoutes} from './modules/maintenance/routes.js';
@@ -54,7 +56,7 @@ import { registerReviewSchedulerRoutes } from './modules/review-scheduler/routes
 import { checkDailyPush } from './modules/daily-push/service.js';
 import { createDailyPushScheduler, dailyPushRefreshesAfter, type DailyPushSchedulerClock } from './scheduling/daily-push.js';
 
-export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void; dailyPushNow?: () => Date; dailyPushScheduler?: boolean; dailyPushSchedulerClock?: DailyPushSchedulerClock }
+export interface AppOptions { databasePath?: string; seedPath?: string; staticRoot?: string; logger?: boolean; native?: boolean; onDataMigrated?: () => void; dailyPushNow?: () => Date; dailyPushScheduler?: boolean; dailyPushSchedulerClock?: DailyPushSchedulerClock; onStore?: (store:Store)=>void; taskFactory?: (store:Store)=>Promise<BackgroundTaskManager> }
 export async function buildApp(options: AppOptions = {}) {
   const dbPath = options.databasePath || process.env.DATABASE_PATH || resolve('data/noetic-atlas.sqlite');
   // Normal installations start empty. A seed is an explicit test/operator input,
@@ -63,13 +65,14 @@ export async function buildApp(options: AppOptions = {}) {
   const app = Fastify({ logger: options.logger ?? false, bodyLimit: 80 * 1024 * 1024, routerOptions: { maxParamLength: 4096 } });
   await registerApiDocs(app, { native: options.native });
   const store = new Store(dbPath);
+  let taskManager:BackgroundTaskManager|undefined;
   const scheduler = !options.native && options.dailyPushScheduler !== false ? createDailyPushScheduler({
     readConfig: () => getSettings(store).dailyPush,
     check: at => checkDailyPush(store, at),
     ...(options.dailyPushSchedulerClock ? { clock: options.dailyPushSchedulerClock } : options.dailyPushNow ? { clock: { now: options.dailyPushNow, setTimeout: (run, delay) => setTimeout(run, delay), clearTimeout: handle => clearTimeout(handle as ReturnType<typeof setTimeout>) } } : {}),
     onError: error => app.log.error(error),
   }) : undefined;
-  app.addHook('onClose', async () => { scheduler?.stop(); store.db.close(); });
+  app.addHook('onClose', async () => { await taskManager?.close(); scheduler?.stop(); store.db.close(); });
   try {
     const initialized = store.database.one(store.database.query.selectFrom('metadata').select('value').where('key','=','seed_initialized'));
     if (!initialized && tablesEmpty(store) && seedPath && existsSync(seedPath)) {
@@ -82,6 +85,8 @@ export async function buildApp(options: AppOptions = {}) {
   } catch (error) { store.db.close(); throw error; }
 
   registerHttpSecurity(app, store);
+  options.onStore?.(store);
+  if(options.taskFactory){taskManager=await options.taskFactory(store);registerTaskRoutes(app,taskManager);}
   registerAiUsageRoutes(app, store);
 
   registerVocabularyRoutes(app,store);
@@ -89,7 +94,7 @@ export async function buildApp(options: AppOptions = {}) {
   app.get('/api/taxonomy', async () => store.taxonomy());
   app.get('/api/bootstrap', async () => {
     const ai = getPublicAiSettings(store);
-    return { ...store.taxonomy(), settings: getSettings(store), stats: dashboardStats(store), ai: { available: ai.enabled, message: ai.enabled ? 'AI辅助已开启，操作时将所选资料发送给你配置的模型服务。' : 'AI辅助未开启，可在系统配置中设置模型服务。' } };
+    return { ...store.taxonomy(), backgroundTasks:!!taskManager, settings: getSettings(store), stats: dashboardStats(store), ai: { available: ai.enabled, message: ai.enabled ? 'AI辅助已开启，操作时将所选资料发送给你配置的模型服务。' : 'AI辅助未开启，可在系统配置中设置模型服务。' } };
   });
 
   registerQuestionImportRoutes(app, store);

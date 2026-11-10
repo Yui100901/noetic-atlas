@@ -49,6 +49,7 @@ export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entr
     size: adb('shell', 'wm', 'size'),
     density: adb('shell', 'wm', 'density'),
     rotation: adb('shell', 'wm', 'user-rotation'),
+    fixedRotation: adb('shell', 'wm', 'fixed-to-user-rotation'),
     fontScale: adb('shell', 'settings', 'get', 'system', 'font_scale'),
     ime: adb('shell', 'settings', 'get', 'secure', 'default_input_method'),
     enabledIme: adb('shell', 'settings', 'get', 'secure', 'enabled_input_methods'),
@@ -84,11 +85,14 @@ export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entr
     } catch (error) {
       cleanupErrors.push('QA data clear failed: ' + error.message);
     }
-    for (const [name, value] of [
-      ['size', original.size.match(/Override size:\s*(\d+x\d+)/)?.[1]],
-      ['density', original.density.match(/Override density:\s*(\d+)/)?.[1]],
-    ])
-      clean('shell', 'wm', name, value || 'reset');
+    // QA profiles change orientation and font size only. In particular, do not
+    // write wm size/density even to restore the same value: these are the
+    // operator's display settings, not test-owned resources.
+    if (
+      ['default', 'disabled', 'enabled'].includes(original.fixedRotation) &&
+      adb('shell', 'wm', 'fixed-to-user-rotation') !== original.fixedRotation
+    )
+      clean('shell', 'wm', 'fixed-to-user-rotation', original.fixedRotation);
     if (original.rotation.startsWith('lock'))
       clean('shell', 'wm', 'user-rotation', 'lock', original.rotation.match(/\d+/)?.[0] || '0');
     else clean('shell', 'wm', 'user-rotation', 'free');
@@ -106,6 +110,7 @@ export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entr
       size: adb('shell', 'wm', 'size'),
       density: adb('shell', 'wm', 'density'),
       rotation: adb('shell', 'wm', 'user-rotation'),
+      fixedRotation: adb('shell', 'wm', 'fixed-to-user-rotation'),
       fontScale: adb('shell', 'settings', 'get', 'system', 'font_scale'),
       ime: adb('shell', 'settings', 'get', 'secure', 'default_input_method'),
       enabledIme: adb('shell', 'settings', 'get', 'secure', 'enabled_input_methods'),
@@ -177,6 +182,10 @@ export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entr
       page = browser.contexts()[0].pages()[0];
       page.setDefaultTimeout(30000);
       page.on('pageerror', (error) => errors.push(error.message));
+      page.on('console', (message) => {
+        if (message.type() === 'error' && message.text().startsWith('[local-api]'))
+          errors.push(message.text().slice(0, 500));
+      });
       page.on('dialog', (dialog) => void dialog.accept());
       page.on('request', (request) => {
         const url = new URL(request.url());
@@ -221,14 +230,35 @@ export async function connectAndroid({ serial = process.env.ANDROID_SERIAL, entr
         },
         { url, method, body },
       );
-    const go = async (path) => {
-      // Full navigation also refreshes the bootstrap after API-created fixtures;
-      // hash-only goto can otherwise inspect the previous React route.
-      await page.goto('https://localhost/?android-layout=' + Date.now() + '#/' + path);
-      await attach();
+    const go = async (path, { reload = true } = {}) => {
+      if (reload) {
+        // Refresh bootstrap after API-created fixtures.
+        await page.goto('https://localhost/?android-layout=' + Date.now() + '#/' + path);
+        await attach();
+      } else {
+        // The layout scan reuses this WebView between routes. Wait for the
+        // navigation event and React's next frame before reading geometry.
+        await page.evaluate(async (hash) => {
+          if (location.hash === hash) return;
+          await new Promise((resolve) => {
+            addEventListener(
+              'hashchange',
+              () => {
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+              },
+              { once: true },
+            );
+            location.hash = hash;
+          });
+        }, '#/' + path);
+      }
       await until(async () => {
         const text = await page.locator('main').innerText();
-        return text.trim() && !/^(?:正在加载|正在读取)/.test(text.trim());
+        return (
+          text.trim() &&
+          !/^(?:正在加载|正在读取)/.test(text.trim()) &&
+          !(await page.locator('main .loading:visible').count())
+        );
       }, 'page content: ' + path);
       await page.evaluate(
         () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),

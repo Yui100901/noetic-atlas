@@ -1,4 +1,5 @@
 import {PAGE_SIZES} from '../../../shared/utils/pagination';
+import {replaceCurrentHashLocation} from '../../shared/lib/route-location';
 
 export interface PaperListContext {search:string;organization:string;showArchived:boolean;page:number;pageSize:number}
 const storageKey='noetic-atlas:paper-list-view';
@@ -25,6 +26,6 @@ export function initialPaperListContext():PaperListContext{
  return normalizePaperListContext();
 }
 export function rememberPaperList(input:PaperListContext){
- const url=paperListHref(input);history.replaceState(history.state,'',url);
+ const url=paperListHref(input);replaceCurrentHashLocation(url);
  try{sessionStorage.setItem(storageKey,url);}catch{/* URL persistence remains available. */}
 }

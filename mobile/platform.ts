@@ -9,6 +9,7 @@ import './native.css';
 import { configureAiTransport } from '../shared/ai/ai-transport';
 import { createEmptyInitialData } from '../shared/models/initial-data';
 import { buildDataPackage, SQLITE_PACKAGE_LIMITS } from '../shared/packages/data-package';
+import { executeNativeTask } from './tasks/executor';
 export { saveGeneratedFile } from './generated-file';
 
 export const isNativeApp = () => Capacitor.isNativePlatform();
@@ -29,7 +30,7 @@ function local() {
   if (!runtime) runtime = (async () => {
     document.documentElement.classList.add('native-app');
     const sql = await initSqlJs({ locateFile: () => '/sql-wasm.wasm' });
-    return createLocalRuntime(sql, createEmptyInitialData(), deviceStorage);
+    return createLocalRuntime(sql, createEmptyInitialData(), deviceStorage,{backgroundExecutor:executeNativeTask});
   })().catch(error => { runtime = undefined; throw error; });
   return runtime;
 }

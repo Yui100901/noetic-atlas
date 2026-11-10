@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { base64ToBytes } from '../../../shared/assets/assets.js';
 import type { Store } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
 import { normalizePdfText, PDF_TEXT_VERSION, type PdfCache } from '../../../shared/pdf/text.js';
@@ -78,7 +79,9 @@ export function validatePdfRecords(store: Store) {
     let digest = assetHashes.get(job.assetId);
     if (!digest) {
       digest = createHash('sha256')
-        .update(Buffer.from(store.get<any>('assets', job.assetId).dataBase64, 'base64'))
+        .update(
+          base64ToBytes(store.require<{ dataBase64: string }>('assets', job.assetId).dataBase64),
+        )
         .digest('hex');
       assetHashes.set(job.assetId, digest);
     }

@@ -1,4 +1,5 @@
 import {QuestionContent, SourceNoticeScope, questionNoticeContents} from '../../shared/ui/content-notices';
+import { replaceCurrentHashLocation } from '../../shared/lib/route-location';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Check, Download, Edit3, Plus, RotateCcw } from 'lucide-react';
 import type { Question, QuestionPage, QuestionReviewInput } from '../../../shared/models/types';
@@ -17,7 +18,7 @@ export function QuestionReviewPage() {
   const [initialLocation] = useState(() => readManagementLocation(window.location.hash));
   const [search, setSearch] = useState(initialLocation?.search||''); const [domainId, setDomainId] = useState(initialLocation?.domainId||''); const [page, setPage] = useState(initialLocation?.page||1); const [pageSize,setPageSize]=useState(initialLocation?.pageSize||20);
   const returnTo=managementLocation('review',{search,domainId,page,pageSize});
-  useEffect(()=>{if(window.location.hash!==returnTo)history.replaceState(history.state,'',returnTo);},[returnTo]);
+  useEffect(()=>{replaceCurrentHashLocation(returnTo);},[returnTo]);
   const debounced = useDebounced(search), waiting = debounced !== search;
   const listUrl = `/api/questions?${qs({ status: 'pending', search: debounced, domainId, page, pageSize })}`;
   const resource = useResource<QuestionPage>(waiting ? null : listUrl);

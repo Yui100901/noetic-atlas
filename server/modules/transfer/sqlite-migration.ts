@@ -7,6 +7,7 @@ import { fail, id } from '../../core/validation.js';
 import { recordTables } from '../../database/schema.js';
 import { redactAiSecretsInDatabase } from '../ai/routes.js';
 import { cleanStoredLearningMetadata } from '../questions/learning-metadata.js';
+import { TASK_COMMIT_PREFIX } from '../tasks/commit-marker.js';
 import { exportData, importData } from './migration.js';
 import { sqliteMigrationPlan } from './sqlite-migration-plan.js';
 import { validateSQLitePrivateRecords } from './sqlite-validation.js';
@@ -32,6 +33,7 @@ export const migrationDatabaseQuerySchema = z
         }
       }),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    format: z.enum(['sqlite', 'zip']).default('sqlite'),
   })
   .strict();
 export const migrationPreviewSchema = z
@@ -108,6 +110,19 @@ export async function exportSQLiteMigration(
             'question_import_version',
             'startup_validation_version',
           ]),
+      );
+      // The task queue lives outside SQLite. A receipt is meaningful only
+      // alongside its originating queue and must not follow portable learning data.
+      db.run(
+        db.query
+          .deleteFrom('metadata')
+          .where((eb) =>
+            eb(
+              eb.fn<string>('substr', ['key', eb.val(1), eb.val(TASK_COMMIT_PREFIX.length)]),
+              '=',
+              TASK_COMMIT_PREFIX,
+            ),
+          ),
       );
     });
     db.pdf.rebuild();

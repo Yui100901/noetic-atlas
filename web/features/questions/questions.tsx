@@ -17,6 +17,7 @@ import { ConceptEditor } from './concept-editor';
 import { VocabularyEditor, VocabularyPreview } from './vocabulary-editor';
 import { prepareVocabularyEditorInput } from './vocabulary-editor-state';
 import {useNavigationGuard} from '../../shared/lib/navigation-guard';
+import {replaceCurrentHashLocation} from '../../shared/lib/route-location';
 import { libraryLocation, readLibraryLocation, libraryReturnFromHash, libraryQuestionHref, libraryScroll } from './library-navigation';
 import {MathScope} from '../../shared/math/math-context';
 import {QuestionContent} from '../../shared/ui/content-notices';
@@ -48,7 +49,7 @@ export function QuestionsPage({ initial = {} }: { initial?: Partial<Filters> }) 
   const [initialLocation] = useState(() => readLibraryLocation(window.location.hash, initial));
   const [filters, setFilters] = useState<Filters>(initialLocation.filters); const [page, setPage] = useState(initialLocation.page); const [pageSize,setPageSize]=useState(initialLocation.pageSize);
   const returnTo = libraryLocation(filters,page,pageSize);
-  useEffect(() => { if (window.location.hash !== returnTo) history.replaceState(history.state, '', returnTo); }, [returnTo]);
+  useEffect(() => { replaceCurrentHashLocation(returnTo); }, [returnTo]);
   const restoredScroll = useRef(false);
   // Only free text waits for the debounce. Changing a select must not first
   // request page one with the previous filter, or show its rows as current.

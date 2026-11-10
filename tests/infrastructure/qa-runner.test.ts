@@ -40,7 +40,10 @@ test('QA broad runs cannot silently call a real provider, inspect working data, 
     entries.every(
       (entry: any) =>
         !entry.access &&
-        !entry.groups.some((group: string) => ['release', 'android'].includes(group)),
+        !entry.directArgs &&
+        !entry.groups.some((group: string) =>
+          ['release', 'android', 'local-source'].includes(group),
+        ),
     ),
   );
   assert.doesNotThrow(() => assertAllowed(entries, options));
@@ -53,8 +56,10 @@ test('QA broad runs cannot silently call a real provider, inspect working data, 
   assert.doesNotThrow(() => assertAllowed(explicit.entries, explicit.options));
   assert.deepEqual(
     select(['--group', 'android']).entries.map((entry: any) => entry.id),
-    ['android-layout'],
+    ['android-functional', 'android-layout'],
   );
+  const local = select(['--only', 'real-pdf-books']);
+  assert.throws(() => assertAllowed(local.entries, local.options), /--books-root/);
 });
 
 test('QA rejects misspelled groups, IDs and flags instead of falling back to a default run', () => {

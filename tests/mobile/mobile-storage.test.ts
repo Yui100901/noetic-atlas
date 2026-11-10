@@ -3,19 +3,30 @@ import assert from 'node:assert/strict';
 import { createDeviceStorage, bytesToBase64, base64ToBytes } from '../../mobile/storage.ts';
 
 function bridge() {
-  const files = new Map<string, string>(); let failCommit = false; let denied = false; let truncateWrite = false; let corruptCommit = false;
+  const files = new Map<string, string>(); let failCommit = false; let denied = false; let truncateWrite = false; let corruptCommit = false; let failAppend = false;
+  const appended: number[] = [];
   const absent = () => { throw { code: 'OS-PLUG-FILE-0008' }; };
   const api: any = {
     async stat({ path }: any) { if (denied) throw { code: 'OS-PLUG-FILE-0007' }; if (!files.has(path)) absent(); return {}; },
     async readFile({ path }: any) { if (!files.has(path)) absent(); return { data: files.get(path) }; },
     async writeFile({ path, data }: any) { files.set(path, truncateWrite && path === 'learning.next.sqlite' ? bytesToBase64(new Uint8Array([99])) : data); },
+    async appendFile({ path, data }: any) {
+      if (failAppend) throw new Error('simulated failed append');
+      const suffix = base64ToBytes(data);
+      const previous = base64ToBytes(files.get(path)!);
+      const bytes = new Uint8Array(previous.length + suffix.length);
+      bytes.set(previous);
+      bytes.set(suffix, previous.length);
+      files.set(path, bytesToBase64(bytes));
+      appended.push(suffix.length);
+    },
     async deleteFile({ path }: any) { if (!files.delete(path)) absent(); },
     async rename({ from, to }: any) {
       if (failCommit && from === 'learning.next.sqlite') throw new Error('simulated failed rename');
       if (!files.has(from)) absent(); files.set(to, corruptCommit && from === 'learning.next.sqlite' ? bytesToBase64(new Uint8Array([88])) : files.get(from)!); files.delete(from);
     },
   };
-  return { files, storage: createDeviceStorage(api), failCommit: () => { failCommit = true; }, deny: () => { denied = true; }, truncate: () => { truncateWrite = true; }, corrupt: () => { corruptCommit = true; } };
+  return { files, appended, storage: createDeviceStorage(api), failCommit: () => { failCommit = true; }, failAppend: () => { failAppend = true; }, deny: () => { denied = true; }, truncate: () => { truncateWrite = true; }, corrupt: () => { corruptCommit = true; } };
 }
 test('Android file persistence restores interrupted commit and never treats I/O denial as an empty install', async () => {
   const a = bridge(); const first = new Uint8Array([0, 127, 255, 45]);
@@ -32,6 +43,17 @@ test('Android file persistence restores interrupted commit and never treats I/O 
 test('SQLite bytes use a lossless base64 bridge across chunk boundaries', () => {
   const bytes = new Uint8Array(70_001).map((_value, index) => index % 256);
   assert.deepEqual(base64ToBytes(bytesToBase64(bytes)), bytes);
+});
+
+test('Android stages large SQLite writes in bounded chunks and retains the previous commit on append failure', async () => {
+  const a = bridge();
+  const bytes = new Uint8Array(5 * 1024 * 1024 + 19).map((_value, index) => index % 251);
+  await a.storage.save(bytes);
+  assert.deepEqual(a.appended, [2 * 1024 * 1024, 1024 * 1024 + 19]);
+  assert.deepEqual(await a.storage.load(), bytes);
+  a.failAppend();
+  await assert.rejects(a.storage.save(new Uint8Array(bytes.length)), /failed append/);
+  assert.deepEqual(await a.storage.load(), bytes);
 });
 
 test('Android keeps a verified independent recovery copy across ordinary database rotations', async () => {

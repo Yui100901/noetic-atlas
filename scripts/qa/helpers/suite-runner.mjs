@@ -65,6 +65,11 @@ export function selectChecks(catalog, groups, aliases, options) {
 }
 
 export function assertAllowed(checks, options) {
+  const manual = checks.find((entry) => entry.directArgs);
+  if (manual)
+    throw Error(
+      `${manual.id} 需要明确指定本地输入，请直接运行 node --import tsx ${manual.script} ${manual.directArgs.join(' ')}`,
+    );
   if (checks.some((entry) => entry.access === 'live-ai') && !options.allowLiveAi)
     throw Error('真实AI检查会读取现有配置并请求供应商；请显式添加 --allow-live-ai');
   if (checks.some((entry) => entry.access === 'operator-data') && !options.allowOperatorData)

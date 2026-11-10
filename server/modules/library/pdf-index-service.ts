@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { base64ToBytes } from '../../../shared/assets/assets.js';
 import type { Store } from '../../core/store.js';
 import { fail, parse } from '../../core/validation.js';
 import {
@@ -19,9 +20,7 @@ export function queuePdfAsset(store: Store, assetId: string): PdfJob {
   if (existing) return existing;
   const asset = store.require<any>('assets', assetId);
   if (asset.mimeType !== 'application/pdf') fail(400, 'PDF_REQUIRED', '请选择PDF资料');
-  const contentHash = createHash('sha256')
-      .update(Buffer.from(asset.dataBase64, 'base64'))
-      .digest('hex'),
+  const contentHash = createHash('sha256').update(base64ToBytes(asset.dataBase64)).digest('hex'),
     cacheId = `pdf-v${PDF_TEXT_VERSION}-${contentHash}`,
     previous = db.getRecord<PdfCache>('pdf_caches', cacheId),
     date = stamp();

@@ -1,6 +1,8 @@
 import { buildApp } from './index.js';
+import { resolve } from 'node:path';
+import { createNodeTaskManager } from './modules/tasks/node-manager.js';
 
-const app = await buildApp({ logger: true });
+const app = await buildApp({ logger: true, taskFactory:store=>createNodeTaskManager(store,process.env.DATABASE_PATH||resolve('data/noetic-atlas.sqlite')) });
 const port = Number(process.env.PORT || 4317);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT 须为 1～65535 的整数');
 const host = process.env.HOST || '127.0.0.1';

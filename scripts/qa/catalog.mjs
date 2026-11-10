@@ -8,6 +8,7 @@ export const groups = Object.freeze({
   release: '已构建发布产物的隔离验收，不自动构建',
   'content-audit': '既有内容维护操作的只读核对，读取工作数据库，必须显式允许',
   android: '已有设备和专用QA APK的显式原生检查，不进入--all',
+  'local-source': '需要手动指定本地书籍或 PDF，直接运行对应命令',
 });
 const smoke = new Set([
   'form-save-bar-focus-ui',
@@ -18,6 +19,9 @@ const smoke = new Set([
   'data-package-ui',
 ]);
 const browserIds = [
+  'first-run-ui',
+  'paper-coverage-ui',
+  'background-tasks-ui',
   'ai-import-merge-ui',
   'sharing-sets-ui',
   'export-rehome-ui',
@@ -92,6 +96,7 @@ const browserIds = [
   'question-sets',
   'reader-ai-ui',
   'review-navigation-safety-ui',
+  'route-normalization-navigation-ui',
   'rubric-format-ui',
   'rubric-preview-ui',
   'rubric-quality-ui',
@@ -227,14 +232,28 @@ export const catalog = Object.freeze([
   ...['common-applied', 'wordlist-kinds'].map((id) =>
     check(id, 'content-audit', { typescript: true, access: 'operator-data' }),
   ),
+  check('android-functional', 'android', {
+    timeoutMs: 1200000,
+    requirements: ['android-device', 'android-qa-apk'],
+  }),
   check('android-layout', 'android', {
     timeoutMs: 900_000,
     requirements: ['android-device', 'android-qa-apk'],
+  }),
+  check('real-pdf-books', 'local-source', {
+    directArgs: ['--books-root', '<PDF目录>'],
+    requirements: ['browser', 'web-build'],
+    timeoutMs: 1_800_000,
+  }),
+  check('android-real-pdf', 'local-source', {
+    directArgs: ['--serial', '<设备序列号>', '--pdf', '<本地PDF>', '--query', '<检索词>'],
+    requirements: ['android-device', 'android-qa-apk'],
+    timeoutMs: 900_000,
   }),
 ]);
 
 // A compatibility shim executes exactly the maintenance suite; do not run it twice.
 export const aliases = Object.freeze({ 'learning-reset-ui': 'maintenance-ui' });
 export function commandFor(entry) {
-  return ['--import', 'tsx', entry.script, ...(entry.args || [])];
+  return ['--import', 'tsx', entry.script, ...(entry.directArgs ?? entry.args ?? [])];
 }

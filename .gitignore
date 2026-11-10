@@ -39,6 +39,7 @@ google-services.json
 # Build outputs, toolchains, reports and caches
 /artifacts/
 /.localtools/
+.tasks/
 /.sites-runtime/
 /test-results/
 /coverage/

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
 import type { AiDocumentBlock, AiDocumentImportResult, AiDocumentJob } from '../../../shared/ai/ai-document';
 import type { QuestionInput } from '../../../shared/models/types';
@@ -13,10 +13,12 @@ import { documentPreviewDraft, draftNumber, draftString, draftStrings, previewDr
 import { useImportDedup } from '../../shared/lib/use-import-dedup';
 import { ImportDedupReview } from '../../shared/ui/import-dedup-review';
 import { ImportDedupToggle } from '../../shared/ui/import-dedup-toggle';
+import { useTaskDetachable } from '../tasks/use-task-detachable';
 
 const phaseLabels: Record<string, string> = { pending: '待处理', running: '处理中', completed: '已完成', failed: '失败', cancelled: '已取消' };
 export function AiDocumentJobPanel({ job, onChange, onClose, onSettled }: { job: AiDocumentJob; onChange: (job: AiDocumentJob) => void; onClose: () => void; onSettled?: () => void }) {
   const { toast, reload } = useApp(), progress = useAiProgress(), session = useAiDraftSession();
+  const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const [selected, setSelected] = useState<string[]>(job.blocks.map(block => block.id));
   const [search, setSearch] = useState(''), [onlyFailed, setOnlyFailed] = useState(false), [expanded, setExpanded] = useState('');
   const [edits, setEdits] = useState<Record<string, DocumentPreviewDraftEdit>>({});
@@ -24,7 +26,8 @@ export function AiDocumentJobPanel({ job, onChange, onClose, onSettled }: { job:
   const [round, setRound] = useState<{ current: number; total: number; label: string } | null>(null);
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(20);
   const dedup = useImportDedup(JSON.stringify([job.id, job.updatedAt, selected, edits]));
-  const draft = useAiWorkspaceDraft({ kind: 'document-job', contextId: job.id, state: { selected, search, onlyFailed, expanded, edits, page, pageSize }, busy,
+  const accepted=useTaskDetachable(operation=>operation===`/api/ai/document-jobs/${idPath(job.id)}/import-preview`||operation===`/api/ai/document-jobs/${idPath(job.id)}/import`,busy);
+  const draft = useAiWorkspaceDraft({ kind: 'document-job', contextId: job.id, state: { selected, search, onlyFailed, expanded, edits, page, pageSize }, busy, detachable:progress.detachable||accepted,
     hasContent: Object.keys(edits).length > 0 || !!search || onlyFailed || !!expanded || selected.length !== job.blocks.length || page !== 1 || pageSize !== 20,
     restore: value => { setSelected(draftStrings(value.selected).filter(id => job.blocks.some(block => block.id === id))); setSearch(draftString(value.search)); setOnlyFailed(value.onlyFailed === true); setExpanded(draftString(value.expanded)); setEdits(documentPreviewDraft(value.edits)); setPage(Math.max(1, draftNumber(value.page, 1))); const size = draftNumber(value.pageSize, 20); setPageSize((PAGE_SIZES as readonly number[]).includes(size) ? size : 20); setError(''); setNotice(''); }
   });
@@ -51,19 +54,22 @@ export function AiDocumentJobPanel({ job, onChange, onClose, onSettled }: { job:
     setBusy(true); setError(''); setNotice(''); let latest = job, completedRounds = 0;
     try {
       await draft.runBusy(async () => {
-        for (const [index, block] of targets.entries()) {
-          setRound({ current: index + 1, total: targets.length, label: block.title || block.label });
-          latest = await progress.run<AiDocumentJob>(`/api/ai/document-jobs/${idPath(job.id)}/${stage}`, { blockIds: [block.id], ...(retryFailed || status(block) === 'cancelled' ? { retryFailed: true } : {}), ...(stage === 'generate' ? { questionsPerBlock: requiresAllocation ? Math.min(requested(block), allocated!) : requested(block) } : {}) });
-          onChange(latest); completedRounds++;
-        }
+        setRound({current:1,total:targets.length,label:targets[0].title||targets[0].label});
+        const bodies=targets.map(block=>({ blockIds: [block.id], ...(retryFailed || status(block) === 'cancelled' ? { retryFailed: true } : {}), ...(stage === 'generate' ? { questionsPerBlock: requiresAllocation ? Math.min(requested(block), allocated!) : requested(block) } : {}) }));
+        latest=await progress.runSteps<AiDocumentJob>(`/api/ai/document-jobs/${idPath(job.id)}/${stage}`,bodies,(value,index)=>{
+          onChange(value);completedRounds=index+1;
+          const next=targets[index+1];if(next)setRound({current:index+2,total:targets.length,label:next.title||next.label});
+        });
+        completedRounds=targets.length;onChange(latest);
       });
       const failed = latest.blocks.filter(block => targets.some(target => target.id === block.id) && (stage === 'plan' ? block.planStatus !== 'completed' : block.generationStatus !== 'completed')).length;
       setNotice(`本轮已处理${completedRounds}块，${completedRounds - failed}块成功${failed ? `、${failed}块未完成。下方保留具体原因，可单独重试` : ''}。${stage === 'plan' ? '请根据章节摘要选择需要出题的知识块。' : '预览尚未进入题库，请核对后确认导入。'}`);
     } catch (reason) {
+      if(!mounted.current)return;
       setError(aiFailureMessage(reason));
       setNotice(`本轮已停止，成功批次保留，可重新打开任务继续。${completedRounds ? `本轮已完成${completedRounds}次分块请求。` : ''}`);
       try { await refresh(); } catch { /* Keep the original operation error. */ }
-    } finally { setBusy(false); setRound(null); onSettled?.(); }
+    } finally { if(mounted.current){setBusy(false); setRound(null); onSettled?.();} }
   }
   async function importSelected() {
     setError('');
@@ -101,13 +107,13 @@ export function AiDocumentJobPanel({ job, onChange, onClose, onSettled }: { job:
   if (!draft.ready) return draft.controls;
   return <section className="card ai-tools form-stack ai-document-current" aria-label="教材分批任务">
     {draft.controls}
-    <div className="list-toolbar"><div><h2>2. {job.sourceName}</h2><p className="muted">总结{job.plannedBlocks}/{job.blockCount}块 · 生成{job.questionCount}/{job.maxQuestions}题 · 已导入{job.importedCount}题{job.failedBlocks ? ` · ${job.failedBlocks}块有失败` : ''}</p></div><div className="ai-document-actions">{job.blocks.some(block=>!block.sourceCitation)&&<button className="button" disabled={busy} onClick={()=>void linkSources()}>保存原文并关联题目</button>}<button className="button" disabled={busy} onClick={() => { setError(''); void refresh().catch(reason => setError(aiFailureMessage(reason))); }}><RefreshCw size={15} />刷新</button><button className="button" disabled={busy} onClick={close}><X size={15} />收起任务</button><button className="button danger" disabled={busy} onClick={() => void remove()}><Trash2 size={15} />删除任务</button></div></div>
+    <div className="list-toolbar"><div><h2>2. {job.sourceName}</h2><p className="muted">总结{job.plannedBlocks}/{job.blockCount}块 · 生成{job.questionCount}/{job.maxQuestions}题 · 已导入{job.importedCount}题{job.failedBlocks ? ` · ${job.failedBlocks}块有失败` : ''}</p></div><div className="ai-document-actions">{job.blocks.some(block=>!block.sourceCitation)&&<button className="button" disabled={busy} onClick={()=>void linkSources()}>保存原文并关联题目</button>}<button className="button" disabled={busy} onClick={() => { setError(''); void refresh().catch(reason => setError(aiFailureMessage(reason))); }}><RefreshCw size={15} />刷新</button><button className="button" disabled={busy&&!progress.detachable&&!accepted} onClick={close}><X size={15} />收起任务</button><button className="button danger" disabled={busy} onClick={() => void remove()}><Trash2 size={15} />删除任务</button></div></div>
     <p className="muted">每块最多{job.questionsPerBlock}题，总预算{job.maxQuestions}题。选择多块时按剩余预算均摊，材料不足可少于上限。处理一块保存一块，离开后从任务列表继续。</p>
     <div className="ai-document-toolbar"><SearchBox value={search} onChange={value => { setSearch(value); setPage(1); }} placeholder="查找章节、知识点或来源" /><label className="check-row"><input type="checkbox" checked={onlyFailed} onChange={event => { setOnlyFailed(event.target.checked); setPage(1); }} />仅看失败／取消</label></div>
     <ImportDedupToggle enabled={dedup.enabled} onChange={dedup.setEnabled} disabled={busy}/><div className="ai-document-actions"><button className="button" disabled={busy} onClick={() => setSelected(job.blocks.map(block => block.id))}>选择全部{job.blockCount}块</button><button className="button" disabled={busy} onClick={() => setSelected(filtered.map(block => block.id))}>选择当前筛选结果</button><button className="button" disabled={busy} onClick={() => setSelected([])}>清空选择</button><span className="muted">已选{selected.length}块 · 跨页保留</span></div>
     <div className="ai-document-actions"><button className="button primary" disabled={busy || !chosen.some(block => ['pending', 'cancelled', 'running'].includes(block.planStatus))} onClick={() => void process('plan')}><Sparkles size={15} />AI总结选中知识块</button><button className="button" disabled={busy || !chosen.some(block => block.planStatus === 'failed')} onClick={() => void process('plan', true)}><RefreshCw size={15} />重试失败总结</button><button className="button primary" disabled={busy || !fresh.length} onClick={() => void process('generate')}><Sparkles size={15} />为选中知识块生成题目（{fresh.length}块）</button><button className="button" disabled={busy || !retry.length} onClick={() => void process('generate', true)}><RefreshCw size={15} />重试失败出题（{retry.length}块）</button><button className="button" disabled={busy || !importable.length || !!dedup.unresolved} onClick={() => void importSelected()}><Check size={15} />{dedup.preview ? "确认导入已核对题目" : dedup.enabled?"查重并准备导入":"确认导入（不查重）"}（{importable.length}块）</button></div>
     {fresh.length * job.questionsPerBlock > job.maxQuestions - job.questionCount && <p className="notice">当前剩余预算{job.maxQuestions - job.questionCount}题，将在{fresh.length}个待出题块间均摊，每块最多{Math.min(job.questionsPerBlock, Math.floor((job.maxQuestions - job.questionCount) / Math.max(1, fresh.length)))}题；已成功批次不重复提交。</p>}
-    {round && <div className="ai-document-round" role="status"><strong>正在{round.current}/{round.total}轮：{round.label}</strong><progress aria-label="教材分批总进度" max={round.total} value={round.current - 1} /></div>}
+    {round && !progress.progress.taskId && <div className="ai-document-round" role="status"><strong>正在{round.current}/{round.total}轮：{round.label}</strong><progress aria-label="教材分批总进度" max={round.total} value={round.current - 1} /></div>}
     <AiProgressPanel value={progress.progress} cancel={progress.cancel} />
     {error && <ErrorNotice message={error} />}{notice && <div className="notice info" role="status">{notice}{notice.startsWith('已新增') && <a href="#/questions/review">前往待审核</a>}</div>}
     {dedup.enabled && dedup.preview && <ImportDedupReview preview={dedup.preview} decisions={dedup.decisions} onChange={dedup.setDecisions} readIncoming={dedup.readIncoming} disabled={busy} />}

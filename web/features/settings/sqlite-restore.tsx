@@ -120,10 +120,11 @@ export function SQLiteRestore() {
           </p>
         </div>
       </div>
+      {/* Android may report SQLite as generic binary; select() validates its contents. */}
       <input
         ref={input}
         type="file"
-        accept=".zip,.sqlite,.sqlite3,.db,application/zip,application/vnd.sqlite3"
+        accept=".zip,.sqlite,.sqlite3,.db,application/zip,application/vnd.sqlite3,application/x-sqlite3,application/octet-stream"
         className="sr-only"
         aria-label="选择 SQLite 迁移包或数据库"
         disabled={busy}

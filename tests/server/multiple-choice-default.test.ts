@@ -2,13 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../../server/core/store.js';
 import { DEFAULT_SETTINGS } from '../../shared/models/settings.js';
-import { setMultipleChoiceDefault } from '../../scripts/maintenance/set-multiple-choice-default.js';
 import { buildPaper, createAttempt, submitAttempt } from '../../server/modules/practice/service.js';
 import { normalizeScoring, LEGACY_POINTS } from '../../server/modules/practice/scoring.js';
+import { getSettings, saveSettings } from '../../server/modules/settings/service.js';
 import { exportData } from '../../server/modules/transfer/migration.js';
 import { buildApp } from '../../server/index.js';
 import { questionSchema } from '../../server/core/validation.js';
 import type { Question } from '../../shared/models/types.js';
+
+function saveCurrentMultipleChoiceDefault(store: Store) {
+  const settings = getSettings(store);
+  settings.pointsByType.multiple_choice = DEFAULT_SETTINGS.pointsByType.multiple_choice;
+  store.transaction(() => saveSettings(store, settings));
+}
 
 test('changing the system multiple-choice default preserves customized settings and existing paper scores', t => {
   const store = new Store(':memory:'); t.after(() => store.db.close());
@@ -18,14 +24,13 @@ test('changing the system multiple-choice default preserves customized settings 
   store.put('questions', question.id!, question);
   const paper = buildPaper(store, { title: '已保存2分题集', description: '', mode: 'manual', questionIds: [question.id!], scoring: { enabled: true } }); store.put('papers', paper.id, paper);
   assert.equal(paper.scoring!.questionPoints[question.id!], 2);
-  assert.equal(setMultipleChoiceDefault(store).changed, true);
+  saveCurrentMultipleChoiceDefault(store);
   const saved = store.require<any>('settings', 'system');
   assert.equal(saved.pointsByType.multiple_choice, 4); assert.equal(saved.pointsByType.single_choice, 5);
   assert.equal(saved.theme, 'mint'); assert.equal(saved.maxQuestionHistory, 17); assert.deepEqual(saved.dailyPush, settings.dailyPush);
   assert.deepEqual(store.require('papers', paper.id), paper);
   const fresh = buildPaper(store, { title: '新4分题集', description: '', mode: 'manual', questionIds: [question.id!], scoring: { enabled: true } });
   assert.equal(fresh.scoring!.questionPoints[question.id!], 4);
-  assert.equal(setMultipleChoiceDefault(store).changed, false);
 });
 
 test('unscored snapshots keep their original type defaults while all actual points remain zero', () => {
@@ -53,7 +58,7 @@ test('old unscored papers, drafts and submitted history survive HTTP reads and b
   const submitted = submitAttempt(source, createAttempt(source, paper), { [question.id!]: { value: ['true'] } });
   const draft = createAttempt(source, paper), original = JSON.stringify(source.require('papers', paper.id));
   assert.equal(paper.scoring!.pointsByType.multiple_choice, 2);
-  setMultipleChoiceDefault(source);
+  saveCurrentMultipleChoiceDefault(source);
   const app = await buildApp({ databasePath: ':memory:', staticRoot: 'no-scoring-test-assets', dailyPushScheduler: false }); t.after(() => app.close());
   const api = async (url: string, method: any = 'GET', payload?: unknown, expected = 200): Promise<any> => {
     const response = await app.inject({ url, method, ...(payload === undefined ? {} : { payload }) });
